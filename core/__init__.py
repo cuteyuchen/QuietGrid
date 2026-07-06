@@ -1,0 +1,2 @@
+"""QuietGrid core package."""
+

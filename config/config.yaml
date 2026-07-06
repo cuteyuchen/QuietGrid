@@ -1,0 +1,81 @@
+trading:
+  leverage: 10
+  capital_per_symbol: 200
+  total_capital_limit: 1000
+  take_profit_usdt: 10
+  stop_buffer_pct: 0.015
+  max_concurrent: 3
+  max_maker_fee_rate: 0.0
+
+timing:
+  observe_hours: 3
+  observe_kline_interval: "1m"
+  live_observation: false
+  observe_check_seconds: 60
+  force_close_minutes: 120
+  cooldown_re_observe_hours: 1
+  min_calm_minutes: 15
+  scheduler_check_minutes: 5
+  loop_interval_seconds: 10
+
+grid:
+  range_method: "std"
+  std_k: 1.8
+  quantile_upper: 0.95
+  quantile_lower: 0.05
+  min_step_pct: 0.0015
+  safety_multiplier: 3.5
+  max_grid_num: 20
+  max_range_pct: 0.05
+
+cooldown:
+  atr_period: 14
+  calm_window_minutes: 30
+  atr_recovery_ratio: 0.80
+  amplitude_multiplier: 2.0
+
+selection:
+  volume_weight: 0.7
+  depth_weight: 0.3
+  depth_levels: 5
+  # Binance futures testnet does not expose TradFi token contracts.
+  # BTC/ETH/BCH are for testnet connectivity only; remove them before any future real-market deployment.
+  symbol_allowlist:
+    - BTCUSDT
+    - ETHUSDT
+    - BCHUSDT
+    - AAPLUSDT
+    - MSFTUSDT
+    - TSLAPREUSDT
+    - TSLAUSDT
+    - NVDAUSDT
+    - METAUSDT
+    - AMZNUSDT
+    - GOOGLUSDT
+  symbol_blacklist: []
+
+proxy:
+  enabled: true
+  http: "http://127.0.0.1:7897"
+  https: "http://127.0.0.1:7897"
+
+web:
+  port: 8080
+  address: "0.0.0.0"
+  auth_token: ""
+
+notifications:
+  enabled: false
+  webhook_url: ""
+  min_level: "WARN"
+  timeout_seconds: 5
+  format: "generic"
+
+database:
+  path: "data/trading.db"
+
+logging:
+  level: "INFO"
+  file: "logs/trader.log"
+  rotation: "100 MB"
+  retention: "30 days"

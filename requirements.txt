@@ -1,0 +1,15 @@
+python-binance>=1.0.19
+ccxt>=4.0.0
+pandas_market_calendars>=4.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+fastapi>=0.100.0
+uvicorn>=0.23.0
+streamlit>=1.28.0,<1.50.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+httpx[socks]>=0.25.0
+aiohttp>=3.8.0
+websockets>=11.0
+pytest>=8.0.0

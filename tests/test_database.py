@@ -1,0 +1,256 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+
+from core.models import GridOrder, OrderSide, OrderStatus
+from db.database import connect, init_db
+from db.repository import Repository
+
+
+def test_database_init_and_basic_writes(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+
+    window_id = repo.create_window(datetime(2026, 7, 3, tzinfo=timezone.utc))
+    session_id = repo.create_session(window_id, "AAPLUSDT", "OBSERVING", 200, 10, datetime.now(timezone.utc))
+    repo.upsert_order(
+        session_id,
+        GridOrder(
+            symbol="AAPLUSDT",
+            order_id="1",
+            client_id="cid-1",
+            grid_index=1,
+            side=OrderSide.BUY,
+            price=100,
+            qty=1,
+            status=OrderStatus.OPEN,
+            created_at=datetime.now(timezone.utc),
+        ),
+    )
+    repo.update_order_status(session_id, "cid-1", OrderStatus.FILLED.value, datetime.now(timezone.utc), 100)
+    repo.update_session_pnl(session_id, 1.25)
+    repo.close_window(window_id, datetime.now(timezone.utc))
+    repo.log_state(session_id, "AAPLUSDT", "IDLE", "OBSERVING", "window_open", None, datetime.now(timezone.utc))
+    repo.log_system("INFO", "test", "system-ok", None, datetime.now(timezone.utc))
+
+    window = repo.recent_rows("windows", limit=1)[0]
+    assert window["id"] == window_id
+    assert window["status"] == "closed"
+    assert window["total_pnl"] == 1.25
+    assert repo.recent_rows("sessions", limit=1)[0]["id"] == session_id
+    assert repo.recent_rows("orders", limit=1)[0]["status"] == "filled"
+    assert repo.recent_rows("state_logs", limit=1)[0]["trigger"] == "window_open"
+    assert repo.recent_rows("system_logs", limit=1)[0]["message"] == "system-ok"
+    summary = repo.dashboard_summary()
+    assert summary["active_sessions"] == 1
+    assert summary["open_orders"] == 0
+    assert summary["latest_system_message"] == "system-ok"
+
+
+def test_database_init_persists_wal_for_new_connections(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+
+    with connect(db_path) as conn:
+        journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+
+    assert journal_mode == "wal"
+
+
+def test_dashboard_summary_counts_open_orders(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "AAPLUSDT", "RUNNING", 200, 10, now)
+
+    repo.upsert_order(
+        session_id,
+        GridOrder(
+            symbol="AAPLUSDT",
+            order_id="open-1",
+            client_id="cid-open-1",
+            grid_index=1,
+            side=OrderSide.BUY,
+            price=100,
+            qty=1,
+            status=OrderStatus.OPEN,
+            created_at=now,
+        ),
+    )
+    repo.upsert_order(
+        session_id,
+        GridOrder(
+            symbol="AAPLUSDT",
+            order_id="filled-1",
+            client_id="cid-filled-1",
+            grid_index=2,
+            side=OrderSide.SELL,
+            price=101,
+            qty=1,
+            status=OrderStatus.FILLED,
+            created_at=now,
+            filled_at=now,
+            fill_price=101,
+        ),
+    )
+
+    summary = repo.dashboard_summary()
+
+    assert summary["active_sessions"] == 1
+    assert summary["open_orders"] == 1
+
+
+def test_dashboard_order_status_counts_and_recent_alerts(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "AAPLUSDT", "RUNNING", 200, 10, now)
+
+    for status in (OrderStatus.OPEN, OrderStatus.OPEN, OrderStatus.FILLED, OrderStatus.CANCELLED):
+        suffix = status.value
+        repo.upsert_order(
+            session_id,
+            GridOrder(
+                symbol="AAPLUSDT",
+                order_id=f"order-{suffix}-{len(repo.recent_rows('orders'))}",
+                client_id=f"cid-{suffix}-{len(repo.recent_rows('orders'))}",
+                grid_index=1,
+                side=OrderSide.BUY,
+                price=100,
+                qty=0.5,
+                status=status,
+                created_at=now,
+            ),
+        )
+    repo.log_system("INFO", "controller", "normal loop", None, now)
+    repo.log_system("WARN", "order_reconciliation", "Recovered filled order.", "client_id=cid-open", now)
+    repo.log_system("ERROR", "position_reconciliation", "Position mismatch.", "symbol=AAPLUSDT", now)
+
+    counts = repo.order_status_counts()
+    alerts = repo.recent_alert_events(limit=5)
+
+    assert counts == [
+        {"status": "open", "count": 2, "qty": 1.0, "notional": 100.0},
+        {"status": "filled", "count": 1, "qty": 0.5, "notional": 50.0},
+        {"status": "cancelled", "count": 1, "qty": 0.5, "notional": 50.0},
+    ]
+    assert [alert["level"] for alert in alerts] == ["ERROR", "WARN"]
+    assert alerts[0]["module"] == "position_reconciliation"
+    assert alerts[1]["module"] == "order_reconciliation"
+
+
+def test_log_system_calls_notifier_after_persisting(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    calls = []
+    repo = Repository(db_path, notifier=lambda *args: calls.append(args))
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+
+    repo.log_system("WARN", "order_reconciliation", "Recovered filled order.", "client_id=cid-open", now)
+
+    assert repo.recent_rows("system_logs", limit=1)[0]["message"] == "Recovered filled order."
+    assert calls == [("WARN", "order_reconciliation", "Recovered filled order.", "client_id=cid-open", now)]
+
+
+def test_log_system_persists_when_notifier_fails(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+
+    def failing_notifier(*args) -> None:
+        raise RuntimeError("webhook down")
+
+    repo = Repository(db_path, notifier=failing_notifier)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+
+    repo.log_system("ERROR", "risk", "Position mismatch.", "symbol=AAPLUSDT", now)
+
+    row = repo.recent_rows("system_logs", limit=1)[0]
+    assert row["level"] == "ERROR"
+    assert row["module"] == "risk"
+    assert row["message"] == "Position mismatch."
+
+
+def test_latest_commission_health_parses_latest_detail(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+    old_detail = {
+        "status": "ok",
+        "checked_symbols": 1,
+        "ok_count": 1,
+        "warn_count": 0,
+        "error_count": 0,
+        "symbols": [{"symbol": "AAPLUSDT", "status": "ok", "maker": 0.0}],
+    }
+    latest_detail = {
+        "status": "warn",
+        "checked_symbols": 2,
+        "ok_count": 1,
+        "warn_count": 1,
+        "error_count": 0,
+        "symbols": [
+            {"symbol": "AAPLUSDT", "status": "ok", "maker": 0.0, "max_maker_fee_rate": 0.0},
+            {"symbol": "BTCUSDT", "status": "warn", "maker": 0.0002, "max_maker_fee_rate": 0.0},
+        ],
+    }
+
+    repo.log_system("INFO", "commission_health", "old", json.dumps(old_detail), now)
+    repo.log_system("WARN", "commission_health", "latest", json.dumps(latest_detail), now)
+
+    health = repo.latest_commission_health()
+
+    assert health is not None
+    assert health["level"] == "WARN"
+    assert health["status"] == "warn"
+    assert health["checked_symbols"] == 2
+    assert health["symbols"][1]["symbol"] == "BTCUSDT"
+
+
+def test_wal_allows_writer_commit_while_reader_transaction_is_open(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+
+    reader = connect(db_path)
+    writer = connect(db_path)
+    try:
+        reader.execute("PRAGMA busy_timeout = 100")
+        writer.execute("PRAGMA busy_timeout = 100")
+        reader.execute("BEGIN")
+        assert reader.execute("SELECT COUNT(*) FROM windows").fetchone()[0] == 0
+
+        writer.execute(
+            "INSERT INTO windows (window_start) VALUES (?)",
+            (datetime(2026, 7, 4, tzinfo=timezone.utc).isoformat(),),
+        )
+        writer.commit()
+
+        assert reader.execute("SELECT COUNT(*) FROM windows").fetchone()[0] == 0
+        reader.commit()
+        assert reader.execute("SELECT COUNT(*) FROM windows").fetchone()[0] == 1
+    finally:
+        reader.close()
+        writer.close()
+
+
+def test_trade_create_is_idempotent_by_session_and_order_id(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "AAPLUSDT", "RUNNING", 200, 10, now)
+
+    first_id = repo.create_trade(session_id, "AAPLUSDT", "order-1", "BUY", 100.0, 0.5, 1, None, now)
+    duplicate_id = repo.create_trade(session_id, "AAPLUSDT", "order-1", "BUY", 100.0, 0.5, 1, None, now)
+
+    assert duplicate_id == first_id
+    trades = repo.recent_rows("trades")
+    assert len(trades) == 1
+    assert trades[0]["order_id"] == "order-1"

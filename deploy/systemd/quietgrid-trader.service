@@ -1,0 +1,18 @@
+[Unit]
+Description=QuietGrid Trader
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/quietgrid
+ExecStart=/home/ubuntu/quietgrid/.venv/bin/python trader.py --binance-loop
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/ubuntu/quietgrid/logs/trader.log
+StandardError=append:/home/ubuntu/quietgrid/logs/trader.log
+EnvironmentFile=/home/ubuntu/quietgrid/.env
+
+[Install]
+WantedBy=multi-user.target
+

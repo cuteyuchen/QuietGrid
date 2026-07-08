@@ -7,7 +7,7 @@ def _klines(count: int = 60) -> list[dict[str, float]]:
     rows = []
     for index in range(count):
         close = 100 + ((index % 10) - 5) * 0.05
-        rows.append({"high": close + 0.08, "low": close - 0.08, "close": close})
+        rows.append({"open": close, "high": close + 0.08, "low": close - 0.08, "close": close})
     return rows
 
 
@@ -29,6 +29,23 @@ def test_calculate_grid_params_from_std_range() -> None:
     assert params.baseline_atr > 0
 
 
+def test_calculate_grid_params_from_ohlc_volatility_methods() -> None:
+    for method in ("parkinson", "garman_klass", "rogers_satchell", "yang_zhang"):
+        params = calculate_grid_params(
+            symbol="AAPLUSDT",
+            klines=_klines(),
+            current_price=100.0,
+            funding_rate=0.0001,
+            config=GridConfig(range_method=method),
+        )
+
+        assert params.volatility_method == method
+        assert params.volatility_value > 0
+        assert params.volatility_window == 60
+        assert params.lower < 100 < params.upper
+        assert params.step_pct >= 0.0015
+
+
 def test_rejects_not_enough_samples() -> None:
     try:
         calculate_grid_params("AAPLUSDT", _klines(10), 100.0, 0.0001, GridConfig())
@@ -45,6 +62,30 @@ def test_rejects_current_price_outside_range() -> None:
         assert "漂移" in str(exc)
     else:
         raise AssertionError("outside price should be rejected")
+
+
+def test_ohlc_volatility_range_rejects_current_price_outside_range() -> None:
+    try:
+        calculate_grid_params("AAPLUSDT", _klines(), 110.0, 0.0001, GridConfig(range_method="garman_klass"))
+    except GridCalculationError as exc:
+        assert "漂移" in str(exc)
+    else:
+        raise AssertionError("outside price should be rejected")
+
+
+def test_ohlc_volatility_range_respects_max_range_pct() -> None:
+    try:
+        calculate_grid_params(
+            "AAPLUSDT",
+            _klines(),
+            100.0,
+            0.0001,
+            GridConfig(range_method="parkinson", std_k=50, max_range_pct=0.01),
+        )
+    except GridCalculationError as exc:
+        assert "区间宽度超过" in str(exc)
+    else:
+        raise AssertionError("range above max_range_pct should be rejected")
 
 
 def test_rejects_non_finite_or_non_positive_numeric_inputs() -> None:

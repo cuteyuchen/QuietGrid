@@ -43,6 +43,14 @@ _COLUMN_LABELS = {
     "step_pct": "网格间距",
     "baseline_atr": "基准 ATR",
     "stop_loss_price": "止损价",
+    "volatility_method": "波动率算法",
+    "volatility_value": "建仓波动率",
+    "volatility_value_pct": "建仓波动率(%)",
+    "volatility_window": "建仓窗口K线数",
+    "volatility_current_value": "当前波动率",
+    "volatility_current_value_pct": "当前波动率(%)",
+    "volatility_current_window": "当前窗口K线数",
+    "volatility_current_at": "最近重算时间",
     "capital": "本金",
     "leverage": "杠杆",
     "realized_pnl": "已实现盈亏",
@@ -303,6 +311,12 @@ _VALUE_LABELS = {
     "STOPPED": "已停止",
     "BUY": "买入",
     "SELL": "卖出",
+    "std": "标准差",
+    "quantile": "分位数",
+    "parkinson": "Parkinson",
+    "garman_klass": "Garman-Klass",
+    "rogers_satchell": "Rogers-Satchell",
+    "yang_zhang": "Yang-Zhang",
     "LONG": "多仓",
     "SHORT": "空仓",
     "stop_loss": "止损触发",
@@ -404,6 +418,9 @@ _BACKTEST_GRID_KEYS = [
     "step_pct",
     "baseline_atr",
     "stop_loss_price",
+    "volatility_method",
+    "volatility_value",
+    "volatility_window",
     "calculated_at",
 ]
 
@@ -450,6 +467,7 @@ _MODULE_LABELS = {
     "commission_health": "挂单费率健康",
     "order_reconciliation": "订单对账",
     "position_reconciliation": "持仓对账",
+    "volatility": "波动率",
     "binance_check": "Binance 检查",
     "binance_signed_write_health": "签名写接口检查",
     "binance_test_order_smoke": "测试下单参数烟测",
@@ -533,6 +551,7 @@ _MESSAGE_LABELS = {
         "Refill post-only order rejected after fill.": "成交后的只挂单补单被拒绝。",
     "Refill failed after fill; closing session.": "成交后补单失败，正在关闭会话。",
     "Grid PnL input invalid; closing session.": "网格盈亏输入无效，正在关闭会话。",
+    "Current volatility refresh failed.": "当前波动率刷新失败。",
 }
 
 _MESSAGE_LABELS.update(
@@ -604,6 +623,7 @@ def render_dashboard(raw_config: dict) -> None:
     _render_runtime_status_panel(streamlit, raw_config, database_path)
     _render_order_status_panel(streamlit, repo)
     _render_commission_health_panel(streamlit, repo)
+    _render_active_volatility_panel(streamlit, repo)
     _render_testnet_verification_panel(streamlit, repo)
     _render_backtest_report_panel(streamlit, Path("reports"))
     _render_alert_panel(streamlit, repo)
@@ -753,6 +773,15 @@ def _render_commission_health_panel(streamlit: Any, repo: Repository) -> None:
         streamlit.dataframe(_localize_rows([health]), use_container_width=True)
 
 
+def _render_active_volatility_panel(streamlit: Any, repo: Repository) -> None:
+    streamlit.subheader("活跃标的波动率")
+    rows = _active_volatility_rows(repo.active_session_volatility_rows())
+    if not rows:
+        streamlit.caption("暂无活跃标的波动率。")
+        return
+    streamlit.dataframe(_localize_rows(rows, table="active_volatility"), use_container_width=True)
+
+
 def _render_testnet_verification_panel(streamlit: Any, repo: Repository) -> None:
     streamlit.subheader("测试网验证状态")
     streamlit.caption("基于系统日志的只读汇总；刷新页面不会触发任何 Binance API 调用。")
@@ -836,7 +865,10 @@ def _render_backtest_report_panel(streamlit: Any, report_dir: Path) -> None:
 
 
 def _testnet_verification_rows(log_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    latest_by_module = {str(row.get("module")): row for row in log_rows}
+    latest_by_module: dict[str, dict[str, Any]] = {}
+    for row in log_rows:
+        module = str(row.get("module"))
+        latest_by_module.setdefault(module, row)
     rows = []
     for module in _TESTNET_VERIFICATION_MODULES:
         log_row = latest_by_module.get(module)
@@ -1051,10 +1083,12 @@ def _testnet_verification_summary(module: str, detail: dict[str, Any]) -> str:
     if module == "binance_safety_sweep":
         symbols = _verification_symbols(detail)
         residual_count = sum(1 for item in symbols if _safety_symbol_has_residual(item))
+        closed_sessions = detail.get("closed_sessions")
         return _join_summary_parts(
             [
                 _summary_part("清扫标的", len(symbols)),
                 _summary_part("残留标的", residual_count),
+                _summary_part("同步关闭会话", len(closed_sessions) if isinstance(closed_sessions, list) else None),
                 _summary_part("残留说明", "; ".join(str(item) for item in detail.get("residuals", [])[:2]) if isinstance(detail.get("residuals"), list) else None),
             ]
         )
@@ -1172,6 +1206,39 @@ def _commission_symbol_rows(health: dict[str, Any]) -> list[dict[str, Any]]:
                 }
             )
     return rows
+
+
+def _active_volatility_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result = []
+    for row in rows:
+        result.append(
+            {
+                "session_id": row.get("session_id"),
+                "symbol": row.get("symbol"),
+                "state": row.get("state"),
+                "volatility_method": row.get("volatility_method"),
+                "volatility_value_pct": _percent_value(row.get("volatility_value")),
+                "volatility_window": row.get("volatility_window"),
+                "volatility_current_value_pct": _percent_value(row.get("volatility_current_value")),
+                "volatility_current_window": row.get("volatility_current_window"),
+                "volatility_current_at": row.get("volatility_current_at"),
+                "grid_lower": row.get("grid_lower"),
+                "grid_upper": row.get("grid_upper"),
+                "grid_num": row.get("grid_num"),
+                "step_pct": row.get("step_pct"),
+                "baseline_atr": row.get("baseline_atr"),
+            }
+        )
+    return result
+
+
+def _percent_value(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value) * 100
+    except (TypeError, ValueError):
+        return None
 
 
 def _load_recent_backtest_reports(report_dir: Path, limit: int = 3) -> list[dict[str, Any]]:
@@ -1308,6 +1375,7 @@ def _localize_value(key: str, value: Any, table: str | None = None) -> Any:
         "stop_status",
         "verification_status",
         "close_reason",
+        "volatility_method",
     }:
         return _localize_scalar_text(text)
     if key in {"error", "reason", "stop_error"}:

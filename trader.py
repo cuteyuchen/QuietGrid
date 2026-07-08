@@ -39,6 +39,8 @@ class _SmokeComplete(Exception):
 ORDER_CREATE_RECOVERY_ATTEMPTS = 5
 ORDER_CREATE_RECOVERY_DELAY_SECONDS = 0.25
 BINANCE_TESTNET_SUBSTITUTE_SYMBOLS = {"BTCUSDT", "ETHUSDT", "BCHUSDT"}
+BINANCE_LOOP_TASK_CANCEL_TIMEOUT_SECONDS = 5.0
+BINANCE_LOOP_SHUTDOWN_CLEANUP_TIMEOUT_SECONDS = 30.0
 
 
 class _TestnetAlwaysOpenScheduler:
@@ -69,6 +71,9 @@ def main() -> None:
     parser.add_argument("--binance-algo-stop-smoke", action="store_true", help="创建并撤销一个 Binance Futures Algo STOP_MARKET 条件单")
     parser.add_argument("--binance-position-smoke", action="store_true", help="只读检查 Binance 测试网持仓模式、持仓和未成交订单")
     parser.add_argument("--binance-safety-sweep", action="store_true", help="清理 Binance 测试网 allowlist 标的的挂单和仓位")
+    parser.add_argument("--binance-test-run", action="store_true", help="执行测试网有界运行流程：前置持仓检查、限时loop、安全清扫、后置持仓检查")
+    parser.add_argument("--loop-iterations", type=int, help="限制 --mock-loop 或 --binance-loop 的主循环轮数，留空则持续运行")
+    parser.add_argument("--loop-seconds", type=float, help="限制 --mock-loop、--binance-loop 或 --binance-test-run 的运行秒数；测试流程默认600秒")
     parser.add_argument("--backtest-csv", help="读取本地CSV K线文件执行离线网格回测，不连接交易所")
     parser.add_argument("--backtest-dir", help="读取目录内所有CSV K线文件执行批量离线回测，不连接交易所")
     parser.add_argument("--backtest-observe-rows", type=int, default=60, help="CSV前多少行作为观察期样本，默认60")
@@ -76,6 +81,10 @@ def main() -> None:
     parser.add_argument("--backtest-funding-rate", type=float, default=0.0, help="观察期网格计算使用的资金费率，默认0")
     parser.add_argument("--backtest-output", help="可选：把单文件完整回测报告或批量汇总报告写入JSON文件")
     args = parser.parse_args()
+    if args.loop_iterations is not None and args.loop_iterations <= 0:
+        parser.error("--loop-iterations 必须是正整数。")
+    if args.loop_seconds is not None and args.loop_seconds <= 0:
+        parser.error("--loop-seconds 必须是正数。")
 
     config = load_config()
     setup_logging(config.raw)
@@ -97,6 +106,7 @@ def main() -> None:
         args.binance_algo_stop_smoke,
         args.binance_position_smoke,
         args.binance_safety_sweep,
+        args.binance_test_run,
         args.backtest_csv is not None,
         args.backtest_dir is not None,
     ]
@@ -154,6 +164,10 @@ def main() -> None:
         result = asyncio.run(_run_binance_safety_sweep(config))
         logger.info("Binance testnet safety sweep result: {}", result)
         return
+    if args.binance_test_run:
+        result = asyncio.run(_run_binance_test_run(config, max_seconds=args.loop_seconds or 600.0))
+        logger.info("Binance testnet bounded run result: {}", result)
+        return
     if args.backtest_csv:
         result = _run_backtest_csv(
             config,
@@ -177,14 +191,14 @@ def main() -> None:
         logger.info("CSV backtest batch result: {}", json.dumps(result, ensure_ascii=False))
         return
     if args.mock_loop:
-        asyncio.run(_run_mock_loop(config))
+        asyncio.run(_run_mock_loop(config, max_iterations=args.loop_iterations, max_seconds=args.loop_seconds))
         return
     if args.binance_loop:
-        asyncio.run(_run_binance_loop(config))
+        asyncio.run(_run_binance_loop(config, max_iterations=args.loop_iterations, max_seconds=args.loop_seconds))
         return
 
     logger.info(
-        "QuietGrid initialized in testnet-safe mode. Use --mock-once, --binance-check, --binance-order-smoke, --binance-test-order-smoke, --binance-market-roundtrip-smoke, --binance-direct-order-diagnose, --binance-price-stream-smoke, --binance-signed-write-health, --binance-listen-key-smoke, --binance-algo-stop-smoke, --binance-position-smoke, --binance-safety-sweep, --backtest-csv, --backtest-dir, --binance-once, --mock-loop or --binance-loop."
+        "QuietGrid initialized in testnet-safe mode. Use --mock-once, --binance-check, --binance-order-smoke, --binance-test-order-smoke, --binance-market-roundtrip-smoke, --binance-direct-order-diagnose, --binance-price-stream-smoke, --binance-signed-write-health, --binance-listen-key-smoke, --binance-algo-stop-smoke, --binance-position-smoke, --binance-safety-sweep, --binance-test-run, --backtest-csv, --backtest-dir, --binance-once, --mock-loop or --binance-loop. Use --loop-iterations or --loop-seconds with loop commands for bounded test runs."
     )
 
 
@@ -193,9 +207,13 @@ async def _run_mock_once(config):
     return await controller.run_once()
 
 
-async def _run_mock_loop(config):
+async def _run_mock_loop(config, max_iterations: int | None = None, max_seconds: float | None = None):
     controller = _build_controller(MockExchangeClient(), config, live_observation=False)
-    await controller.run_loop()
+    loop_task = controller.run_loop(max_iterations=max_iterations)
+    if max_seconds is None:
+        await loop_task
+    else:
+        await asyncio.wait_for(loop_task, timeout=max_seconds)
 
 
 async def _create_binance_client_for_module(config, module: str) -> BinanceFuturesClient:
@@ -395,6 +413,7 @@ def _grid_config_from_raw(raw: dict[str, Any]) -> GridConfig:
         max_range_pct=float(grid.get("max_range_pct", 0.05)),
         atr_period=int(cooldown.get("atr_period", 14)),
         stop_buffer_pct=float(trading.get("stop_buffer_pct", 0.015)),
+        volatility_refresh_seconds=float(grid.get("volatility_refresh_seconds", 60.0)),
     )
 
 
@@ -467,6 +486,9 @@ def _backtest_report(result: BacktestResult, params, summary: dict[str, Any]) ->
             "grid_prices": list(params.grid_prices),
             "baseline_atr": params.baseline_atr,
             "stop_loss_price": params.stop_loss_price,
+            "volatility_method": params.volatility_method,
+            "volatility_value": params.volatility_value,
+            "volatility_window": params.volatility_window,
             "calculated_at": params.calculated_at.isoformat(),
         },
         "fills": [
@@ -1095,66 +1117,7 @@ async def _run_binance_safety_sweep(config):
     exchange = await _create_binance_client_for_module(config, "binance_safety_sweep")
     try:
         eligible = await _require_binance_smoke_symbols(exchange, config)
-        results = []
-        residuals: list[str] = []
-        for symbol in eligible:
-            ordinary_orders = await exchange.get_open_orders(symbol)
-            algo_orders = await _open_algo_orders(exchange, symbol)
-            ordinary_before = len(ordinary_orders)
-            algo_before = len(algo_orders)
-            position_before = await exchange.get_position(symbol)
-            close_specs = _position_close_specs(position_before)
-
-            if ordinary_before or algo_before:
-                try:
-                    await exchange.cancel_all_orders(symbol)
-                except Exception as exc:
-                    fallback_errors = await _cancel_sweep_orders(exchange, symbol, ordinary_orders, algo_orders)
-                    if fallback_errors:
-                        raise RuntimeError(
-                            (
-                                f"测试网安全清扫全撤失败且逐单撤单未完全成功: symbol={symbol}, "
-                                f"cancel_all_error={exc}, fallback_errors={fallback_errors}"
-                            )
-                        ) from None
-            closed_positions = await _close_sweep_position_specs(exchange, symbol, close_specs)
-
-            ordinary_after = len(await exchange.get_open_orders(symbol))
-            algo_after = len(await _open_algo_orders(exchange, symbol))
-            position_after = await exchange.get_position(symbol)
-            after_summary = _position_sweep_summary(position_after)
-            if ordinary_after or algo_after or _position_sweep_exposure(after_summary) > 1e-12:
-                residuals.append(
-                    (
-                        f"{symbol}: ordinary_after={ordinary_after}, algo_after={algo_after}, "
-                        f"position_after={after_summary}"
-                    )
-                )
-            results.append(
-                {
-                    "symbol": symbol,
-                    "ordinary_before": ordinary_before,
-                    "algo_before": algo_before,
-                    "ordinary_after": ordinary_after,
-                    "algo_after": algo_after,
-                    "position_before": _position_sweep_summary(position_before),
-                    "position_after": after_summary,
-                    "closed_positions": closed_positions,
-                }
-            )
-        if residuals:
-            repository.log_system(
-                "ERROR",
-                "binance_safety_sweep",
-                "Binance testnet safety sweep left residual exposure.",
-                _json_log_detail({"symbols": results, "residuals": residuals}),
-                datetime.now(timezone.utc),
-            )
-            raise RuntimeError(f"测试网安全清扫后仍有残留: {'; '.join(residuals)}")
-        result = {
-            "safety_sweep_ok": True,
-            "symbols": results,
-        }
+        result = await _sweep_binance_symbols(exchange, repository, eligible)
         repository.log_system(
             "INFO",
             "binance_safety_sweep",
@@ -1165,6 +1128,131 @@ async def _run_binance_safety_sweep(config):
         return result
     finally:
         await exchange.close()
+
+
+async def _run_binance_test_run(config, max_seconds: float = 600.0) -> dict[str, Any]:
+    if max_seconds <= 0:
+        raise RuntimeError("测试网有界运行秒数必须是正数。")
+    pre_position = await _run_binance_position_smoke(config)
+    loop_result: Any = None
+    loop_error: str | None = None
+    try:
+        loop_result = await _run_binance_loop(config, max_seconds=max_seconds)
+    except Exception as exc:
+        loop_error = str(exc)
+        raise
+    finally:
+        safety_sweep = await _run_binance_safety_sweep(config)
+        post_position = await _run_binance_position_smoke(config)
+        result = {
+            "test_run_ok": loop_error is None,
+            "max_seconds": max_seconds,
+            "pre_position": pre_position,
+            "loop_result": loop_result,
+            "loop_error": loop_error,
+            "safety_sweep": safety_sweep,
+            "post_position": post_position,
+        }
+        _build_repository(config).log_system(
+            "INFO" if loop_error is None else "ERROR",
+            "binance_test_run",
+            "Binance testnet bounded run completed." if loop_error is None else "Binance testnet bounded run failed after cleanup.",
+            _json_log_detail(result),
+            datetime.now(timezone.utc),
+        )
+    return result
+
+
+async def _sweep_binance_symbols(exchange, repository: Repository, eligible: list[str]) -> dict[str, Any]:
+    results = []
+    residuals: list[str] = []
+    for symbol in eligible:
+        ordinary_orders = await exchange.get_open_orders(symbol)
+        algo_orders = await _open_algo_orders(exchange, symbol)
+        ordinary_before = len(ordinary_orders)
+        algo_before = len(algo_orders)
+        position_before = await exchange.get_position(symbol)
+        close_specs = _position_close_specs(position_before)
+
+        if ordinary_before or algo_before:
+            try:
+                await exchange.cancel_all_orders(symbol)
+            except Exception as exc:
+                fallback_errors = await _cancel_sweep_orders(exchange, symbol, ordinary_orders, algo_orders)
+                if fallback_errors:
+                    raise RuntimeError(
+                        (
+                            f"测试网安全清扫全撤失败且逐单撤单未完全成功: symbol={symbol}, "
+                            f"cancel_all_error={exc}, fallback_errors={fallback_errors}"
+                        )
+                    ) from None
+        closed_positions = await _close_sweep_position_specs(exchange, symbol, close_specs)
+
+        ordinary_after = len(await exchange.get_open_orders(symbol))
+        algo_after = len(await _open_algo_orders(exchange, symbol))
+        position_after = await exchange.get_position(symbol)
+        after_summary = _position_sweep_summary(position_after)
+        if ordinary_after or algo_after or _position_sweep_exposure(after_summary) > 1e-12:
+            residuals.append(
+                (
+                    f"{symbol}: ordinary_after={ordinary_after}, algo_after={algo_after}, "
+                    f"position_after={after_summary}"
+                )
+            )
+        results.append(
+            {
+                "symbol": symbol,
+                "ordinary_before": ordinary_before,
+                "algo_before": algo_before,
+                "ordinary_after": ordinary_after,
+                "algo_after": algo_after,
+                "position_before": _position_sweep_summary(position_before),
+                "position_after": after_summary,
+                "closed_positions": closed_positions,
+            }
+        )
+    if residuals:
+        repository.log_system(
+            "ERROR",
+            "binance_safety_sweep",
+            "Binance testnet safety sweep left residual exposure.",
+            _json_log_detail({"symbols": results, "residuals": residuals}),
+            datetime.now(timezone.utc),
+        )
+        raise RuntimeError(f"测试网安全清扫后仍有残留: {'; '.join(residuals)}")
+    closed_sessions = _close_unclosed_sessions_after_safety_sweep(repository, eligible, datetime.now(timezone.utc))
+    return {
+        "safety_sweep_ok": True,
+        "symbols": results,
+        "closed_sessions": closed_sessions,
+    }
+
+
+def _close_unclosed_sessions_after_safety_sweep(
+    repository: Repository,
+    swept_symbols: list[str],
+    at: datetime,
+) -> list[dict[str, Any]]:
+    swept = {symbol.upper() for symbol in swept_symbols}
+    closed: list[dict[str, Any]] = []
+    for row in repository.unclosed_sessions():
+        symbol = str(row["symbol"])
+        if symbol.upper() not in swept:
+            continue
+        session_id = int(row["id"])
+        from_state = str(row["state"])
+        repository.close_session(session_id, "binance_safety_sweep", at)
+        repository.log_state(
+            session_id,
+            symbol,
+            from_state,
+            "STOPPED",
+            "binance_safety_sweep",
+            "测试网安全清扫完成后同步关闭数据库未结束会话。",
+            at,
+        )
+        closed.append({"session_id": session_id, "symbol": symbol, "from_state": from_state})
+    return closed
 
 
 async def _run_binance_price_stream_smoke(config, timeout_seconds: float = 45):
@@ -1300,12 +1388,13 @@ async def _run_binance_order_smoke_for_symbol(exchange, symbol: str, leverage: i
     return result
 
 
-async def _run_binance_loop(config):
+async def _run_binance_loop(config, max_iterations: int | None = None, max_seconds: float | None = None):
     require_testnet(config)
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-loop 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
     exchange = await _create_binance_client_for_module(config, "binance_loop")
+    bounded_timeout_reached = False
     try:
         eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
         await _require_binance_signed_write_health(exchange, config, eligible, "binance_loop")
@@ -1318,7 +1407,7 @@ async def _run_binance_loop(config):
         price_stream_task = asyncio.create_task(
             _run_dynamic_price_stream(exchange, controller, poll_seconds=float(config.raw["timing"]["loop_interval_seconds"]))
         )
-        controller_task = asyncio.create_task(controller.run_loop())
+        controller_task = asyncio.create_task(controller.run_loop(max_iterations=max_iterations))
         task_names = {
             controller_task: "controller loop",
             user_stream_task: "user stream",
@@ -1328,7 +1417,12 @@ async def _run_binance_loop(config):
             done, _pending = await asyncio.wait(
                 {controller_task, user_stream_task, price_stream_task},
                 return_when=asyncio.FIRST_COMPLETED,
+                timeout=max_seconds,
             )
+            if not done:
+                bounded_timeout_reached = True
+                _log_binance_loop_bounded_timeout(controller, max_seconds)
+                return ["loop_timeout"]
             completed = next(iter(done))
             completed_name = task_names[completed]
             try:
@@ -1345,9 +1439,24 @@ async def _run_binance_loop(config):
             await _cancel_and_drain_task(controller_task)
             await _cancel_and_drain_task(user_stream_task)
             await _cancel_and_drain_task(price_stream_task)
-            closed = await _close_all_active_sessions_or_raise(controller, "binance_loop_shutdown_cleanup")
-            if closed:
-                logger.info("Binance loop shutdown cleanup closed active sessions: {}", closed)
+            fallback_swept = False
+            try:
+                closed = await asyncio.wait_for(
+                    _close_all_active_sessions_or_raise(controller, "binance_loop_shutdown_cleanup"),
+                    timeout=BINANCE_LOOP_SHUTDOWN_CLEANUP_TIMEOUT_SECONDS,
+                )
+                if closed:
+                    logger.info("Binance loop shutdown cleanup closed active sessions: {}", closed)
+            except Exception as exc:
+                _log_binance_loop_shutdown_cleanup_fallback(controller, exc)
+                fallback = await _run_binance_loop_safety_sweep_fallback(exchange, controller, eligible)
+                fallback_swept = fallback is not None
+                if fallback is not None:
+                    logger.warning("Binance loop shutdown cleanup fallback safety sweep result: {}", fallback)
+            if bounded_timeout_reached and not fallback_swept:
+                fallback = await _run_binance_loop_safety_sweep_fallback(exchange, controller, eligible)
+                if fallback is not None:
+                    logger.info("Binance bounded loop final safety sweep result: {}", fallback)
     finally:
         await exchange.close()
 
@@ -1367,6 +1476,55 @@ def _log_binance_loop_task_error(controller: TradingController, task_name: str, 
         )
     except Exception as log_exc:
         logger.warning("Failed to persist Binance loop task error: {}", log_exc)
+
+
+def _log_binance_loop_bounded_timeout(controller: TradingController, max_seconds: float | None) -> None:
+    repository = getattr(controller, "repository", None)
+    log_system = getattr(repository, "log_system", None)
+    if log_system is None:
+        return
+    try:
+        log_system(
+            "INFO",
+            "binance_loop",
+            "Binance loop bounded runtime reached; shutting down.",
+            f"max_seconds={max_seconds}",
+            datetime.now(timezone.utc),
+        )
+    except Exception as log_exc:
+        logger.warning("Failed to persist Binance loop bounded timeout: {}", log_exc)
+
+
+def _log_binance_loop_shutdown_cleanup_fallback(controller: TradingController, exc: Exception) -> None:
+    repository = getattr(controller, "repository", None)
+    log_system = getattr(repository, "log_system", None)
+    if log_system is None:
+        return
+    try:
+        log_system(
+            "WARN",
+            "binance_loop",
+            "Binance loop shutdown cleanup failed; running safety sweep fallback.",
+            str(exc),
+            datetime.now(timezone.utc),
+        )
+    except Exception as log_exc:
+        logger.warning("Failed to persist Binance loop shutdown cleanup fallback: {}", log_exc)
+
+
+async def _run_binance_loop_safety_sweep_fallback(exchange, controller: TradingController, eligible: list[str]) -> dict[str, Any] | None:
+    repository = getattr(controller, "repository", None)
+    if repository is None:
+        return None
+    fallback = await _sweep_binance_symbols(exchange, repository, eligible)
+    repository.log_system(
+        "INFO",
+        "binance_safety_sweep",
+        "Binance testnet safety sweep completed.",
+        _json_log_detail(fallback),
+        datetime.now(timezone.utc),
+    )
+    return fallback
 
 
 async def _run_dynamic_price_stream(exchange, controller: TradingController, poll_seconds: float = 10) -> None:
@@ -1405,8 +1563,10 @@ async def _await_cancelled(task: asyncio.Task) -> None:
 async def _cancel_and_drain_task(task: asyncio.Task) -> None:
     task.cancel()
     try:
-        await task
+        await asyncio.wait_for(task, timeout=BINANCE_LOOP_TASK_CANCEL_TIMEOUT_SECONDS)
     except asyncio.CancelledError:
+        return
+    except asyncio.TimeoutError:
         return
     except Exception:
         return
@@ -1999,6 +2159,7 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             max_range_pct=float(grid["max_range_pct"]),
             atr_period=int(cooldown["atr_period"]),
             stop_buffer_pct=float(trading["stop_buffer_pct"]),
+            volatility_refresh_seconds=float(grid.get("volatility_refresh_seconds", 60.0)),
         ),
         controller_config=ControllerConfig(
             capital_per_symbol=float(trading["capital_per_symbol"]),

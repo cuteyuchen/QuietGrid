@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from core.models import GridState, OrderStatus
@@ -85,6 +85,24 @@ class PositionedExchange(MockExchangeClient):
 class InvalidRangeExchange(MockExchangeClient):
     async def get_klines(self, symbol: str, interval: str, limit: int):
         return [{"open": 90, "high": 90.1, "low": 89.9, "close": 90.0} for _ in range(limit)]
+
+
+class CountingVolatilityExchange(MockExchangeClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.kline_calls: list[tuple[str, str, int]] = []
+
+    async def get_klines(self, symbol: str, interval: str, limit: int):
+        self.kline_calls.append((symbol, interval, limit))
+        return await super().get_klines(symbol, interval, limit)
+
+
+class FailingVolatilityRefreshExchange(CountingVolatilityExchange):
+    async def get_klines(self, symbol: str, interval: str, limit: int):
+        self.kline_calls.append((symbol, interval, limit))
+        if len(self.kline_calls) > 1:
+            return [{"high": 100.1, "low": 99.9, "close": 100.0} for _ in range(limit)]
+        return await MockExchangeClient.get_klines(self, symbol, interval, limit)
 
 
 class FailingStopOrderExchange(MockExchangeClient):
@@ -417,6 +435,122 @@ def test_controller_run_once_starts_mock_grid_and_persists_state(tmp_path) -> No
         selection_detail = json.loads(selection_log["detail"])
         assert selection_detail[0]["symbol"] == "AAPLUSDT"
         assert "score" in selection_detail[0]
+
+    asyncio.run(run())
+
+
+def test_controller_run_once_persists_volatility_snapshot(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        controller = TradingController(
+            exchange=CountingVolatilityExchange(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(range_method="parkinson"),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+
+        row = Repository(db_path).active_session_volatility_rows()[0]
+
+        assert row["volatility_method"] == "parkinson"
+        assert row["volatility_value"] > 0
+        assert row["volatility_window"] == 60
+        assert row["volatility_current_value"] == row["volatility_value"]
+        assert row["volatility_current_window"] == 60
+        assert row["volatility_current_at"] is not None
+
+    asyncio.run(run())
+
+
+def test_controller_poll_refreshes_current_volatility_by_interval(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = CountingVolatilityExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(range_method="parkinson", volatility_refresh_seconds=60),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        calculated_at = session.params.calculated_at  # type: ignore[union-attr]
+
+        await controller.poll_active_sessions_once(calculated_at + timedelta(seconds=30))
+        assert len(exchange.kline_calls) == 1
+
+        refresh_at = calculated_at + timedelta(seconds=61)
+        await controller.poll_active_sessions_once(refresh_at)
+        row = Repository(db_path).active_session_volatility_rows()[0]
+
+        assert len(exchange.kline_calls) == 2
+        assert row["volatility_current_value"] > 0
+        assert row["volatility_current_window"] == 60
+        assert row["volatility_current_at"] == refresh_at.isoformat()
+
+    asyncio.run(run())
+
+
+def test_controller_current_volatility_refresh_failure_warns_without_stopping(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = FailingVolatilityRefreshExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(range_method="parkinson", volatility_refresh_seconds=1),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        calculated_at = session.params.calculated_at  # type: ignore[union-attr]
+
+        actions = await controller.poll_active_sessions_once(calculated_at + timedelta(seconds=2))
+
+        logs = Repository(db_path).recent_rows("system_logs", limit=20)
+        volatility_log = next(row for row in logs if row["module"] == "volatility")
+        detail = json.loads(volatility_log["detail"])
+
+        assert actions == []
+        assert "AAPLUSDT" in controller.active_sessions
+        assert len(exchange.kline_calls) == 2
+        assert volatility_log["level"] == "WARN"
+        assert volatility_log["message"] == "Current volatility refresh failed."
+        assert detail["symbol"] == "AAPLUSDT"
+        assert detail["method"] == "parkinson"
 
     asyncio.run(run())
 
@@ -2248,6 +2382,93 @@ def test_controller_duplicate_partial_fill_event_does_not_duplicate_trade(tmp_pa
         assert trades[0]["order_id"] == f"{buy_order.order_id}:trade-1"
         assert "AAPLUSDT" not in controller.active_sessions
         assert session_row["state"] == "STOPPED"
+
+    asyncio.run(run())
+
+
+def test_controller_close_session_is_idempotent_after_stopped(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = MockExchangeClient()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        first_close = await controller._close_session(session, "first close", datetime(2026, 7, 4, 10, 1, tzinfo=NY))
+        second_close = await controller._close_session(session, "second close", datetime(2026, 7, 4, 10, 2, tzinfo=NY))
+
+        session_row = Repository(db_path).recent_rows("sessions", limit=1)[0]
+
+        assert first_close is True
+        assert second_close is True
+        assert "AAPLUSDT" not in controller.active_sessions
+        assert session_row["state"] == "STOPPED"
+        assert session_row["close_reason"] == "first close"
+
+    asyncio.run(run())
+
+
+def test_controller_close_session_handles_state_machine_stopped_during_force_close(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = MockExchangeClient()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        stopped_at = datetime(2026, 7, 4, 10, 1, tzinfo=NY)
+
+        async def force_close_marks_stopped(_, __) -> None:
+            controller.repository.close_session(session.session_id, "user stream closed first", stopped_at)
+            controller.state_machine.transition(
+                session.symbol,
+                GridState.STOPPED,
+                "user_stream_close",
+                "stopped while force_close was running",
+                stopped_at,
+            )
+
+        controller.engine.force_close = force_close_marks_stopped  # type: ignore[method-assign]
+
+        result = await controller._close_session(session, "outer close", datetime(2026, 7, 4, 10, 2, tzinfo=NY))
+
+        session_row = Repository(db_path).recent_rows("sessions", limit=1)[0]
+
+        assert result is True
+        assert "AAPLUSDT" not in controller.active_sessions
+        assert session.state == GridState.STOPPED
+        assert session_row["state"] == "STOPPED"
+        assert session_row["close_reason"] == "user stream closed first"
 
     asyncio.run(run())
 

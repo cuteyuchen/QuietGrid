@@ -59,6 +59,36 @@ def test_database_init_persists_wal_for_new_connections(tmp_path) -> None:
     assert journal_mode == "wal"
 
 
+def test_database_init_migrates_existing_sessions_with_volatility_columns(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'IDLE',
+                close_time DATETIME
+            )
+            """
+        )
+        conn.commit()
+
+    init_db(db_path)
+
+    with connect(db_path) as conn:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+
+    assert {
+        "volatility_method",
+        "volatility_value",
+        "volatility_window",
+        "volatility_current_value",
+        "volatility_current_window",
+        "volatility_current_at",
+    }.issubset(columns)
+
+
 def test_dashboard_summary_counts_open_orders(tmp_path) -> None:
     db_path = tmp_path / "quietgrid.db"
     init_db(db_path)
@@ -118,6 +148,39 @@ def test_dashboard_summary_counts_open_orders(tmp_path) -> None:
 
     assert summary["active_sessions"] == 1
     assert summary["open_orders"] == 1
+
+
+def test_repository_persists_session_volatility_snapshot_and_current_value(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "AAPLUSDT", "RUNNING", 200, 10, now)
+
+    repo.update_session_grid(
+        session_id,
+        grid_upper=101.0,
+        grid_lower=99.0,
+        grid_num=4,
+        step_pct=0.005,
+        baseline_atr=0.2,
+        stop_loss_price=98.0,
+        volatility_method="garman_klass",
+        volatility_value=0.0125,
+        volatility_window=60,
+    )
+    repo.update_session_current_volatility(session_id, 0.0105, 30, now)
+
+    row = repo.active_session_volatility_rows()[0]
+
+    assert row["session_id"] == session_id
+    assert row["volatility_method"] == "garman_klass"
+    assert row["volatility_value"] == 0.0125
+    assert row["volatility_window"] == 60
+    assert row["volatility_current_value"] == 0.0105
+    assert row["volatility_current_window"] == 30
+    assert row["volatility_current_at"] == now.isoformat()
 
 
 def test_dashboard_order_status_counts_and_recent_alerts(tmp_path) -> None:

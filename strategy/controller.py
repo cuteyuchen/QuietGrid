@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from math import isfinite
 from typing import Any
@@ -13,6 +13,7 @@ from db.repository import Repository
 from exchange.base import ExchangeClient
 from strategy.cooldown import CooldownConfig, CooldownEvaluator
 from strategy.grid_calculator import GridCalculationError, GridConfig
+from strategy.grid_calculator import calculate_volatility_metric
 from strategy.grid_engine import (
     ORDER_CREATE_RECOVERY_ATTEMPTS,
     ORDER_CREATE_RECOVERY_DELAY_SECONDS,
@@ -86,6 +87,7 @@ class TradingController:
         )
         self.active_sessions: dict[str, SymbolSession] = {}
         self.current_window_id: int | None = None
+        self._volatility_refreshed_at: dict[int, datetime] = {}
 
     async def validate_startup(self, at: datetime | None = None) -> StartupCheck:
         current_time = at or datetime.now(timezone.utc)
@@ -342,15 +344,7 @@ class TradingController:
                     current_time,
                 )
                 continue
-            self.repository.update_session_grid(
-                session_id,
-                params.upper,
-                params.lower,
-                params.grid_num,
-                params.step_pct,
-                params.baseline_atr,
-                params.stop_loss_price,
-            )
+            self._persist_session_grid(session_id, params)
             session = SymbolSession(
                 session_id=session_id,
                 symbol=symbol,
@@ -904,6 +898,7 @@ class TradingController:
                 actions.append((symbol, reconcile_action))
                 await self._close_session(session, "持仓对账异常，强制同步平仓。", current_time)
                 continue
+            await self._refresh_session_current_volatility_if_due(session, current_time)
             last_price = await self._current_price(symbol)
             decision = self.risk.evaluate_symbol(session, last_price, current_time)
             if decision.action == RiskAction.NONE:
@@ -1258,15 +1253,7 @@ class TradingController:
             params = await self.observer.collect_and_calculate(session.symbol, current_price)
             session.params = params
             session.orders.clear()
-            self.repository.update_session_grid(
-                session.session_id,
-                params.upper,
-                params.lower,
-                params.grid_num,
-                params.step_pct,
-                params.baseline_atr,
-                params.stop_loss_price,
-            )
+            self._persist_session_grid(session.session_id, params)
             await self.engine.start(session, current_price)
         except Exception as exc:
             await self._stop_after_cooldown_recovery_failure(session, exc, at)
@@ -1349,6 +1336,9 @@ class TradingController:
             self._close_current_window(at)
 
     async def _close_session(self, session: SymbolSession, reason: str, at: datetime) -> bool:
+        if self._session_is_already_stopped(session):
+            self._finalize_already_stopped_session(session, at)
+            return True
         try:
             await self.engine.force_close(session, reason)
         except Exception as exc:
@@ -1376,6 +1366,9 @@ class TradingController:
                 at,
             )
             return False
+        if self._session_is_already_stopped(session):
+            self._finalize_already_stopped_session(session, at)
+            return True
         self._persist_session_orders(session)
         old_state = session.state
         if old_state != GridState.CLOSING:
@@ -1406,6 +1399,17 @@ class TradingController:
             self._close_current_window(at)
         return True
 
+    def _session_is_already_stopped(self, session: SymbolSession) -> bool:
+        return session.state == GridState.STOPPED or self.state_machine.get_state(session.symbol) == GridState.STOPPED
+
+    def _finalize_already_stopped_session(self, session: SymbolSession, at: datetime) -> None:
+        session.state = GridState.STOPPED
+        session.state_entered_at = at
+        self._persist_session_orders(session)
+        self.active_sessions.pop(session.symbol, None)
+        if not self.active_sessions:
+            self._close_current_window(at)
+
     async def _current_price(self, symbol: str) -> float:
         ticker = await self.exchange.get_24h_ticker(symbol)
         return _ticker_last_price(ticker)
@@ -1413,6 +1417,74 @@ class TradingController:
     def _persist_session_orders(self, session: SymbolSession) -> None:
         for order in session.orders:
             self.repository.upsert_order(session.session_id, order)
+
+    def _persist_session_grid(self, session_id: int, params) -> None:
+        self.repository.update_session_grid(
+            session_id,
+            params.upper,
+            params.lower,
+            params.grid_num,
+            params.step_pct,
+            params.baseline_atr,
+            params.stop_loss_price,
+            params.volatility_method,
+            params.volatility_value,
+            params.volatility_window,
+        )
+        self.repository.update_session_current_volatility(
+            session_id,
+            params.volatility_value,
+            params.volatility_window,
+            params.calculated_at,
+        )
+        self._volatility_refreshed_at[session_id] = params.calculated_at
+
+    async def _refresh_session_current_volatility_if_due(self, session: SymbolSession, at: datetime) -> None:
+        if session.params is None:
+            return
+        last_refreshed = self._volatility_refreshed_at.get(session.session_id)
+        if last_refreshed is not None:
+            elapsed = (at - last_refreshed).total_seconds()
+            if elapsed < self.grid_config.volatility_refresh_seconds:
+                return
+        limit = max(
+            int(self.observer.observer_config.observe_hours * 60),
+            self.observer.observer_config.min_samples,
+        )
+        try:
+            klines = await self.exchange.get_klines(
+                session.symbol,
+                self.observer.observer_config.kline_interval,
+                limit,
+            )
+            _method, volatility_value, volatility_window = calculate_volatility_metric(
+                klines,
+                replace(self.grid_config, min_samples=self.observer.observer_config.min_samples),
+            )
+        except Exception as exc:
+            self.repository.log_system(
+                "WARN",
+                "volatility",
+                "Current volatility refresh failed.",
+                json.dumps(
+                    {
+                        "session_id": session.session_id,
+                        "symbol": session.symbol,
+                        "method": session.params.volatility_method,
+                        "reason": str(exc),
+                    },
+                    ensure_ascii=False,
+                ),
+                at,
+            )
+            return
+        self.repository.update_session_current_volatility(
+            session.session_id,
+            volatility_value,
+            volatility_window,
+            at,
+        )
+        self._volatility_refreshed_at[session.session_id] = at
 
     def _close_current_window(self, at: datetime, status: str = "closed") -> None:
         if self.current_window_id is None:

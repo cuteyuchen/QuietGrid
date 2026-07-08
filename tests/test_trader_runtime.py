@@ -30,6 +30,7 @@ from trader import (
     _run_binance_algo_stop_smoke,
     _run_binance_position_smoke,
     _run_binance_safety_sweep,
+    _run_binance_test_run,
     _create_binance_client_for_module,
     _run_dynamic_price_stream,
     _json_log_detail,
@@ -270,6 +271,87 @@ def test_main_default_mode_does_not_require_testnet(monkeypatch, tmp_path) -> No
     monkeypatch.setattr("trader.init_db", lambda path: None)
 
     main()
+
+
+def test_main_forwards_loop_bounds_to_binance_loop(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "trader.db"
+    config = SimpleNamespace(
+        binance_api_key="key",
+        binance_api_secret="secret",
+        binance_testnet=True,
+        database_path=db_path,
+        raw={"logging": {}, "database": {"path": str(db_path)}},
+    )
+    captured = {}
+
+    async def fake_run_binance_loop(config_arg, max_iterations=None, max_seconds=None):
+        captured["config"] = config_arg
+        captured["max_iterations"] = max_iterations
+        captured["max_seconds"] = max_seconds
+        return ["bounded"]
+
+    monkeypatch.setattr(sys, "argv", ["trader.py", "--binance-loop", "--loop-iterations", "7", "--loop-seconds", "12.5"])
+    monkeypatch.setattr("trader.load_config", lambda: config)
+    monkeypatch.setattr("trader.setup_logging", lambda raw: None)
+    monkeypatch.setattr("trader.init_db", lambda path: None)
+    monkeypatch.setattr("trader._run_binance_loop", fake_run_binance_loop)
+
+    main()
+
+    assert captured == {"config": config, "max_iterations": 7, "max_seconds": 12.5}
+
+
+def test_main_forwards_loop_seconds_to_binance_test_run(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "trader.db"
+    config = SimpleNamespace(
+        binance_api_key="key",
+        binance_api_secret="secret",
+        binance_testnet=True,
+        database_path=db_path,
+        raw={"logging": {}, "database": {"path": str(db_path)}},
+    )
+    captured = {}
+
+    async def fake_run_binance_test_run(config_arg, max_seconds=600.0):
+        captured["config"] = config_arg
+        captured["max_seconds"] = max_seconds
+        return {"test_run_ok": True}
+
+    monkeypatch.setattr(sys, "argv", ["trader.py", "--binance-test-run", "--loop-seconds", "30"])
+    monkeypatch.setattr("trader.load_config", lambda: config)
+    monkeypatch.setattr("trader.setup_logging", lambda raw: None)
+    monkeypatch.setattr("trader.init_db", lambda path: None)
+    monkeypatch.setattr("trader._run_binance_test_run", fake_run_binance_test_run)
+
+    main()
+
+    assert captured == {"config": config, "max_seconds": 30.0}
+
+
+def test_main_binance_test_run_uses_safe_default_seconds(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "trader.db"
+    config = SimpleNamespace(
+        binance_api_key="key",
+        binance_api_secret="secret",
+        binance_testnet=True,
+        database_path=db_path,
+        raw={"logging": {}, "database": {"path": str(db_path)}},
+    )
+    captured = {}
+
+    async def fake_run_binance_test_run(config_arg, max_seconds=600.0):
+        captured["max_seconds"] = max_seconds
+        return {"test_run_ok": True}
+
+    monkeypatch.setattr(sys, "argv", ["trader.py", "--binance-test-run"])
+    monkeypatch.setattr("trader.load_config", lambda: config)
+    monkeypatch.setattr("trader.setup_logging", lambda raw: None)
+    monkeypatch.setattr("trader.init_db", lambda path: None)
+    monkeypatch.setattr("trader._run_binance_test_run", fake_run_binance_test_run)
+
+    main()
+
+    assert captured == {"max_seconds": 600.0}
 
 
 class FakeController:
@@ -816,6 +898,7 @@ class FakeBinanceLoopController:
         self.recovered = False
         self.recoverable_symbols: set[str] | None = None
         self.cleaned_reason: str | None = None
+        self.loop_max_iterations: int | None = None
 
     async def validate_startup(self):
         return FakeStartupCheck()
@@ -830,7 +913,8 @@ class FakeBinanceLoopController:
     async def handle_price_update_event(self, event):
         return None
 
-    async def run_loop(self):
+    async def run_loop(self, max_iterations=None):
+        self.loop_max_iterations = max_iterations
         await asyncio.sleep(0)
         raise RuntimeError("loop failed")
 
@@ -845,7 +929,8 @@ class WaitingBinanceLoopController(FakeBinanceLoopController):
         super().__init__()
         self.loop_cancelled = False
 
-    async def run_loop(self):
+    async def run_loop(self, max_iterations=None):
+        self.loop_max_iterations = max_iterations
         try:
             await asyncio.Future()
         except asyncio.CancelledError:
@@ -1278,6 +1363,226 @@ def test_binance_loop_cleans_up_active_sessions_on_exit(monkeypatch, tmp_path) -
         assert controller.cleaned_reason == "binance_loop_shutdown_cleanup"
         assert exchange.user_stream_cancelled is True
         assert price_stream_cancelled is True
+        assert exchange.closed is True
+
+    asyncio.run(run())
+
+
+def test_binance_loop_passes_max_iterations_to_controller(monkeypatch, tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+        exchange = LoopExchange()
+        controller = FakeBinanceLoopController()
+
+        async def fake_create(**kwargs):
+            return exchange
+
+        def fake_build_controller(exchange_arg, config_arg, live_observation=None):
+            assert exchange_arg is exchange
+            assert live_observation is True
+            return controller
+
+        async def fake_dynamic_price_stream(exchange_arg, controller_arg, poll_seconds=10):
+            await asyncio.Future()
+
+        monkeypatch.setattr("trader.BinanceFuturesClient.create", fake_create)
+        monkeypatch.setattr("trader._build_controller", fake_build_controller)
+        monkeypatch.setattr("trader._run_dynamic_price_stream", fake_dynamic_price_stream)
+        config = SimpleNamespace(
+            binance_api_key="key",
+            binance_api_secret="secret",
+            binance_testnet=True,
+            database_path=db_path,
+            raw={
+                "proxy": {"enabled": False},
+                "selection": BINANCE_SAFE_SELECTION,
+                "timing": {"loop_interval_seconds": 10},
+            },
+        )
+
+        try:
+            await _run_binance_loop(config, max_iterations=3)
+        except RuntimeError as exc:
+            assert "loop failed" in str(exc)
+        else:
+            raise AssertionError("loop failure should propagate after cleanup")
+
+        assert controller.loop_max_iterations == 3
+        assert controller.cleaned_reason == "binance_loop_shutdown_cleanup"
+        assert exchange.closed is True
+
+    asyncio.run(run())
+
+
+def test_binance_loop_bounded_seconds_cleans_up_active_sessions(monkeypatch, tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+        exchange = LoopExchange()
+        controller = WaitingBinanceLoopController()
+        controller.repository = Repository(db_path)
+        price_stream_cancelled = False
+        sweep_calls = []
+
+        async def fake_create(**kwargs):
+            return exchange
+
+        def fake_build_controller(exchange_arg, config_arg, live_observation=None):
+            assert exchange_arg is exchange
+            assert live_observation is True
+            return controller
+
+        async def fake_dynamic_price_stream(exchange_arg, controller_arg, poll_seconds=10):
+            nonlocal price_stream_cancelled
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                price_stream_cancelled = True
+                raise
+
+        async def fake_sweep(exchange_arg, repository_arg, eligible):
+            sweep_calls.append((exchange_arg, repository_arg, tuple(eligible)))
+            return {"safety_sweep_ok": True, "symbols": [], "closed_sessions": []}
+
+        monkeypatch.setattr("trader.BinanceFuturesClient.create", fake_create)
+        monkeypatch.setattr("trader._build_controller", fake_build_controller)
+        monkeypatch.setattr("trader._run_dynamic_price_stream", fake_dynamic_price_stream)
+        monkeypatch.setattr("trader._sweep_binance_symbols", fake_sweep)
+        config = SimpleNamespace(
+            binance_api_key="key",
+            binance_api_secret="secret",
+            binance_testnet=True,
+            database_path=db_path,
+            raw={
+                "proxy": {"enabled": False},
+                "selection": BINANCE_SAFE_SELECTION,
+                "timing": {"loop_interval_seconds": 10},
+            },
+        )
+
+        result = await _run_binance_loop(config, max_seconds=0.01)
+
+        assert result == ["loop_timeout"]
+        assert controller.cleaned_reason == "binance_loop_shutdown_cleanup"
+        assert controller.active_sessions == {}
+        assert controller.loop_cancelled is True
+        assert exchange.user_stream_cancelled is True
+        assert price_stream_cancelled is True
+        assert sweep_calls == [(exchange, controller.repository, ("AAPLUSDT",))]
+        assert exchange.closed is True
+
+    asyncio.run(run())
+
+
+def test_binance_loop_shutdown_cleanup_timeout_uses_safety_sweep_fallback(monkeypatch, tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+        exchange = LoopExchange()
+        controller = WaitingBinanceLoopController()
+        controller.repository = Repository(db_path)
+        fallback_calls = []
+
+        async def hanging_close_all(reason, at=None):
+            controller.cleaned_reason = reason
+            await asyncio.Future()
+
+        async def fake_create(**kwargs):
+            return exchange
+
+        def fake_build_controller(exchange_arg, config_arg, live_observation=None):
+            assert exchange_arg is exchange
+            assert live_observation is True
+            return controller
+
+        async def fake_dynamic_price_stream(exchange_arg, controller_arg, poll_seconds=10):
+            await asyncio.Future()
+
+        async def fake_sweep(exchange_arg, repository_arg, eligible):
+            fallback_calls.append((exchange_arg, repository_arg, tuple(eligible)))
+            controller.active_sessions = {}
+            return {"safety_sweep_ok": True, "symbols": [], "closed_sessions": []}
+
+        controller.close_all_active_sessions = hanging_close_all  # type: ignore[method-assign]
+        monkeypatch.setattr("trader.BinanceFuturesClient.create", fake_create)
+        monkeypatch.setattr("trader._build_controller", fake_build_controller)
+        monkeypatch.setattr("trader._run_dynamic_price_stream", fake_dynamic_price_stream)
+        monkeypatch.setattr("trader._sweep_binance_symbols", fake_sweep)
+        monkeypatch.setattr("trader.BINANCE_LOOP_SHUTDOWN_CLEANUP_TIMEOUT_SECONDS", 0.01)
+        config = SimpleNamespace(
+            binance_api_key="key",
+            binance_api_secret="secret",
+            binance_testnet=True,
+            database_path=db_path,
+            raw={
+                "proxy": {"enabled": False},
+                "selection": BINANCE_SAFE_SELECTION,
+                "timing": {"loop_interval_seconds": 10},
+            },
+        )
+
+        result = await _run_binance_loop(config, max_seconds=0.01)
+
+        logs = Repository(db_path).recent_rows("system_logs", limit=5)
+        messages = [row["message"] for row in logs]
+
+        assert result == ["loop_timeout"]
+        assert fallback_calls == [(exchange, controller.repository, ("AAPLUSDT",))]
+        assert "Binance loop shutdown cleanup failed; running safety sweep fallback." in messages
+        assert "Binance testnet safety sweep completed." in messages
+        assert exchange.closed is True
+
+    asyncio.run(run())
+
+
+def test_binance_loop_cancel_drain_timeout_still_runs_shutdown_cleanup(monkeypatch, tmp_path) -> None:
+    class StubbornCancelController(FakeBinanceLoopController):
+        async def run_loop(self, max_iterations=None):
+            self.loop_max_iterations = max_iterations
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                await asyncio.Future()
+
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+        exchange = LoopExchange()
+        controller = StubbornCancelController()
+
+        async def fake_create(**kwargs):
+            return exchange
+
+        def fake_build_controller(exchange_arg, config_arg, live_observation=None):
+            assert exchange_arg is exchange
+            assert live_observation is True
+            return controller
+
+        async def fake_dynamic_price_stream(exchange_arg, controller_arg, poll_seconds=10):
+            await asyncio.Future()
+
+        monkeypatch.setattr("trader.BinanceFuturesClient.create", fake_create)
+        monkeypatch.setattr("trader._build_controller", fake_build_controller)
+        monkeypatch.setattr("trader._run_dynamic_price_stream", fake_dynamic_price_stream)
+        monkeypatch.setattr("trader.BINANCE_LOOP_TASK_CANCEL_TIMEOUT_SECONDS", 0.01)
+        config = SimpleNamespace(
+            binance_api_key="key",
+            binance_api_secret="secret",
+            binance_testnet=True,
+            database_path=db_path,
+            raw={
+                "proxy": {"enabled": False},
+                "selection": BINANCE_SAFE_SELECTION,
+                "timing": {"loop_interval_seconds": 10},
+            },
+        )
+
+        result = await _run_binance_loop(config, max_seconds=0.01)
+
+        assert result == ["loop_timeout"]
+        assert controller.cleaned_reason == "binance_loop_shutdown_cleanup"
+        assert controller.active_sessions == {}
         assert exchange.closed is True
 
     asyncio.run(run())
@@ -2219,6 +2524,16 @@ def test_binance_safety_sweep_cancels_orders_and_closes_positions(monkeypatch, t
             database_path=db_path,
             raw={"proxy": {"enabled": False}, "selection": {"symbol_allowlist": ["BTCUSDT"]}},
         )
+        repo = Repository(db_path)
+        window_id = repo.create_window(datetime(2026, 7, 4, 10, 0, tzinfo=timezone.utc))
+        session_id = repo.create_session(
+            window_id,
+            "BTCUSDT",
+            "RUNNING",
+            200,
+            10,
+            datetime(2026, 7, 4, 10, 1, tzinfo=timezone.utc),
+        )
 
         result = await _run_binance_safety_sweep(config)
 
@@ -2236,6 +2551,7 @@ def test_binance_safety_sweep_cancels_orders_and_closes_positions(monkeypatch, t
                     "closed_positions": [{"side": "BUY", "qty": 0.25, "position_side": None}],
                 }
             ],
+            "closed_sessions": [{"session_id": session_id, "symbol": "BTCUSDT", "from_state": "RUNNING"}],
         }
         assert exchange.cancel_all_symbols == ["BTCUSDT"]
         assert exchange.market_orders == [
@@ -2255,6 +2571,12 @@ def test_binance_safety_sweep_cancels_orders_and_closes_positions(monkeypatch, t
         assert log["message"] == "Binance testnet safety sweep completed."
         assert detail["symbols"][0]["symbol"] == "BTCUSDT"
         assert detail["symbols"][0]["closed_positions"] == [{"side": "BUY", "qty": 0.25, "position_side": None}]
+        assert detail["closed_sessions"] == [{"session_id": session_id, "symbol": "BTCUSDT", "from_state": "RUNNING"}]
+        session = repo.recent_rows("sessions", limit=1)[0]
+        state_log = repo.recent_rows("state_logs", limit=1)[0]
+        assert session["state"] == "STOPPED"
+        assert session["close_reason"] == "binance_safety_sweep"
+        assert state_log["trigger"] == "binance_safety_sweep"
         assert exchange.closed is True
 
     asyncio.run(run())
@@ -2316,6 +2638,90 @@ def test_binance_safety_sweep_skips_cancel_all_when_no_open_orders(monkeypatch, 
         assert result["symbols"][0]["algo_before"] == 0
         assert exchange.market_orders == []
         assert exchange.closed is True
+
+    asyncio.run(run())
+
+
+def test_binance_test_run_sequences_position_loop_sweep_and_post_check(monkeypatch, tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+        config = SimpleNamespace(database_path=db_path, raw={})
+        calls = []
+
+        async def fake_position_smoke(config_arg):
+            calls.append("position")
+            return {"position_smoke_ok": True, "call": len(calls)}
+
+        async def fake_loop(config_arg, max_seconds=None):
+            calls.append(("loop", max_seconds))
+            return ["loop_timeout"]
+
+        async def fake_safety_sweep(config_arg):
+            calls.append("sweep")
+            return {"safety_sweep_ok": True}
+
+        monkeypatch.setattr("trader._run_binance_position_smoke", fake_position_smoke)
+        monkeypatch.setattr("trader._run_binance_loop", fake_loop)
+        monkeypatch.setattr("trader._run_binance_safety_sweep", fake_safety_sweep)
+
+        result = await _run_binance_test_run(config, max_seconds=30)
+
+        log = Repository(db_path).recent_rows("system_logs", limit=1)[0]
+        detail = json.loads(log["detail"])
+
+        assert calls == ["position", ("loop", 30), "sweep", "position"]
+        assert result["test_run_ok"] is True
+        assert result["max_seconds"] == 30
+        assert result["loop_result"] == ["loop_timeout"]
+        assert result["safety_sweep"] == {"safety_sweep_ok": True}
+        assert result["post_position"] == {"position_smoke_ok": True, "call": 4}
+        assert log["level"] == "INFO"
+        assert log["module"] == "binance_test_run"
+        assert detail["test_run_ok"] is True
+
+    asyncio.run(run())
+
+
+def test_binance_test_run_cleans_up_and_logs_when_loop_fails(monkeypatch, tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+        config = SimpleNamespace(database_path=db_path, raw={})
+        calls = []
+
+        async def fake_position_smoke(config_arg):
+            calls.append("position")
+            return {"position_smoke_ok": True}
+
+        async def fake_loop(config_arg, max_seconds=None):
+            calls.append(("loop", max_seconds))
+            raise RuntimeError("loop failed")
+
+        async def fake_safety_sweep(config_arg):
+            calls.append("sweep")
+            return {"safety_sweep_ok": True}
+
+        monkeypatch.setattr("trader._run_binance_position_smoke", fake_position_smoke)
+        monkeypatch.setattr("trader._run_binance_loop", fake_loop)
+        monkeypatch.setattr("trader._run_binance_safety_sweep", fake_safety_sweep)
+
+        try:
+            await _run_binance_test_run(config, max_seconds=15)
+        except RuntimeError as exc:
+            assert "loop failed" in str(exc)
+        else:
+            raise AssertionError("loop failure should propagate after cleanup")
+
+        log = Repository(db_path).recent_rows("system_logs", limit=1)[0]
+        detail = json.loads(log["detail"])
+
+        assert calls == ["position", ("loop", 15), "sweep", "position"]
+        assert log["level"] == "ERROR"
+        assert log["module"] == "binance_test_run"
+        assert detail["test_run_ok"] is False
+        assert detail["loop_error"] == "loop failed"
+        assert detail["safety_sweep"] == {"safety_sweep_ok": True}
 
     asyncio.run(run())
 

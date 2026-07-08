@@ -94,6 +94,9 @@ class Repository:
         step_pct: float,
         baseline_atr: float,
         stop_loss_price: float,
+        volatility_method: str | None = None,
+        volatility_value: float | None = None,
+        volatility_window: int | None = None,
     ) -> None:
         with connect(self.db_path) as conn:
             conn.execute(
@@ -104,10 +107,44 @@ class Repository:
                     grid_num = ?,
                     step_pct = ?,
                     baseline_atr = ?,
-                    stop_loss_price = ?
+                    stop_loss_price = ?,
+                    volatility_method = ?,
+                    volatility_value = ?,
+                    volatility_window = ?
                 WHERE id = ?
                 """,
-                (grid_upper, grid_lower, grid_num, step_pct, baseline_atr, stop_loss_price, session_id),
+                (
+                    grid_upper,
+                    grid_lower,
+                    grid_num,
+                    step_pct,
+                    baseline_atr,
+                    stop_loss_price,
+                    volatility_method,
+                    volatility_value,
+                    volatility_window,
+                    session_id,
+                ),
+            )
+            conn.commit()
+
+    def update_session_current_volatility(
+        self,
+        session_id: int,
+        volatility_value: float,
+        volatility_window: int,
+        calculated_at: datetime,
+    ) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE sessions
+                SET volatility_current_value = ?,
+                    volatility_current_window = ?,
+                    volatility_current_at = ?
+                WHERE id = ?
+                """,
+                (volatility_value, volatility_window, calculated_at.isoformat(), session_id),
             )
             conn.commit()
 
@@ -398,6 +435,33 @@ class Repository:
         if isinstance(parsed, dict):
             result.update(parsed)
         return result
+
+    def active_session_volatility_rows(self) -> list[dict[str, Any]]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id AS session_id,
+                    symbol,
+                    state,
+                    volatility_method,
+                    volatility_value,
+                    volatility_window,
+                    volatility_current_value,
+                    volatility_current_window,
+                    volatility_current_at,
+                    grid_upper,
+                    grid_lower,
+                    grid_num,
+                    step_pct,
+                    baseline_atr
+                FROM sessions
+                WHERE close_time IS NULL
+                  AND state != 'STOPPED'
+                ORDER BY id DESC
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def dashboard_summary(self) -> dict[str, Any]:
         with connect(self.db_path) as conn:

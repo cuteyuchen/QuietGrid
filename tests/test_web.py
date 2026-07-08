@@ -156,6 +156,51 @@ def test_commission_symbol_rows_are_display_ready() -> None:
     ]
 
 
+def test_active_volatility_rows_are_display_ready() -> None:
+    rows = web._localize_rows(
+        web._active_volatility_rows(
+            [
+                {
+                    "session_id": 7,
+                    "symbol": "AAPLUSDT",
+                    "state": "RUNNING",
+                    "volatility_method": "garman_klass",
+                    "volatility_value": 0.0125,
+                    "volatility_window": 60,
+                    "volatility_current_value": 0.0105,
+                    "volatility_current_window": 30,
+                    "volatility_current_at": "2026-07-08T12:00:00+00:00",
+                    "grid_lower": 99.0,
+                    "grid_upper": 101.0,
+                    "grid_num": 4,
+                    "step_pct": 0.005,
+                    "baseline_atr": 0.2,
+                }
+            ]
+        ),
+        table="active_volatility",
+    )
+
+    assert rows == [
+        {
+            "会话编号": 7,
+            "标的": "AAPLUSDT",
+            "状态": "网格运行",
+            "波动率算法": "Garman-Klass",
+            "建仓波动率(%)": 1.25,
+            "建仓窗口K线数": 60,
+            "当前波动率(%)": 1.05,
+            "当前窗口K线数": 30,
+            "最近重算时间": "2026-07-08T12:00:00+00:00",
+            "网格下沿": 99.0,
+            "网格上沿": 101.0,
+            "网格数量": 4,
+            "网格间距": 0.005,
+            "基准 ATR": 0.2,
+        }
+    ]
+
+
 def test_localize_message_translates_common_system_messages() -> None:
     assert web._localize_message("Selection completed.") == "选币完成。"
     assert (
@@ -279,9 +324,17 @@ def test_testnet_verification_rows_summarize_latest_logs() -> None:
                                 "position_after": {"qty": 0.0, "long_qty": 0.0, "short_qty": 0.0},
                             }
                         ],
+                        "closed_sessions": [{"session_id": 12, "symbol": "BTCUSDT", "from_state": "RUNNING"}],
                     }
                 ),
                 "log_time": "2026-07-07T12:03:00+00:00",
+            },
+            {
+                "module": "binance_safety_sweep",
+                "level": "ERROR",
+                "message": "Older sweep should not override latest.",
+                "detail": json.dumps({"safety_sweep_ok": False, "symbols": []}),
+                "log_time": "2026-07-07T11:03:00+00:00",
             },
         ]
     )
@@ -292,8 +345,10 @@ def test_testnet_verification_rows_summarize_latest_logs() -> None:
     assert by_module["commission_health"]["verification_status"] == "warning"
     assert by_module["binance_direct_order_diagnose"]["verification_status"] == "unknown"
     assert by_module["binance_safety_sweep"]["verification_status"] == "passed"
+    assert by_module["binance_safety_sweep"]["last_checked"] == "2026-07-07T12:03:00+00:00"
     assert by_module["binance_price_stream_smoke"]["verification_status"] == "not_run"
     assert "清扫标的: 1" in by_module["binance_safety_sweep"]["detail_summary"]
+    assert "同步关闭会话: 1" in by_module["binance_safety_sweep"]["detail_summary"]
 
 
 def test_testnet_verification_rows_localize_status_and_detect_position_residual() -> None:

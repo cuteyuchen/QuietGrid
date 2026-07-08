@@ -29,6 +29,7 @@ grid:
   safety_multiplier: 3.5
   max_grid_num: 20
   max_range_pct: 0.05
+  volatility_refresh_seconds: 60
 
 cooldown:
   atr_period: 14

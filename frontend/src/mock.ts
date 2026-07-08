@@ -28,6 +28,11 @@ export type GridSession = {
   openOrderCount: number
 }
 
+export type ControlState = {
+  newEntriesPaused: boolean
+  newEntriesPausedUpdatedAt: string
+}
+
 export type VerificationRow = {
   name: string
   status: string
@@ -54,6 +59,11 @@ export const summary: ConsoleSummary = {
   balance: 4829.59,
   riskLevel: '正常',
   latestSystemMessage: '测试网有界运行完成',
+}
+
+export const controlState: ControlState = {
+  newEntriesPaused: false,
+  newEntriesPausedUpdatedAt: '-',
 }
 
 export const sessions: GridSession[] = [

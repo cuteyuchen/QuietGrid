@@ -267,6 +267,15 @@ class TradingController:
                 await self.reconcile_positions_once(current_time, include_inactive=True)
             return RunOnceResult("outside_window", [], [])
         await self.reconcile_positions_once(current_time, include_inactive=True)
+        if self.repository.new_entries_paused():
+            self.repository.log_system(
+                "INFO",
+                "controller",
+                "New entries are paused by console control.",
+                None,
+                current_time,
+            )
+            return RunOnceResult("new_entries_paused", [], [])
 
         selected = await self.selector.select()
         selected_symbols = [item.symbol for item in selected]

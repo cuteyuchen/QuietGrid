@@ -329,6 +329,41 @@ class Repository:
         except Exception:
             logging.getLogger(__name__).warning("system log notification failed", exc_info=True)
 
+    def set_control_state(self, key: str, value: Any, updated_at: datetime) -> None:
+        normalized_key = str(key).strip()
+        if not normalized_key:
+            raise ValueError("control state key must not be empty")
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO control_state (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (normalized_key, json.dumps(value, ensure_ascii=False), updated_at.isoformat()),
+            )
+            conn.commit()
+
+    def get_control_state(self) -> dict[str, Any]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute("SELECT key, value, updated_at FROM control_state ORDER BY key").fetchall()
+        result: dict[str, Any] = {}
+        for row in rows:
+            try:
+                value = json.loads(str(row["value"]))
+            except json.JSONDecodeError:
+                value = row["value"]
+            result[str(row["key"])] = {"value": value, "updated_at": row["updated_at"]}
+        return result
+
+    def new_entries_paused(self) -> bool:
+        state = self.get_control_state().get("new_entries_paused")
+        if not isinstance(state, dict):
+            return False
+        return bool(state.get("value"))
+
     def recent_rows(self, table: str, limit: int = 50) -> list[dict[str, Any]]:
         if table not in {"windows", "sessions", "orders", "trades", "state_logs", "system_logs"}:
             raise ValueError(f"不支持查询表: {table}")

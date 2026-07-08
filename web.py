@@ -483,6 +483,7 @@ _MODULE_LABELS = {
     "force_close": "强制离场",
     "order_event": "订单事件",
     "partial_fill": "部分成交",
+    "console_action": "控制台动作",
     "risk": "风控",
     "test": "测试",
 }
@@ -527,6 +528,10 @@ _MESSAGE_LABELS = {
     "Binance testnet bounded run completed.": "Binance 测试网有界运行完成。",
     "Binance testnet bounded run failed after cleanup.": "Binance 测试网有界运行失败，已执行清理。",
     "Binance loop bounded runtime reached; shutting down.": "Binance 循环达到有界运行时长，正在关闭。",
+    "Console action requested.": "控制台动作已请求。",
+    "Console action completed.": "控制台动作已完成。",
+    "Console action failed.": "控制台动作执行失败。",
+    "New entries are paused by console control.": "控制台已暂停新开仓。",
     "Binance testnet client creation failed.": "Binance 测试网客户端创建失败。",
     "Grid calculation failed; symbol skipped.": "网格参数计算失败，已跳过该标的。",
     "Grid start failed; symbol skipped.": "网格启动失败，已跳过该标的。",

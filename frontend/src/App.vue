@@ -18,9 +18,10 @@ import {
   Square,
   Trash2,
 } from '@lucide/vue'
-import { loadConsoleData } from './api'
+import { executeConsoleAction, loadConsoleData, type ConsoleAction } from './api'
 import {
   auditLogs as fallbackAuditLogs,
+  controlState as fallbackControlState,
   sessions as fallbackSessions,
   summary as fallbackSummary,
   verificationRows as fallbackVerificationRows,
@@ -38,13 +39,18 @@ const tabs = [
 const activeTab = ref<(typeof tabs)[number]['key']>('overview')
 const selectedVolatility = ref('std')
 const testRunSeconds = ref(600)
-const paused = ref(false)
 const loading = ref(false)
+const actionBusy = ref<ConsoleAction | ''>('')
 const dataError = ref('')
+const actionMessage = ref('')
+const actionError = ref('')
 const summary = ref(fallbackSummary)
+const controlState = ref(fallbackControlState)
 const sessions = ref(fallbackSessions)
 const verificationRows = ref(fallbackVerificationRows)
 const auditLogs = ref(fallbackAuditLogs)
+const pendingAction = ref<ActionConfig | null>(null)
+const actionReason = ref('控制台手动操作')
 
 const activeTabMeta = computed(() => tabs.find((tab) => tab.key === activeTab.value) ?? tabs[0])
 
@@ -77,6 +83,15 @@ const statusCards = computed(() => [
 ])
 
 const dataSourceLabel = computed(() => (dataError.value ? '离线示例' : '实时数据'))
+const paused = computed(() => controlState.value.newEntriesPaused)
+
+type ActionConfig = {
+  action: ConsoleAction
+  title: string
+  description: string
+  buttonLabel: string
+  tone: 'primary' | 'danger' | 'secondary'
+}
 
 function formatPct(value: number) {
   return `${(value * 100).toFixed(3)}%`
@@ -103,6 +118,7 @@ async function refreshData() {
   try {
     const data = await loadConsoleData()
     summary.value = data.summary
+    controlState.value = data.controlState
     sessions.value = data.sessions
     verificationRows.value = data.verificationRows
     auditLogs.value = data.auditLogs
@@ -111,6 +127,76 @@ async function refreshData() {
     dataError.value = error instanceof Error ? error.message : '无法连接控制台 API'
   } finally {
     loading.value = false
+  }
+}
+
+function openAction(config: ActionConfig) {
+  actionMessage.value = ''
+  actionError.value = ''
+  actionReason.value = config.title
+  pendingAction.value = config
+}
+
+function closeAction() {
+  if (actionBusy.value) {
+    return
+  }
+  pendingAction.value = null
+}
+
+async function confirmAction() {
+  if (!pendingAction.value || actionBusy.value) {
+    return
+  }
+  const config = pendingAction.value
+  actionBusy.value = config.action
+  actionMessage.value = ''
+  actionError.value = ''
+  try {
+    const result = await executeConsoleAction(config.action, {
+      reason: actionReason.value.trim() || config.title,
+      loopSeconds: config.action === 'testnet-run' ? testRunSeconds.value : undefined,
+    })
+    actionMessage.value = result.message
+    pendingAction.value = null
+    await refreshData()
+  } catch (error) {
+    actionError.value = error instanceof Error ? error.message : '控制动作执行失败'
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
+function testnetRunAction(): ActionConfig {
+  return {
+    action: 'testnet-run',
+    title: '执行一键测试网流程',
+    description: `将运行 ${testRunSeconds.value} 秒有界测试，并自动执行前置持仓检查、安全清扫和后置检查。`,
+    buttonLabel: '确认执行',
+    tone: 'primary',
+  }
+}
+
+function safetySweepAction(): ActionConfig {
+  return {
+    action: 'safety-sweep',
+    title: '执行安全清扫',
+    description: '将撤销 allowlist 标的挂单、尝试关闭残留仓位，并同步关闭数据库中的未结束会话。',
+    buttonLabel: '确认清扫',
+    tone: 'danger',
+  }
+}
+
+function pauseToggleAction(): ActionConfig {
+  const willResume = paused.value
+  return {
+    action: willResume ? 'resume-new-entries' : 'pause-new-entries',
+    title: willResume ? '恢复新开仓' : '暂停新开仓',
+    description: willResume
+      ? '后续交易循环可以继续选择新标的并创建新网格。'
+      : '后续交易循环会跳过新标的选择，不会新建网格；已存在会话仍继续对账和风控。',
+    buttonLabel: willResume ? '确认恢复' : '确认暂停',
+    tone: willResume ? 'secondary' : 'danger',
   }
 }
 
@@ -178,7 +264,7 @@ onMounted(() => {
           <button class="icon-button" type="button" aria-label="刷新数据" :disabled="loading" @click="refreshData">
             <RefreshCw :size="18" :class="{ spinning: loading }" />
           </button>
-          <button class="danger-button" type="button">
+          <button class="danger-button" type="button" :disabled="Boolean(actionBusy)" @click="openAction(safetySweepAction())">
             <Trash2 :size="18" />
             安全清扫
           </button>
@@ -193,7 +279,7 @@ onMounted(() => {
             <p class="muted">{{ summary.latestSystemMessage || '等待系统日志写入后展示最近运行状态。' }}</p>
           </div>
           <div class="hero-actions">
-            <button class="primary-button" type="button">
+            <button class="primary-button" type="button" :disabled="Boolean(actionBusy)" @click="openAction(testnetRunAction())">
               <Play :size="18" />
               启动有界测试
             </button>
@@ -248,11 +334,14 @@ onMounted(() => {
 
       <section v-if="activeTab === 'grids'" class="panel-stack">
         <div class="control-bar">
-          <button class="secondary-button" type="button" @click="paused = !paused">
+          <button class="secondary-button" type="button" :disabled="Boolean(actionBusy)" @click="openAction(pauseToggleAction())">
             <CirclePause :size="18" />
             {{ paused ? '恢复新开仓' : '暂停新开仓' }}
           </button>
-          <button class="danger-button" type="button">
+          <span class="control-note">
+            当前：{{ paused ? '已暂停新开仓' : '允许新开仓' }} · {{ controlState.newEntriesPausedUpdatedAt }}
+          </span>
+          <button class="danger-button" type="button" disabled>
             <Square :size="18" />
             停止全部网格
           </button>
@@ -277,7 +366,7 @@ onMounted(() => {
               <span>{{ session.lower.toFixed(2) }} - {{ session.upper.toFixed(2) }}</span>
               <span>{{ session.gridNum }} / {{ formatPct(session.stepPct) }}</span>
               <span>{{ formatPct(session.currentVolatility) }}</span>
-              <button class="compact-danger" type="button">停止</button>
+              <button class="compact-danger" type="button" disabled>停止</button>
             </div>
             <div v-if="sessions.length === 0" class="table-row empty-row" role="row">
               <span>暂无活动或最近网格</span>
@@ -329,11 +418,11 @@ onMounted(() => {
             <span>运行秒数</span>
             <input v-model="testRunSeconds" type="number" min="20" step="10" />
           </label>
-          <button class="primary-button" type="button">
+          <button class="primary-button" type="button" :disabled="Boolean(actionBusy)" @click="openAction(testnetRunAction())">
             <Play :size="18" />
             执行测试流程
           </button>
-          <button class="danger-button" type="button">
+          <button class="danger-button" type="button" :disabled="Boolean(actionBusy)" @click="openAction(safetySweepAction())">
             <Trash2 :size="18" />
             仅执行安全清扫
           </button>
@@ -357,5 +446,36 @@ onMounted(() => {
         </section>
       </section>
     </section>
+
+    <div v-if="actionMessage || actionError" class="toast" :class="{ error: actionError }" role="status">
+      {{ actionError || actionMessage }}
+    </div>
+
+    <div v-if="pendingAction" class="modal-backdrop" role="presentation" @click.self="closeAction">
+      <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div>
+          <p class="eyebrow">控制动作确认</p>
+          <h3 id="confirm-title">{{ pendingAction.title }}</h3>
+          <p class="muted">{{ pendingAction.description }}</p>
+        </div>
+        <label>
+          <span>操作原因</span>
+          <textarea v-model="actionReason" rows="3" maxlength="200" />
+        </label>
+        <div class="modal-actions">
+          <button class="secondary-button" type="button" :disabled="Boolean(actionBusy)" @click="closeAction">取消</button>
+          <button
+            :class="pendingAction.tone === 'danger' ? 'danger-button' : pendingAction.tone === 'primary' ? 'primary-button' : 'secondary-button'"
+            type="button"
+            :disabled="Boolean(actionBusy)"
+            @click="confirmAction"
+          >
+            <RefreshCw v-if="actionBusy === pendingAction.action" :size="18" class="spinning" />
+            <CheckCircle2 v-else :size="18" />
+            {{ actionBusy === pendingAction.action ? '执行中' : pendingAction.buttonLabel }}
+          </button>
+        </div>
+      </section>
+    </div>
   </main>
 </template>

@@ -98,6 +98,12 @@ CREATE TABLE IF NOT EXISTS system_logs (
     detail          TEXT,
     log_time        DATETIME NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS control_state (
+    key             TEXT PRIMARY KEY,
+    value           TEXT NOT NULL,
+    updated_at      DATETIME NOT NULL
+);
 """
 
 INDEX_SCHEMA_SQL = """

@@ -289,6 +289,24 @@ def test_log_system_persists_when_notifier_fails(tmp_path) -> None:
     assert row["message"] == "Position mismatch."
 
 
+def test_repository_persists_control_state(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 8, tzinfo=timezone.utc)
+
+    repo.set_control_state("new_entries_paused", True, now)
+
+    state = repo.get_control_state()
+    assert state["new_entries_paused"]["value"] is True
+    assert state["new_entries_paused"]["updated_at"] == now.isoformat()
+    assert repo.new_entries_paused() is True
+
+    repo.set_control_state("new_entries_paused", False, now)
+
+    assert repo.new_entries_paused() is False
+
+
 def test_latest_commission_health_parses_latest_detail(tmp_path) -> None:
     db_path = tmp_path / "quietgrid.db"
     init_db(db_path)

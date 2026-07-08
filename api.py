@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 import web as legacy_web
 from core.config import AppConfig, load_config
@@ -24,7 +27,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             "http://localhost:5173",
         ],
         allow_credentials=False,
-        allow_methods=["GET"],
+        allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
 
@@ -59,6 +62,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             "database": str(app_config.database_path),
             "balance": None,
         }
+
+    @app.get("/api/control-state")
+    def control_state(repo: Repository = Depends(get_repository)) -> dict[str, Any]:
+        return _control_state_payload(repo)
 
     @app.get("/api/sessions/active")
     def active_sessions(
@@ -106,7 +113,64 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         rows = legacy_web._testnet_verification_rows(log_rows)
         return {"items": [_verification_payload(row) for row in rows]}
 
+    @app.post("/api/actions/safety-sweep")
+    async def action_safety_sweep(
+        request: ConsoleActionRequest,
+        repo: Repository = Depends(get_repository),
+    ) -> dict[str, Any]:
+        _ensure_testnet_action(app_config)
+        _require_confirm(request)
+        return await _run_console_action(
+            repo,
+            action="safety_sweep",
+            label="安全清扫",
+            request=request,
+            runner=lambda: _run_safety_sweep_action(app_config),
+        )
+
+    @app.post("/api/actions/testnet-run")
+    async def action_testnet_run(
+        request: ConsoleActionRequest,
+        repo: Repository = Depends(get_repository),
+    ) -> dict[str, Any]:
+        _ensure_testnet_action(app_config)
+        _require_confirm(request)
+        seconds = float(request.loop_seconds or 600)
+        if seconds < 20:
+            raise HTTPException(status_code=422, detail="运行秒数不能小于 20。")
+        return await _run_console_action(
+            repo,
+            action="testnet_run",
+            label="一键测试网流程",
+            request=request,
+            runner=lambda: _run_testnet_run_action(app_config, seconds),
+            extra_detail={"loop_seconds": seconds},
+        )
+
+    @app.post("/api/actions/pause-new-entries")
+    def action_pause_new_entries(
+        request: ConsoleActionRequest,
+        repo: Repository = Depends(get_repository),
+    ) -> dict[str, Any]:
+        _require_confirm(request)
+        return _set_new_entries_paused(repo, request, paused=True)
+
+    @app.post("/api/actions/resume-new-entries")
+    def action_resume_new_entries(
+        request: ConsoleActionRequest,
+        repo: Repository = Depends(get_repository),
+    ) -> dict[str, Any]:
+        _require_confirm(request)
+        return _set_new_entries_paused(repo, request, paused=False)
+
     return app
+
+
+class ConsoleActionRequest(BaseModel):
+    confirm: bool = False
+    reason: str = Field(default="控制台手动操作", min_length=1, max_length=200)
+    request_id: str | None = Field(default=None, max_length=80)
+    loop_seconds: float | None = Field(default=None, ge=20, le=86400)
 
 
 app = create_app()
@@ -114,6 +178,126 @@ app = create_app()
 
 def _mode_label(config: AppConfig) -> str:
     return "测试网" if config.binance_testnet else "未确认"
+
+
+def _require_confirm(request: ConsoleActionRequest) -> None:
+    if not request.confirm:
+        raise HTTPException(status_code=400, detail="控制动作需要 confirm=true。")
+
+
+def _ensure_testnet_action(config: AppConfig) -> None:
+    if not config.binance_testnet:
+        raise HTTPException(status_code=409, detail="当前不是测试网模式，拒绝执行交易控制动作。")
+
+
+def _control_state_payload(repo: Repository) -> dict[str, Any]:
+    state = repo.get_control_state()
+    pause_state = state.get("new_entries_paused")
+    return {
+        "new_entries_paused": bool(pause_state.get("value")) if isinstance(pause_state, dict) else False,
+        "new_entries_paused_updated_at": pause_state.get("updated_at") if isinstance(pause_state, dict) else "",
+    }
+
+
+async def _run_console_action(
+    repo: Repository,
+    action: str,
+    label: str,
+    request: ConsoleActionRequest,
+    runner,
+    extra_detail: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    request_id = request.request_id or str(uuid4())
+    started_at = datetime.now(timezone.utc)
+    detail = _action_detail(action, label, request, request_id, extra_detail)
+    repo.log_system("INFO", "console_action", "Console action requested.", _json_detail(detail), started_at)
+    try:
+        result = await runner()
+    except Exception as exc:
+        repo.log_system(
+            "ERROR",
+            "console_action",
+            "Console action failed.",
+            _json_detail({**detail, "error_type": type(exc).__name__, "error": str(exc)}),
+            datetime.now(timezone.utc),
+        )
+        raise HTTPException(status_code=500, detail=f"{label}执行失败：{exc}") from exc
+    repo.log_system(
+        "INFO",
+        "console_action",
+        "Console action completed.",
+        _json_detail({**detail, "result": result}),
+        datetime.now(timezone.utc),
+    )
+    return {
+        "ok": True,
+        "action": action,
+        "label": label,
+        "request_id": request_id,
+        "message": f"{label}已完成。",
+        "result": result,
+    }
+
+
+def _set_new_entries_paused(repo: Repository, request: ConsoleActionRequest, paused: bool) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    request_id = request.request_id or str(uuid4())
+    now = datetime.now(timezone.utc)
+    action = "pause_new_entries" if paused else "resume_new_entries"
+    label = "暂停新开仓" if paused else "恢复新开仓"
+    detail = _action_detail(action, label, request, request_id)
+    repo.log_system("INFO", "console_action", "Console action requested.", _json_detail(detail), now)
+    repo.set_control_state("new_entries_paused", paused, now)
+    repo.log_system(
+        "INFO",
+        "console_action",
+        "Console action completed.",
+        _json_detail({**detail, "new_entries_paused": paused}),
+        datetime.now(timezone.utc),
+    )
+    return {
+        "ok": True,
+        "action": action,
+        "label": label,
+        "request_id": request_id,
+        "message": f"{label}已完成。",
+        "control_state": _control_state_payload(repo),
+    }
+
+
+def _action_detail(
+    action: str,
+    label: str,
+    request: ConsoleActionRequest,
+    request_id: str,
+    extra_detail: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "action": action,
+        "label": label,
+        "request_id": request_id,
+        "reason": request.reason,
+        **(extra_detail or {}),
+    }
+
+
+def _json_detail(value: dict[str, Any]) -> str:
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
+async def _run_safety_sweep_action(config: AppConfig) -> dict[str, Any]:
+    from trader import _run_binance_safety_sweep
+
+    return await _run_binance_safety_sweep(config)
+
+
+async def _run_testnet_run_action(config: AppConfig, seconds: float) -> dict[str, Any]:
+    from trader import _run_binance_test_run
+
+    return await _run_binance_test_run(config, max_seconds=seconds)
 
 
 def _risk_level(latest_log: dict[str, Any] | None) -> str:

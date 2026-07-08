@@ -1,4 +1,4 @@
-import type { AuditLog, ConsoleSummary, GridSession, VerificationRow } from './mock'
+import type { AuditLog, ConsoleSummary, ControlState, GridSession, VerificationRow } from './mock'
 
 type ApiList<T> = {
   items: T[]
@@ -52,16 +52,40 @@ type ApiAuditLog = {
   message: string
 }
 
+type ApiControlState = {
+  new_entries_paused: boolean
+  new_entries_paused_updated_at: string
+}
+
+export type ConsoleAction = 'safety-sweep' | 'testnet-run' | 'pause-new-entries' | 'resume-new-entries'
+
+export type ConsoleActionPayload = {
+  reason: string
+  loopSeconds?: number
+}
+
+export type ConsoleActionResult = {
+  ok: boolean
+  action: string
+  label: string
+  request_id: string
+  message: string
+  control_state?: ApiControlState
+  result?: unknown
+}
+
 export type ConsoleData = {
   summary: ConsoleSummary
+  controlState: ControlState
   sessions: GridSession[]
   verificationRows: VerificationRow[]
   auditLogs: AuditLog[]
 }
 
 export async function loadConsoleData(): Promise<ConsoleData> {
-  const [summary, sessions, verificationRows, auditLogs] = await Promise.all([
+  const [summary, controlState, sessions, verificationRows, auditLogs] = await Promise.all([
     fetchJson<ApiSummary>('/api/summary'),
+    fetchJson<ApiControlState>('/api/control-state'),
     fetchJson<ApiList<ApiSession>>('/api/sessions/active?include_recent=true&limit=20'),
     fetchJson<ApiList<ApiVerificationRow>>('/api/verification/testnet'),
     fetchJson<ApiList<ApiAuditLog>>('/api/logs/system?limit=20'),
@@ -69,10 +93,35 @@ export async function loadConsoleData(): Promise<ConsoleData> {
 
   return {
     summary: mapSummary(summary),
+    controlState: mapControlState(controlState),
     sessions: sessions.items.map(mapSession),
     verificationRows: verificationRows.items.map(mapVerificationRow),
     auditLogs: auditLogs.items.map(mapAuditLog),
   }
+}
+
+export async function executeConsoleAction(
+  action: ConsoleAction,
+  payload: ConsoleActionPayload,
+): Promise<ConsoleActionResult> {
+  const response = await fetch(`/api/actions/${action}`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      confirm: true,
+      reason: payload.reason,
+      request_id: crypto.randomUUID(),
+      loop_seconds: payload.loopSeconds,
+    }),
+  })
+  const body = (await response.json()) as ConsoleActionResult | { detail?: string }
+  if (!response.ok) {
+    throw new Error('detail' in body && body.detail ? body.detail : `请求失败：${response.status}`)
+  }
+  return body as ConsoleActionResult
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -81,6 +130,13 @@ async function fetchJson<T>(url: string): Promise<T> {
     throw new Error(`请求失败：${response.status}`)
   }
   return (await response.json()) as T
+}
+
+function mapControlState(value: ApiControlState): ControlState {
+  return {
+    newEntriesPaused: Boolean(value.new_entries_paused),
+    newEntriesPausedUpdatedAt: compactTime(value.new_entries_paused_updated_at),
+  }
 }
 
 function mapSummary(value: ApiSummary): ConsoleSummary {

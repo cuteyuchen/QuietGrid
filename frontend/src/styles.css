@@ -36,7 +36,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -51,7 +52,8 @@ button:disabled {
 
 button:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible {
   outline: 3px solid rgb(240 184 79 / 75%);
   outline-offset: 2px;
 }
@@ -218,6 +220,13 @@ h3 {
 .control-bar {
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.control-note {
+  align-self: center;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .data-source {
@@ -467,7 +476,8 @@ label span {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 44px;
   border: 1px solid var(--line);
@@ -475,6 +485,13 @@ select {
   background: #111315;
   color: var(--text);
   padding: 0 12px;
+}
+
+textarea {
+  min-height: 96px;
+  padding: 10px 12px;
+  resize: vertical;
+  line-height: 1.5;
 }
 
 .audit-row {
@@ -490,6 +507,60 @@ select {
   color: var(--muted);
   padding: 14px;
   line-height: 1.5;
+}
+
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 60;
+  max-width: min(420px, calc(100vw - 32px));
+  border: 1px solid rgb(61 214 178 / 36%);
+  border-radius: 8px;
+  background: #10251f;
+  color: #d8fff4;
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+  line-height: 1.5;
+}
+
+.toast.error {
+  border-color: rgb(239 100 97 / 44%);
+  background: #2b1112;
+  color: #ffd9d8;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 58%);
+  padding: 18px;
+}
+
+.confirm-modal {
+  display: grid;
+  width: min(520px, 100%);
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 22px;
+  box-shadow: var(--shadow);
+}
+
+.confirm-modal h3 {
+  margin-bottom: 8px;
+  font-size: 22px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 980px) {
@@ -539,6 +610,14 @@ select {
   .data-source {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .modal-actions {
+    justify-content: stretch;
+  }
+
+  .modal-actions button {
+    flex: 1 1 160px;
   }
 }
 

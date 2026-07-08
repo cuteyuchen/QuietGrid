@@ -439,6 +439,42 @@ def test_controller_run_once_starts_mock_grid_and_persists_state(tmp_path) -> No
     asyncio.run(run())
 
 
+def test_controller_run_once_respects_paused_new_entries(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        repo.set_control_state("new_entries_paused", True, now)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        result = await controller.run_once(now)
+
+        assert result.status == "new_entries_paused"
+        assert result.selected_symbols == []
+        assert result.started_symbols == []
+        assert repo.recent_rows("windows") == []
+        log = repo.recent_rows("system_logs", limit=1)[0]
+        assert log["module"] == "controller"
+        assert log["message"] == "New entries are paused by console control."
+
+    asyncio.run(run())
+
+
 def test_controller_run_once_persists_volatility_snapshot(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"

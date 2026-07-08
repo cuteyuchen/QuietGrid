@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
+import api as api_module
 from api import create_app
 from core.config import AppConfig
 from core.models import GridOrder, OrderSide, OrderStatus
@@ -156,6 +157,82 @@ def test_console_api_exposes_testnet_verification_rows(tmp_path) -> None:
     assert safety_sweep["status"] == "passed"
     assert safety_sweep["status_label"] == "通过"
     assert "清扫标的: 1" in safety_sweep["detail"]
+
+
+def test_console_action_requires_confirmation(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    client = TestClient(create_app(_test_config(db_path)))
+
+    response = client.post("/api/actions/pause-new-entries", json={"confirm": False, "reason": "test"})
+
+    assert response.status_code == 400
+    assert "confirm=true" in response.json()["detail"]
+
+
+def test_console_pause_and_resume_new_entries_persist_state(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    client = TestClient(create_app(_test_config(db_path)))
+
+    pause_response = client.post(
+        "/api/actions/pause-new-entries",
+        json={"confirm": True, "reason": "测试暂停", "request_id": "pause-1"},
+    )
+    resume_response = client.post(
+        "/api/actions/resume-new-entries",
+        json={"confirm": True, "reason": "测试恢复", "request_id": "resume-1"},
+    )
+
+    assert pause_response.status_code == 200
+    assert pause_response.json()["control_state"]["new_entries_paused"] is True
+    assert resume_response.status_code == 200
+    assert resume_response.json()["control_state"]["new_entries_paused"] is False
+    control_state = client.get("/api/control-state").json()
+    assert control_state["new_entries_paused"] is False
+    logs = Repository(db_path).recent_rows("system_logs", limit=4)
+    assert {row["module"] for row in logs} == {"console_action"}
+    assert any("resume_new_entries" in row["detail"] for row in logs)
+    assert any("pause_new_entries" in row["detail"] for row in logs)
+
+
+def test_console_safety_sweep_action_runs_with_audit_log(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+
+    async def fake_safety_sweep(config):
+        return {"safety_sweep_ok": True, "symbols": []}
+
+    monkeypatch.setattr(api_module, "_run_safety_sweep_action", fake_safety_sweep)
+    client = TestClient(create_app(_test_config(db_path, testnet=True)))
+
+    response = client.post(
+        "/api/actions/safety-sweep",
+        json={"confirm": True, "reason": "测试清扫", "request_id": "sweep-1"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["action"] == "safety_sweep"
+    assert body["result"]["safety_sweep_ok"] is True
+    logs = Repository(db_path).recent_rows("system_logs", limit=2)
+    assert [row["message"] for row in logs] == ["Console action completed.", "Console action requested."]
+    assert all(row["module"] == "console_action" for row in logs)
+
+
+def test_console_testnet_run_rejects_non_testnet(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+
+    async def fake_test_run(config, seconds):
+        return {"test_run_ok": True, "seconds": seconds}
+
+    monkeypatch.setattr(api_module, "_run_testnet_run_action", fake_test_run)
+    client = TestClient(create_app(_test_config(db_path, testnet=False)))
+
+    response = client.post(
+        "/api/actions/testnet-run",
+        json={"confirm": True, "reason": "测试运行", "loop_seconds": 20},
+    )
+
+    assert response.status_code == 409
 
 
 def _test_config(db_path, testnet: bool = True) -> AppConfig:

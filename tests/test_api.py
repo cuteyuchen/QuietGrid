@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+
+from fastapi.testclient import TestClient
+
+from api import create_app
+from core.config import AppConfig
+from core.models import GridOrder, OrderSide, OrderStatus
+from db.database import init_db
+from db.repository import Repository
+
+
+def test_console_api_exposes_summary_and_active_sessions(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "BTCUSDT", "RUNNING", 200, 10, now)
+    repo.update_session_grid(
+        session_id,
+        grid_upper=101.0,
+        grid_lower=99.0,
+        grid_num=4,
+        step_pct=0.005,
+        baseline_atr=0.2,
+        stop_loss_price=98.0,
+        volatility_method="garman_klass",
+        volatility_value=0.0125,
+        volatility_window=60,
+    )
+    repo.update_session_current_volatility(session_id, 0.0105, 30, now)
+    repo.upsert_order(
+        session_id,
+        GridOrder(
+            symbol="BTCUSDT",
+            order_id="order-1",
+            client_id="cid-1",
+            grid_index=1,
+            side=OrderSide.BUY,
+            price=100,
+            qty=0.5,
+            status=OrderStatus.OPEN,
+            created_at=now,
+        ),
+    )
+    repo.log_system("INFO", "binance_position_smoke", "Binance testnet position smoke completed.", None, now)
+
+    client = TestClient(create_app(_test_config(db_path, testnet=True)))
+
+    summary = client.get("/api/summary").json()
+    assert summary["mode"] == "测试网"
+    assert summary["active_sessions"] == 1
+    assert summary["open_orders"] == 1
+    assert summary["latest_system_message"] == "Binance 测试网持仓只读烟测完成。"
+    assert summary["risk_level"] == "正常"
+
+    sessions = client.get("/api/sessions/active").json()["items"]
+    assert len(sessions) == 1
+    assert sessions[0]["id"] == session_id
+    assert sessions[0]["state_label"] == "网格运行"
+    assert sessions[0]["volatility_method_label"] == "Garman-Klass"
+    assert sessions[0]["current_volatility"] == 0.0105
+    assert sessions[0]["open_order_count"] == 1
+
+
+def test_console_api_filters_orders_and_trades_by_session(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    first_session = repo.create_session(window_id, "BTCUSDT", "RUNNING", 200, 10, now)
+    second_session = repo.create_session(window_id, "ETHUSDT", "RUNNING", 200, 10, now)
+    repo.upsert_order(
+        first_session,
+        GridOrder(
+            symbol="BTCUSDT",
+            order_id="order-1",
+            client_id="cid-1",
+            grid_index=1,
+            side=OrderSide.BUY,
+            price=100,
+            qty=0.5,
+            status=OrderStatus.FILLED,
+            created_at=now,
+            filled_at=now,
+            fill_price=100,
+        ),
+    )
+    repo.upsert_order(
+        second_session,
+        GridOrder(
+            symbol="ETHUSDT",
+            order_id="order-2",
+            client_id="cid-2",
+            grid_index=1,
+            side=OrderSide.SELL,
+            price=200,
+            qty=0.25,
+            status=OrderStatus.OPEN,
+            created_at=now,
+        ),
+    )
+    repo.create_trade(first_session, "BTCUSDT", "order-1", "BUY", 100, 0.5, 1, None, now)
+    repo.create_trade(second_session, "ETHUSDT", "order-2", "SELL", 200, 0.25, 1, 1.5, now)
+
+    client = TestClient(create_app(_test_config(db_path)))
+
+    orders = client.get(f"/api/orders?session_id={first_session}").json()["items"]
+    trades = client.get(f"/api/trades?session_id={first_session}").json()["items"]
+    detail = client.get(f"/api/sessions/{first_session}").json()
+
+    assert [row["symbol"] for row in orders] == ["BTCUSDT"]
+    assert orders[0]["status_label"] == "已成交"
+    assert [row["symbol"] for row in trades] == ["BTCUSDT"]
+    assert detail["session"]["symbol"] == "BTCUSDT"
+    assert len(detail["orders"]) == 1
+    assert len(detail["trades"]) == 1
+    assert client.get("/api/sessions/999").status_code == 404
+
+
+def test_console_api_exposes_testnet_verification_rows(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
+    repo.log_system(
+        "INFO",
+        "binance_safety_sweep",
+        "Binance testnet safety sweep completed.",
+        json.dumps(
+            {
+                "safety_sweep_ok": True,
+                "symbols": [
+                    {
+                        "symbol": "BTCUSDT",
+                        "ordinary_after": 0,
+                        "algo_after": 0,
+                        "position_after": {"qty": 0.0, "long_qty": 0.0, "short_qty": 0.0},
+                    }
+                ],
+            }
+        ),
+        now,
+    )
+
+    client = TestClient(create_app(_test_config(db_path)))
+
+    rows = client.get("/api/verification/testnet").json()["items"]
+    safety_sweep = next(row for row in rows if row["module"] == "binance_safety_sweep")
+
+    assert safety_sweep["name"] == "安全清扫"
+    assert safety_sweep["status"] == "passed"
+    assert safety_sweep["status_label"] == "通过"
+    assert "清扫标的: 1" in safety_sweep["detail"]
+
+
+def _test_config(db_path, testnet: bool = True) -> AppConfig:
+    return AppConfig(
+        raw={
+            "database": {"path": str(db_path)},
+            "web": {"address": "127.0.0.1", "port": 8080},
+            "api": {"address": "127.0.0.1", "port": 8000},
+        },
+        binance_api_key="",
+        binance_api_secret="",
+        binance_testnet=testnet,
+        binance_testnet_raw="true" if testnet else None,
+    )

@@ -524,6 +524,9 @@ _MESSAGE_LABELS = {
     "Binance direct REST order endpoint diagnose completed.": "Binance 直接 REST 下单端点诊断完成。",
     "Binance testnet safety sweep completed.": "Binance 测试网安全清扫完成。",
     "Binance testnet safety sweep left residual exposure.": "Binance 测试网安全清扫后仍有残留暴露。",
+    "Binance testnet bounded run completed.": "Binance 测试网有界运行完成。",
+    "Binance testnet bounded run failed after cleanup.": "Binance 测试网有界运行失败，已执行清理。",
+    "Binance loop bounded runtime reached; shutting down.": "Binance 循环达到有界运行时长，正在关闭。",
     "Binance testnet client creation failed.": "Binance 测试网客户端创建失败。",
     "Grid calculation failed; symbol skipped.": "网格参数计算失败，已跳过该标的。",
     "Grid start failed; symbol skipped.": "网格启动失败，已跳过该标的。",
@@ -1319,6 +1322,8 @@ def _compact_latest_message(message: Any) -> str:
         "市价开平仓烟测完成。": "市价开平仓通过",
         "测试下单参数烟测完成。": "测试下单参数通过",
         "安全清扫完成。": "安全清扫完成",
+        "有界运行完成。": "有界运行完成",
+        "有界运行失败，已执行清理。": "有界运行失败",
         "检查完成。": "连接检查完成",
         "挂单费率健康检查完成。": "费率检查完成",
     }
@@ -1496,6 +1501,14 @@ def _localize_message(message: str) -> str:
         return _MESSAGE_LABELS[message]
     if "Service unavailable from a restricted location according to 'b. Eligibility'" in message:
         return "Binance 服务拒绝当前代理出口地区；请切换到 Binance 测试网允许的代理节点后重试。"
+    if (
+        not message.startswith("APIError(code=")
+        and "Order type not supported for this endpoint. Please use the Algo Order API endpoints instead." in message
+    ):
+        return message.replace(
+            "Order type not supported for this endpoint. Please use the Algo Order API endpoints instead.",
+            "当前端点不支持该订单类型，请改用 Algo Order API 端点。",
+        )
     if message.startswith("APIError(code="):
         code_part, _, suffix = message.partition("):")
         code = code_part.removeprefix("APIError(code=").strip()

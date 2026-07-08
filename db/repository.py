@@ -463,6 +463,84 @@ class Repository:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def console_sessions(self, active_only: bool = True, limit: int = 50) -> list[dict[str, Any]]:
+        where = ""
+        params: list[Any] = []
+        if active_only:
+            where = "WHERE sessions.close_time IS NULL AND sessions.state != 'STOPPED'"
+        params.append(max(1, min(int(limit), 200)))
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT
+                    sessions.*,
+                    COALESCE(order_counts.open_order_count, 0) AS open_order_count,
+                    COALESCE(trade_counts.trade_count, 0) AS trade_count
+                FROM sessions
+                LEFT JOIN (
+                    SELECT session_id, COUNT(*) AS open_order_count
+                    FROM orders
+                    WHERE status = 'open'
+                    GROUP BY session_id
+                ) AS order_counts ON order_counts.session_id = sessions.id
+                LEFT JOIN (
+                    SELECT session_id, COUNT(*) AS trade_count
+                    FROM trades
+                    GROUP BY session_id
+                ) AS trade_counts ON trade_counts.session_id = sessions.id
+                {where}
+                ORDER BY sessions.id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_session(self, session_id: int) -> dict[str, Any] | None:
+        with connect(self.db_path) as conn:
+            row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            return dict(row) if row is not None else None
+
+    def console_orders(self, session_id: int | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        where = ""
+        params: list[Any] = []
+        if session_id is not None:
+            where = "WHERE session_id = ?"
+            params.append(session_id)
+        params.append(max(1, min(int(limit), 300)))
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM orders
+                {where}
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def console_trades(self, session_id: int | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        where = ""
+        params: list[Any] = []
+        if session_id is not None:
+            where = "WHERE session_id = ?"
+            params.append(session_id)
+        params.append(max(1, min(int(limit), 300)))
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM trades
+                {where}
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def dashboard_summary(self) -> dict[str, Any]:
         with connect(self.db_path) as conn:
             active_sessions = conn.execute(

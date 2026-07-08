@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   Activity,
   AlertTriangle,
@@ -18,7 +18,14 @@ import {
   Square,
   Trash2,
 } from '@lucide/vue'
-import { auditLogs, sessions, summary, verificationRows, volatilityOptions } from './mock'
+import { loadConsoleData } from './api'
+import {
+  auditLogs as fallbackAuditLogs,
+  sessions as fallbackSessions,
+  summary as fallbackSummary,
+  verificationRows as fallbackVerificationRows,
+  volatilityOptions,
+} from './mock'
 
 const tabs = [
   { key: 'overview', label: '总览', icon: LayoutDashboard },
@@ -32,6 +39,12 @@ const activeTab = ref<(typeof tabs)[number]['key']>('overview')
 const selectedVolatility = ref('std')
 const testRunSeconds = ref(600)
 const paused = ref(false)
+const loading = ref(false)
+const dataError = ref('')
+const summary = ref(fallbackSummary)
+const sessions = ref(fallbackSessions)
+const verificationRows = ref(fallbackVerificationRows)
+const auditLogs = ref(fallbackAuditLogs)
 
 const activeTabMeta = computed(() => tabs.find((tab) => tab.key === activeTab.value) ?? tabs[0])
 
@@ -56,15 +69,21 @@ const auditModuleLabels: Record<string, string> = {
   selector: '标的选择',
 }
 
-const statusCards = [
-  { label: '活动会话', value: summary.activeSessions, detail: '数据库已同步', tone: 'good' },
-  { label: '开放订单', value: summary.openOrders, detail: '交易所残留 0', tone: 'good' },
-  { label: '已实现盈亏', value: summary.realizedPnl.toFixed(4), detail: '测试网统计', tone: 'neutral' },
-  { label: '账户余额', value: summary.balance.toFixed(2), detail: 'USDT 可用余额', tone: 'accent' },
-]
+const statusCards = computed(() => [
+  { label: '活动会话', value: summary.value.activeSessions, detail: '数据库实时统计', tone: 'good' },
+  { label: '开放订单', value: summary.value.openOrders, detail: '活动会话未成交', tone: 'good' },
+  { label: '已实现盈亏', value: summary.value.realizedPnl.toFixed(4), detail: '全量会话累计', tone: 'neutral' },
+  { label: '账户余额', value: formatBalance(summary.value.balance), detail: '交易所余额阶段 C 接入', tone: 'accent' },
+])
+
+const dataSourceLabel = computed(() => (dataError.value ? '离线示例' : '实时数据'))
 
 function formatPct(value: number) {
   return `${(value * 100).toFixed(3)}%`
+}
+
+function formatBalance(value: number | null) {
+  return typeof value === 'number' ? value.toFixed(2) : '-'
 }
 
 function formatState(value: string) {
@@ -78,6 +97,26 @@ function formatVolatilityMethod(value: string) {
 function formatAuditModule(value: string) {
   return auditModuleLabels[value] ?? value
 }
+
+async function refreshData() {
+  loading.value = true
+  try {
+    const data = await loadConsoleData()
+    summary.value = data.summary
+    sessions.value = data.sessions
+    verificationRows.value = data.verificationRows
+    auditLogs.value = data.auditLogs
+    dataError.value = ''
+  } catch (error) {
+    dataError.value = error instanceof Error ? error.message : '无法连接控制台 API'
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  void refreshData()
+})
 </script>
 
 <template>
@@ -129,10 +168,15 @@ function formatAuditModule(value: string) {
         <div>
           <p class="eyebrow">下一阶段 Vue 控制台</p>
           <h2>{{ activeTabMeta.label }}</h2>
+          <div class="data-source">
+            <span class="data-pill" :class="{ warning: dataError }">{{ dataSourceLabel }}</span>
+            <small v-if="dataError">{{ dataError }}，正在显示兜底数据</small>
+            <small v-else>{{ summary.latestSystemMessage || '已接入控制台 API' }}</small>
+          </div>
         </div>
         <div class="top-actions">
-          <button class="icon-button" type="button" aria-label="刷新数据">
-            <RefreshCw :size="18" />
+          <button class="icon-button" type="button" aria-label="刷新数据" :disabled="loading" @click="refreshData">
+            <RefreshCw :size="18" :class="{ spinning: loading }" />
           </button>
           <button class="danger-button" type="button">
             <Trash2 :size="18" />
@@ -146,7 +190,7 @@ function formatAuditModule(value: string) {
           <div>
             <p class="eyebrow">当前状态</p>
             <h3>{{ summary.loopState }}</h3>
-            <p class="muted">一键测试网流程已经完成前置检查、限时运行、安全清扫和后置持仓检查。</p>
+            <p class="muted">{{ summary.latestSystemMessage || '等待系统日志写入后展示最近运行状态。' }}</p>
           </div>
           <div class="hero-actions">
             <button class="primary-button" type="button">
@@ -175,10 +219,11 @@ function formatAuditModule(value: string) {
               <h3>波动率与风险摘要</h3>
             </div>
             <div class="volatility-strip">
+              <div v-if="sessions.length === 0" class="empty-state">暂无网格会话，启动测试网流程后会显示波动率快照。</div>
               <div v-for="session in sessions" :key="session.id" class="vol-row">
                 <span>{{ session.symbol }}</span>
                 <strong>{{ formatPct(session.currentVolatility) }}</strong>
-                <small>{{ formatVolatilityMethod(session.volatilityMethod) }}</small>
+                <small>{{ session.volatilityMethodLabel || formatVolatilityMethod(session.volatilityMethod) }}</small>
               </div>
             </div>
           </section>
@@ -193,6 +238,7 @@ function formatAuditModule(value: string) {
                 <div>
                   <strong>{{ row.name }}</strong>
                   <span>{{ row.detail }}</span>
+                  <small>{{ row.status }} · {{ row.lastChecked }}</small>
                 </div>
               </div>
             </div>
@@ -227,11 +273,14 @@ function formatAuditModule(value: string) {
             </div>
             <div v-for="session in sessions" :key="session.id" class="table-row" role="row">
               <strong>{{ session.symbol }}</strong>
-              <span class="state-pill">{{ formatState(session.state) }}</span>
+              <span class="state-pill">{{ session.stateLabel || formatState(session.state) }}</span>
               <span>{{ session.lower.toFixed(2) }} - {{ session.upper.toFixed(2) }}</span>
               <span>{{ session.gridNum }} / {{ formatPct(session.stepPct) }}</span>
               <span>{{ formatPct(session.currentVolatility) }}</span>
               <button class="compact-danger" type="button">停止</button>
+            </div>
+            <div v-if="sessions.length === 0" class="table-row empty-row" role="row">
+              <span>暂无活动或最近网格</span>
             </div>
           </div>
         </section>
@@ -303,6 +352,7 @@ function formatAuditModule(value: string) {
               <strong>{{ formatAuditModule(log.module) }}</strong>
               <p>{{ log.message }}</p>
             </div>
+            <div v-if="auditLogs.length === 0" class="empty-state">暂无系统日志。</div>
           </div>
         </section>
       </section>

@@ -44,6 +44,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
@@ -215,6 +220,38 @@ h3 {
   flex-wrap: wrap;
 }
 
+.data-source {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.data-source small {
+  line-height: 1.45;
+}
+
+.data-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border: 1px solid rgb(61 214 178 / 32%);
+  border-radius: 999px;
+  background: rgb(61 214 178 / 12%);
+  color: var(--teal);
+  padding: 3px 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.data-pill.warning {
+  border-color: rgb(239 100 97 / 38%);
+  background: rgb(239 100 97 / 12%);
+  color: #ffb8b6;
+}
+
 .icon-button,
 .primary-button,
 .secondary-button,
@@ -267,6 +304,14 @@ h3 {
 .danger-button:hover,
 .compact-danger:hover {
   transform: translateY(-1px);
+}
+
+button:disabled:hover {
+  transform: none;
+}
+
+.spinning {
+  animation: spin 850ms linear infinite;
 }
 
 .panel-stack {
@@ -358,6 +403,15 @@ h3 {
   align-items: flex-start;
 }
 
+.verification-row div {
+  display: grid;
+  gap: 4px;
+}
+
+.verification-row small {
+  color: var(--muted);
+}
+
 .verification-row svg {
   color: var(--teal);
   flex: 0 0 auto;
@@ -383,6 +437,11 @@ h3 {
 
 .table-row:last-child {
   border-bottom: 0;
+}
+
+.empty-row {
+  grid-template-columns: 1fr;
+  color: var(--muted);
 }
 
 .table-head {
@@ -422,6 +481,15 @@ select {
   display: grid;
   grid-template-columns: 80px 180px 1fr;
   align-items: center;
+}
+
+.empty-state {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 2%);
+  color: var(--muted);
+  padding: 14px;
+  line-height: 1.5;
 }
 
 @media (max-width: 980px) {
@@ -467,6 +535,11 @@ select {
   .audit-row {
     grid-template-columns: 1fr;
   }
+
+  .data-source {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -475,5 +548,11 @@ select {
   *::after {
     scroll-behavior: auto !important;
     transition: none !important;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }

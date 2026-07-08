@@ -216,6 +216,10 @@ def test_localize_message_translates_common_system_messages() -> None:
         == "Binance API 错误（代码 -1007）：等待后端服务器响应超时；发送状态未知，执行状态未知。"
     )
     assert (
+        web._localize_message("APIError(code=-4120): Order type not supported for this endpoint. Please use the Algo Order API endpoints instead.")
+        == "Binance API 错误（代码 -4120）：当前端点不支持该订单类型，请改用 Algo Order API 端点。"
+    )
+    assert (
         web._localize_message("Cannot connect to host testnet.binance.vision:443 ssl:default [None]")
         == "无法连接到主机 testnet.binance.vision:443（ssl:default [None]）。"
     )
@@ -231,6 +235,7 @@ def test_localize_message_translates_common_system_messages() -> None:
 def test_compact_latest_message_uses_short_chinese_status() -> None:
     assert web._compact_latest_message("Binance testnet position smoke completed.") == "持仓只读通过"
     assert web._compact_latest_message("Binance maker fee health check completed.") == "费率检查完成"
+    assert web._compact_latest_message("Binance testnet bounded run completed.") == "有界运行完成"
 
 
 def test_localize_detail_translates_json_keys_and_common_values() -> None:

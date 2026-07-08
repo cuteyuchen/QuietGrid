@@ -1,0 +1,21 @@
+{
+  "name": "quietgrid-console",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "^6.0.7",
+    "@lucide/vue": "^1.23.0",
+    "vite": "^6.4.3",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vue-tsc": "^2.2.0"
+  }
+}

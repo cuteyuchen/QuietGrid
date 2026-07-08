@@ -3,16 +3,20 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
+from core.scheduler import Scheduler
 from db.database import init_db
 from db.repository import Repository
 from exchange.mock import MockExchangeClient
 from trader import (
     _build_controller,
     _run_backtest_csv,
+    _run_backtest_dir,
     _binance_signed_query,
+    _binance_direct_signed_params,
     _run_binance_direct_order_diagnose,
     _run_binance_check,
     _run_binance_loop,
@@ -20,12 +24,15 @@ from trader import (
     _run_binance_once,
     _run_binance_order_smoke,
     _run_binance_price_stream_smoke,
+    _run_binance_signed_write_health,
     _run_binance_test_order_smoke,
     _run_binance_listen_key_smoke,
     _run_binance_algo_stop_smoke,
     _run_binance_position_smoke,
     _run_binance_safety_sweep,
+    _create_binance_client_for_module,
     _run_dynamic_price_stream,
+    _json_log_detail,
     _sanitize_direct_transport_error,
     main,
 )
@@ -117,10 +124,71 @@ def test_backtest_csv_can_write_full_json_report(tmp_path) -> None:
     report = json.loads(output_path.read_text(encoding="utf-8"))
     assert result["output_path"] == str(output_path)
     assert report["summary"]["symbol"] == "BTCUSDT"
+    assert "max_drawdown" in report["summary"]
+    assert "win_rate" in report["summary"]
+    assert 0.0 <= report["summary"]["win_rate"] <= 1.0
+    assert "avg_grid_pnl" in report["summary"]
+    assert "fills_per_bar" in report["summary"]
+    assert "equity_sharpe" in report["summary"]
     assert report["grid_params"]["symbol"] == "BTCUSDT"
     assert isinstance(report["grid_params"]["grid_prices"], list)
     assert report["fills"]
     assert {"side", "grid_index", "price", "qty", "bar_index"}.issubset(report["fills"][0])
+    assert report["equity_curve"]
+    assert {"bar_index", "equity", "drawdown", "close"}.issubset(report["equity_curve"][0])
+
+
+def test_backtest_dir_aggregates_csv_files_and_errors(tmp_path) -> None:
+    db_path = tmp_path / "trader.db"
+    csv_dir = tmp_path / "csvs"
+    csv_dir.mkdir()
+    _write_backtest_csv(csv_dir / "window-a.csv")
+    _write_backtest_csv(csv_dir / "window-b.csv")
+    (csv_dir / "bad.csv").write_text("timestamp,high,close\n1,100,100\n", encoding="utf-8")
+    output_path = tmp_path / "reports" / "batch.json"
+
+    result = _run_backtest_dir(
+        _runtime_backtest_config(db_path),
+        csv_dir,
+        observe_rows=60,
+        symbol="BTCUSDT",
+        funding_rate=0.0001,
+        output_path=output_path,
+    )
+
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+    assert result["files"] == 3
+    assert result["succeeded"] == 2
+    assert result["failed"] == 1
+    assert result["total_fills"] >= 2
+    assert result["total_grid_trades"] == sum(item["grid_trade_count"] for item in report["reports"])
+    assert 0.0 <= result["win_rate"] <= 1.0
+    assert "avg_grid_pnl" in result
+    assert "avg_equity_sharpe" in result
+    assert result["best_file"] in {"window-a.csv", "window-b.csv"}
+    assert result["output_path"] == str(output_path)
+    assert report["summary"]["succeeded"] == 2
+    assert [item["source_file"] for item in report["reports"]] == ["window-a.csv", "window-b.csv"]
+    assert report["errors"][0]["source_file"] == "bad.csv"
+
+
+def test_backtest_dir_rejects_all_failed_files(tmp_path) -> None:
+    csv_dir = tmp_path / "csvs"
+    csv_dir.mkdir()
+    (csv_dir / "bad.csv").write_text("timestamp,high,close\n1,100,100\n", encoding="utf-8")
+
+    try:
+        _run_backtest_dir(
+            _runtime_backtest_config(tmp_path / "trader.db"),
+            csv_dir,
+            observe_rows=60,
+            symbol="BTCUSDT",
+            funding_rate=0.0,
+        )
+    except RuntimeError as exc:
+        assert "批量回测没有成功样本" in str(exc)
+    else:
+        raise AssertionError("batch backtest with only invalid files should fail")
 
 
 def test_backtest_csv_rejects_missing_required_columns(tmp_path) -> None:
@@ -157,6 +225,29 @@ def test_main_backtest_csv_mode_does_not_require_testnet(monkeypatch, tmp_path) 
     monkeypatch.setattr("trader.setup_logging", lambda raw: None)
     monkeypatch.setattr("trader.init_db", lambda path: None)
     monkeypatch.setattr("trader._run_backtest_csv", lambda *args, **kwargs: captured.setdefault("called", True) or {"ok": True})
+
+    main()
+
+    assert captured["called"] is True
+
+
+def test_main_backtest_dir_mode_does_not_require_testnet(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "trader.db"
+    csv_dir = tmp_path / "csvs"
+    csv_dir.mkdir()
+    _write_backtest_csv(csv_dir / "window-a.csv")
+    config = _runtime_backtest_config(db_path)
+    captured = {}
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["trader.py", "--backtest-dir", str(csv_dir), "--backtest-observe-rows", "60", "--backtest-symbol", "BTCUSDT"],
+    )
+    monkeypatch.setattr("trader.load_config", lambda: config)
+    monkeypatch.setattr("trader.setup_logging", lambda raw: None)
+    monkeypatch.setattr("trader.init_db", lambda path: None)
+    monkeypatch.setattr("trader._run_backtest_dir", lambda *args, **kwargs: captured.setdefault("called", True) or {"ok": True})
 
     main()
 
@@ -541,6 +632,11 @@ class PriceStreamSmokeExchange(OrderSmokeExchange):
         await handler({"symbol": symbols[0], "price": 101.5, "event_time": "now"})
 
 
+class NoExchangeInfoPriceStreamExchange(PriceStreamSmokeExchange):
+    async def get_symbols(self):
+        raise RuntimeError("exchangeInfo unavailable")
+
+
 class MarketRoundtripSmokeExchange(OrderSmokeExchange):
     def __init__(self) -> None:
         super().__init__()
@@ -598,6 +694,11 @@ class PositionSmokeExchange(OrderSmokeExchange):
         }
 
 
+class NoExchangeInfoPositionSmokeExchange(PositionSmokeExchange):
+    async def get_symbols(self):
+        raise RuntimeError("exchangeInfo unavailable")
+
+
 class SafetySweepExchange(OrderSmokeExchange):
     def __init__(self) -> None:
         super().__init__()
@@ -653,13 +754,15 @@ class FakeBinanceOnceController:
     def __init__(self) -> None:
         self.active_sessions = {"AAPLUSDT": object()}
         self.recovered = False
+        self.recoverable_symbols: set[str] | None = None
         self.cleaned_reason: str | None = None
 
     async def validate_startup(self):
         return FakeStartupCheck()
 
-    async def recover_unclosed_sessions(self):
+    async def recover_unclosed_sessions(self, at=None, recoverable_symbols=None):
         self.recovered = True
+        self.recoverable_symbols = recoverable_symbols
 
     async def run_once(self):
         return {"status": "started"}
@@ -711,13 +814,15 @@ class FakeBinanceLoopController:
     def __init__(self) -> None:
         self.active_sessions = {"AAPLUSDT": object()}
         self.recovered = False
+        self.recoverable_symbols: set[str] | None = None
         self.cleaned_reason: str | None = None
 
     async def validate_startup(self):
         return FakeStartupCheck()
 
-    async def recover_unclosed_sessions(self):
+    async def recover_unclosed_sessions(self, at=None, recoverable_symbols=None):
         self.recovered = True
+        self.recoverable_symbols = recoverable_symbols
 
     async def handle_order_filled_event(self, event):
         return None
@@ -777,6 +882,7 @@ def test_binance_once_cleans_up_active_sessions_before_exit(monkeypatch, tmp_pat
 
         assert result == {"status": "started"}
         assert controller.recovered is True
+        assert controller.recoverable_symbols == {"AAPLUSDT"}
         assert controller.cleaned_reason == "binance_once_cleanup"
         assert exchange.closed is True
 
@@ -817,6 +923,7 @@ def test_binance_once_raises_when_cleanup_leaves_active_sessions(monkeypatch, tm
             raise AssertionError("cleanup residual active sessions should fail the Binance once entrypoint")
 
         assert controller.recovered is True
+        assert controller.recoverable_symbols == {"AAPLUSDT"}
         assert controller.cleaned_reason == "binance_once_cleanup"
         assert exchange.closed is True
 
@@ -830,6 +937,7 @@ def test_binance_live_entrypoints_require_signed_write_health(monkeypatch, tmp_p
         calls = [
             (_run_binance_once, "binance_once"),
             (_run_binance_loop, "binance_loop"),
+            (_run_binance_signed_write_health, "binance_signed_write_health"),
         ]
 
         def fail_build_controller(*args, **kwargs):
@@ -896,7 +1004,15 @@ def test_binance_entrypoints_require_testnet(monkeypatch, tmp_path) -> None:
             },
         )
 
-        for runner in (_run_binance_once, _run_binance_check, _run_binance_loop, _run_binance_position_smoke, _run_binance_safety_sweep, _run_binance_market_roundtrip_smoke):
+        for runner in (
+            _run_binance_once,
+            _run_binance_check,
+            _run_binance_loop,
+            _run_binance_signed_write_health,
+            _run_binance_position_smoke,
+            _run_binance_safety_sweep,
+            _run_binance_market_roundtrip_smoke,
+        ):
             try:
                 await runner(config)
             except RuntimeError as exc:
@@ -928,7 +1044,15 @@ def test_binance_entrypoints_require_api_credentials(monkeypatch, tmp_path) -> N
             },
         )
 
-        for runner in (_run_binance_once, _run_binance_check, _run_binance_loop, _run_binance_position_smoke, _run_binance_safety_sweep, _run_binance_market_roundtrip_smoke):
+        for runner in (
+            _run_binance_once,
+            _run_binance_check,
+            _run_binance_loop,
+            _run_binance_signed_write_health,
+            _run_binance_position_smoke,
+            _run_binance_safety_sweep,
+            _run_binance_market_roundtrip_smoke,
+        ):
             try:
                 await runner(config)
             except RuntimeError as exc:
@@ -1150,6 +1274,7 @@ def test_binance_loop_cleans_up_active_sessions_on_exit(monkeypatch, tmp_path) -
             raise AssertionError("loop failure should propagate after cleanup")
 
         assert controller.recovered is True
+        assert controller.recoverable_symbols == {"AAPLUSDT"}
         assert controller.cleaned_reason == "binance_loop_shutdown_cleanup"
         assert exchange.user_stream_cancelled is True
         assert price_stream_cancelled is True
@@ -1592,6 +1717,39 @@ def test_binance_price_stream_smoke_returns_first_price_event(monkeypatch, tmp_p
         }
         assert exchange.price_stream_symbols == ["BTCUSDT"]
         assert exchange.closed is True
+        log = Repository(db_path).recent_rows("system_logs", limit=1)[0]
+        assert log["module"] == "binance_price_stream_smoke"
+        assert log["message"] == "Binance testnet price stream smoke completed."
+
+    asyncio.run(run())
+
+
+def test_binance_price_stream_smoke_uses_configured_symbol_without_exchange_info(monkeypatch, tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+        exchange = NoExchangeInfoPriceStreamExchange()
+
+        async def fake_create(**kwargs):
+            return exchange
+
+        monkeypatch.setattr("trader.BinanceFuturesClient.create", fake_create)
+        config = SimpleNamespace(
+            binance_api_key="key",
+            binance_api_secret="secret",
+            binance_testnet=True,
+            database_path=db_path,
+            raw={
+                "proxy": {"enabled": False},
+                "selection": {"symbol_allowlist": [" btcusdt ", "AAPLUSDT"], "symbol_blacklist": []},
+            },
+        )
+
+        result = await _run_binance_price_stream_smoke(config, timeout_seconds=1)
+
+        assert result["stream_ok"] is True
+        assert result["symbol"] == "BTCUSDT"
+        assert exchange.price_stream_symbols == ["BTCUSDT"]
 
     asyncio.run(run())
 
@@ -1776,6 +1934,58 @@ def test_binance_signed_query_and_direct_error_redaction() -> None:
     )
 
 
+def test_binance_direct_signed_params_use_server_time_and_wide_recv_window() -> None:
+    params = _binance_direct_signed_params({"symbol": "BTCUSDT"}, 123456789)
+
+    assert params == {"symbol": "BTCUSDT", "recvWindow": 60000, "timestamp": 123456789}
+
+
+def test_json_log_detail_serializes_datetimes() -> None:
+    detail = _json_log_detail({"event": {"event_time": datetime(2026, 7, 7, 12, 0, tzinfo=timezone.utc)}})
+
+    assert json.loads(detail)["event"]["event_time"] == "2026-07-07 12:00:00+00:00"
+
+
+def test_binance_client_create_failure_is_logged(monkeypatch, tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+
+        async def fail_create(**kwargs):
+            raise RuntimeError("Cannot connect to host testnet.binance.vision:443 ssl:default [None]")
+
+        monkeypatch.setattr("trader.BinanceFuturesClient.create", fail_create)
+        config = SimpleNamespace(
+            binance_api_key="key",
+            binance_api_secret="secret",
+            binance_testnet=True,
+            database_path=db_path,
+            raw={
+                "proxy": {"enabled": True, "https": "http://127.0.0.1:7897"},
+                "selection": {"symbol_allowlist": ["BTCUSDT"], "symbol_blacklist": []},
+            },
+        )
+
+        try:
+            await _create_binance_client_for_module(config, "binance_test_order_smoke")
+        except RuntimeError as exc:
+            assert "Cannot connect to host" in str(exc)
+        else:
+            raise AssertionError("client creation failure should propagate")
+
+        log = Repository(db_path).recent_rows("system_logs", limit=1)[0]
+        detail = json.loads(log["detail"])
+        assert log["level"] == "ERROR"
+        assert log["module"] == "binance_test_order_smoke"
+        assert log["message"] == "Binance testnet client creation failed."
+        assert detail["ok"] is False
+        assert detail["stage"] == "client_create"
+        assert detail["proxy_enabled"] is True
+        assert "testnet.binance.vision" in detail["error"]
+
+    asyncio.run(run())
+
+
 def test_binance_test_order_smoke_validates_signed_order_params(monkeypatch, tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "trader.db"
@@ -1812,6 +2022,9 @@ def test_binance_test_order_smoke_validates_signed_order_params(monkeypatch, tmp
         assert exchange.test_orders[2]["stop_price"] == 90.0
         assert exchange.test_orders[2]["close_position"] is True
         assert exchange.closed is True
+        log = Repository(db_path).recent_rows("system_logs", limit=1)[0]
+        assert log["module"] == "binance_test_order_smoke"
+        assert log["message"] == "Binance testnet order/test smoke completed."
 
     asyncio.run(run())
 
@@ -1839,6 +2052,48 @@ def test_binance_listen_key_smoke_validates_lifecycle(monkeypatch, tmp_path) -> 
         assert result == {"listen_key_ok": True, "listen_key_length": len("listen-key")}
         assert exchange.listen_key_closed is True
         assert exchange.closed is True
+        log = Repository(db_path).recent_rows("system_logs", limit=1)[0]
+        assert log["module"] == "binance_listen_key_smoke"
+        assert log["message"] == "Binance testnet listenKey smoke completed."
+
+    asyncio.run(run())
+
+
+def test_binance_signed_write_health_can_run_without_controller(monkeypatch, tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+        exchange = OrderSmokeExchange()
+
+        async def fake_create(**kwargs):
+            return exchange
+
+        monkeypatch.setattr("trader.BinanceFuturesClient.create", fake_create)
+        config = SimpleNamespace(
+            binance_api_key="key",
+            binance_api_secret="secret",
+            binance_testnet=True,
+            database_path=db_path,
+            raw={
+                "trading": {"leverage": 7},
+                "proxy": {"enabled": False},
+                "selection": {"symbol_allowlist": ["BTCUSDT"]},
+            },
+        )
+
+        result = await _run_binance_signed_write_health(config)
+
+        assert result["signed_write_ok"] is True
+        assert result["caller"] == "binance_signed_write_health"
+        assert result["symbol"] == "BTCUSDT"
+        assert result["leverage"] == 7
+        assert exchange.margin_calls == [("BTCUSDT", "ISOLATED")]
+        assert exchange.leverage_calls == [("BTCUSDT", 7)]
+        assert exchange.closed is True
+        log = Repository(db_path).recent_rows("system_logs", limit=1)[0]
+        assert log["module"] == "binance_signed_write_health"
+        assert log["level"] == "INFO"
+        assert "binance_signed_write_health" in log["message"]
 
     asyncio.run(run())
 
@@ -1871,6 +2126,9 @@ def test_binance_algo_stop_smoke_places_and_cancels_algo_order(monkeypatch, tmp_
         assert result["remaining_open"] == 0
         assert exchange.cancelled_algo_ids == [456]
         assert exchange.closed is True
+        log = Repository(db_path).recent_rows("system_logs", limit=1)[0]
+        assert log["module"] == "binance_algo_stop_smoke"
+        assert log["message"] == "Binance testnet algo stop smoke completed."
 
     asyncio.run(run())
 
@@ -1911,6 +2169,35 @@ def test_binance_position_smoke_reports_positions_and_open_orders(monkeypatch, t
             ],
         }
         assert exchange.closed is True
+        log = Repository(db_path).recent_rows("system_logs", limit=1)[0]
+        assert log["module"] == "binance_position_smoke"
+        assert log["message"] == "Binance testnet position smoke completed."
+
+    asyncio.run(run())
+
+
+def test_binance_position_smoke_falls_back_to_configured_testnet_symbols(monkeypatch, tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+        exchange = NoExchangeInfoPositionSmokeExchange()
+
+        async def fake_create(**kwargs):
+            return exchange
+
+        monkeypatch.setattr("trader.BinanceFuturesClient.create", fake_create)
+        config = SimpleNamespace(
+            binance_api_key="key",
+            binance_api_secret="secret",
+            binance_testnet=True,
+            database_path=db_path,
+            raw={"proxy": {"enabled": False}, "selection": {"symbol_allowlist": ["BTCUSDT", "AAPLUSDT"]}},
+        )
+
+        result = await _run_binance_position_smoke(config)
+
+        assert result["position_smoke_ok"] is True
+        assert [item["symbol"] for item in result["symbols"]] == ["BTCUSDT"]
 
     asyncio.run(run())
 
@@ -2252,3 +2539,70 @@ def test_build_controller_reads_max_maker_fee_rate(tmp_path) -> None:
     assert controller.cooldown.config.atr_recovery_ratio == 0.65
     assert controller.cooldown.config.amplitude_multiplier == 1.5
     assert controller.cooldown.config.min_calm_minutes == 9
+
+
+def test_build_controller_applies_testnet_run_now_switches_only_in_testnet(tmp_path) -> None:
+    db_path = tmp_path / "trader.db"
+    init_db(db_path)
+    raw = {
+        "trading": {
+            "capital_per_symbol": 200,
+            "leverage": 10,
+            "max_concurrent": 1,
+            "take_profit_usdt": 10,
+            "total_capital_limit": 1000,
+            "stop_buffer_pct": 0.015,
+            "max_maker_fee_rate": 0.0002,
+        },
+        "timing": {
+            "observe_hours": 1,
+            "observe_kline_interval": "1m",
+            "live_observation": True,
+            "testnet_force_window": True,
+            "testnet_fast_observation": True,
+            "observe_check_seconds": 60,
+            "force_close_minutes": 120,
+            "loop_interval_seconds": 10,
+            "scheduler_check_minutes": 5,
+        },
+        "grid": {
+            "range_method": "std",
+            "std_k": 1.8,
+            "quantile_upper": 0.95,
+            "quantile_lower": 0.05,
+            "min_step_pct": 0.0015,
+            "safety_multiplier": 3.5,
+            "max_grid_num": 20,
+            "max_range_pct": 0.05,
+        },
+        "cooldown": {
+            "atr_period": 14,
+            "calm_window_minutes": 17,
+            "atr_recovery_ratio": 0.65,
+            "amplitude_multiplier": 1.5,
+            "min_calm_minutes": 9,
+        },
+        "selection": {
+            "volume_weight": 0.7,
+            "depth_weight": 0.3,
+            "depth_levels": 5,
+            "symbol_blacklist": [],
+        },
+    }
+
+    testnet_controller = _build_controller(
+        MockExchangeClient(),
+        SimpleNamespace(database_path=db_path, binance_testnet=True, raw=raw),
+        live_observation=True,
+    )
+    live_controller = _build_controller(
+        MockExchangeClient(),
+        SimpleNamespace(database_path=db_path, binance_testnet=False, raw=raw),
+        live_observation=True,
+    )
+
+    assert testnet_controller.scheduler.is_in_window() is True
+    assert testnet_controller.scheduler.should_force_close() is False
+    assert testnet_controller.observer.observer_config.live_observation is False
+    assert isinstance(live_controller.scheduler, Scheduler)
+    assert live_controller.observer.observer_config.live_observation is True

@@ -48,6 +48,9 @@ class GridParams:
     baseline_atr: float
     stop_loss_price: float
     calculated_at: datetime
+    volatility_method: str = "std"
+    volatility_value: float = 0.0
+    volatility_window: int = 0
 
 
 @dataclass

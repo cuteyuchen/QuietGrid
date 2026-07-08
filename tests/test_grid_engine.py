@@ -374,6 +374,24 @@ class FailingSecondStopOrderExchange(MockExchangeClient):
         return await super().place_stop_market_order(symbol, side, stop_price, client_id, close_position)
 
 
+class OpenPositionRequiredSecondStopOrderExchange(FailingSecondStopOrderExchange):
+    async def place_stop_market_order(
+        self,
+        symbol: str,
+        side: str,
+        stop_price: float,
+        client_id: str,
+        close_position: bool = True,
+    ):
+        self.stop_attempts += 1
+        if self.stop_attempts == 2:
+            raise RuntimeError(
+                "APIError(code=-4509): Time in Force (TIF) GTE can only be used with open positions. "
+                "Please ensure that positions are available."
+            )
+        return await MockExchangeClient.place_stop_market_order(self, symbol, side, stop_price, client_id, close_position)
+
+
 class MissingStopOrderIdExchange(MockExchangeClient):
     def __init__(self, fail_on_attempt: int = 1) -> None:
         super().__init__()
@@ -545,6 +563,23 @@ def test_grid_engine_cancels_grid_orders_when_stop_order_fails() -> None:
         assert exchange.stop_orders["AAPLUSDT"] == []
         assert session.orders
         assert all(order.status == OrderStatus.CANCELLED for order in session.orders)
+
+    asyncio.run(run())
+
+
+def test_grid_engine_delays_missing_side_stop_when_exchange_requires_open_position() -> None:
+    async def run() -> None:
+        exchange = OpenPositionRequiredSecondStopOrderExchange()
+        session = _session()
+        engine = GridEngine(exchange)
+
+        orders = await engine.start(session, current_price=100.0)
+
+        assert orders
+        assert all(order.status == OrderStatus.OPEN for order in session.orders)
+        assert session.stop_protection_sides == {"long"}
+        assert len(exchange.orders["AAPLUSDT"]) == len(orders)
+        assert len(exchange.stop_orders["AAPLUSDT"]) == 1
 
     asyncio.run(run())
 
@@ -728,12 +763,20 @@ def test_grid_engine_uses_exchange_symbol_rules_for_rounding() -> None:
 
         first_order = exchange.orders["AAPLUSDT"][0]
         assert round(first_order["price"] / 0.05) == first_order["price"] / 0.05
-        assert round(first_order["qty"] / 0.1) == first_order["qty"] / 0.1
+        qty_units = first_order["qty"] / 0.1
+        assert abs(round(qty_units) - qty_units) < 1e-9
         for stop_order in exchange.stop_orders["AAPLUSDT"]:
             stop_units = stop_order["stopPrice"] / 0.05
             assert abs(round(stop_units) - stop_units) < 1e-9
 
     asyncio.run(run())
+
+
+def test_grid_engine_round_to_step_avoids_binary_precision_tails() -> None:
+    assert GridEngine._round_to_step(230.68313099034734, 0.01) == 230.68
+    assert str(GridEngine._round_to_step(230.68313099034734, 0.01)) == "230.68"
+    assert GridEngine._round_to_step(0.006451234, 0.001) == 0.006
+    assert str(GridEngine._round_to_step(0.006451234, 0.001)) == "0.006"
 
 
 def test_grid_engine_rejects_qty_below_exchange_minimum() -> None:

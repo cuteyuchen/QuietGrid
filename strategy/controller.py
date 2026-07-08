@@ -164,15 +164,42 @@ class TradingController:
         )
         return result
 
-    async def recover_unclosed_sessions(self, at: datetime | None = None) -> list[int]:
+    async def recover_unclosed_sessions(
+        self,
+        at: datetime | None = None,
+        recoverable_symbols: set[str] | None = None,
+    ) -> list[int]:
         current_time = at or datetime.now(timezone.utc)
+        recoverable = {symbol.upper() for symbol in recoverable_symbols} if recoverable_symbols is not None else None
         recovered: list[int] = []
         for row in self.repository.unclosed_sessions():
             raw_state = str(row["state"])
+            symbol = str(row["symbol"])
+            session_id = int(row["id"])
+            if recoverable is not None and symbol.upper() not in recoverable:
+                self.repository.close_session(session_id, "startup_recovery_skipped_symbol", current_time)
+                self.repository.log_state(
+                    session_id,
+                    symbol,
+                    raw_state,
+                    GridState.STOPPED.value,
+                    "startup_recovery_skipped_symbol",
+                    "当前交易所不支持该历史会话标的，启动恢复已跳过交易所平仓。",
+                    current_time,
+                )
+                self.repository.log_system(
+                    "WARN",
+                    "controller",
+                    "Skipped startup recovery for unsupported symbol.",
+                    f"session_id={session_id}, symbol={symbol}",
+                    current_time,
+                )
+                recovered.append(session_id)
+                continue
             state = GridState(raw_state) if raw_state in {item.value for item in GridState} else GridState.CLOSING
             session = SymbolSession(
-                session_id=int(row["id"]),
-                symbol=str(row["symbol"]),
+                session_id=session_id,
+                symbol=symbol,
                 state=state,
                 params=None,
                 orders=[],

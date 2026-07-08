@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_FLOOR
 from math import floor, isfinite
 from typing import Callable
 
@@ -154,7 +155,7 @@ class GridEngine:
                 f"qg-{session.session_id}-stop-short",
             )
         except Exception as exc:
-            if _is_stop_requires_open_position(exc) and not session.stop_protection_sides:
+            if _is_stop_requires_open_position(exc):
                 self._log_force_close_warning(
                     session,
                     "Exchange requires an open position before placing close-position stop orders; delayed stop protection will be armed after the first fill.",
@@ -553,7 +554,10 @@ class GridEngine:
     def _round_to_step(value: float, step: float) -> float:
         if step <= 0:
             return value
-        return floor(value / step) * step
+        value_decimal = Decimal(str(value))
+        step_decimal = Decimal(str(step))
+        units = (value_decimal / step_decimal).to_integral_value(rounding=ROUND_FLOOR)
+        return float(units * step_decimal)
 
 
 def _is_post_only_rejection(exc: Exception) -> bool:

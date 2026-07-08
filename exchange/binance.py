@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import re
+import time
 from math import isfinite
 from typing import Any, Callable
 
@@ -20,11 +22,15 @@ class BinanceFuturesClient(ExchangeClient):
         retry_attempts: int = 3,
         retry_delay_seconds: float = 1,
         retry_sleep: Callable[[float], Any] = asyncio.sleep,
+        websocket_proxy: str | None = None,
+        futures_ws_base_url: str = "wss://stream.binancefuture.com",
     ) -> None:
         self.client = client
         self.retry_attempts = retry_attempts
         self.retry_delay_seconds = retry_delay_seconds
         self.retry_sleep = retry_sleep
+        self.websocket_proxy = websocket_proxy
+        self.futures_ws_base_url = futures_ws_base_url.rstrip("/")
         self._order_filled_callbacks: list[Callable[[dict[str, Any]], None]] = []
         self._price_update_callbacks: list[Callable[[dict[str, Any]], None]] = []
 
@@ -35,6 +41,9 @@ class BinanceFuturesClient(ExchangeClient):
         api_secret: str,
         testnet: bool,
         proxy_config: dict[str, Any] | None = None,
+        create_attempts: int = 3,
+        create_retry_delay_seconds: float = 1,
+        create_retry_sleep: Callable[[float], Any] = asyncio.sleep,
     ) -> "BinanceFuturesClient":
         try:
             from binance import AsyncClient
@@ -42,13 +51,52 @@ class BinanceFuturesClient(ExchangeClient):
             raise RuntimeError("缺少 python-binance 依赖，请先安装 requirements.txt。") from exc
 
         requests_params = _requests_params(proxy_config)
-        client = await AsyncClient.create(
-            api_key=api_key,
-            api_secret=api_secret,
-            testnet=testnet,
-            requests_params=requests_params,
-        )
-        return cls(client)
+        attempts = max(1, create_attempts)
+        last_exc: Exception | None = None
+        for attempt in range(attempts):
+            client = None
+            try:
+                if testnet:
+                    client = AsyncClient(
+                        api_key=api_key,
+                        api_secret=api_secret,
+                        testnet=True,
+                        requests_params=requests_params,
+                    )
+                    await client.futures_ping()
+                    server_time = await client.futures_time()
+                    client.timestamp_offset = _server_time_offset_ms(server_time)
+                else:
+                    client = await AsyncClient.create(
+                        api_key=api_key,
+                        api_secret=api_secret,
+                        testnet=False,
+                        requests_params=requests_params,
+                    )
+                return cls(
+                    client,
+                    websocket_proxy=_proxy_url(proxy_config),
+                    futures_ws_base_url=(
+                        "wss://stream.binancefuture.com" if testnet else "wss://fstream.binance.com"
+                    ),
+                )
+            except Exception as exc:
+                if client is not None:
+                    close = getattr(client, "close_connection", None)
+                    if close is not None:
+                        result = close()
+                        if inspect.isawaitable(result):
+                            await result
+                last_exc = exc
+                if attempt == attempts - 1:
+                    break
+                delay = create_retry_delay_seconds * (2**attempt)
+                result = create_retry_sleep(delay)
+                if inspect.isawaitable(result):
+                    await result
+        if last_exc is None:
+            raise RuntimeError("Binance client creation failed without an exception")
+        raise last_exc
 
     async def close(self) -> None:
         close = getattr(self.client, "close_connection", None)
@@ -549,7 +597,7 @@ class BinanceFuturesClient(ExchangeClient):
                             except Exception as exc:
                                 socket_error = exc
                                 break
-                            event = parser(message)
+                            event = parser(_decode_socket_message(message))
                             if event is None:
                                 continue
                             try:
@@ -592,11 +640,14 @@ class BinanceFuturesClient(ExchangeClient):
 
     def _price_socket(self, symbols: list[str]):
         try:
-            from binance import BinanceSocketManager
+            import websockets
         except ImportError as exc:
-            raise RuntimeError("缺少 python-binance 依赖，请先安装 requirements.txt。") from exc
-        streams = [f"{symbol.lower()}@markPrice@1s" for symbol in symbols]
-        return BinanceSocketManager(self.client).futures_multiplex_socket(streams)
+            raise RuntimeError("缺少 websockets 依赖，请先安装 requirements.txt。") from exc
+        return websockets.connect(
+            _futures_price_stream_url(self.futures_ws_base_url, symbols),
+            proxy=self.websocket_proxy,
+            open_timeout=15,
+        )
 
     async def _call(self, func: Callable[..., Any], retry_status_unknown: bool = True, **kwargs) -> Any:
         attempts = max(1, self.retry_attempts)
@@ -628,12 +679,46 @@ class BinanceFuturesClient(ExchangeClient):
 
 
 def _requests_params(proxy_config: dict[str, Any] | None) -> dict[str, Any] | None:
+    proxy = _proxy_url(proxy_config)
+    if proxy is None:
+        return None
+    return {"proxy": proxy}
+
+
+def _server_time_offset_ms(response: Any) -> int:
+    if not isinstance(response, dict):
+        raise ValueError("Binance futures time response must be an object")
+    try:
+        server_time = int(response["serverTime"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Binance futures time response missing serverTime") from exc
+    return server_time - int(time.time() * 1000)
+
+
+def _decode_socket_message(message: Any) -> Any:
+    if isinstance(message, str):
+        try:
+            return json.loads(message)
+        except ValueError:
+            return message
+    return message
+
+
+def _proxy_url(proxy_config: dict[str, Any] | None) -> str | None:
     if not proxy_config or not proxy_config.get("enabled"):
         return None
     proxy = proxy_config.get("https") or proxy_config.get("http")
-    if not proxy:
-        return None
-    return {"proxy": proxy}
+    return str(proxy) if proxy else None
+
+
+def _futures_price_stream_url(base_url: str, symbols: list[str]) -> str:
+    streams = [f"{str(symbol).strip().lower()}@ticker" for symbol in symbols if str(symbol).strip()]
+    if not streams:
+        raise ValueError("price stream requires at least one symbol")
+    clean_base_url = base_url.rstrip("/")
+    if len(streams) == 1:
+        return f"{clean_base_url}/ws/{streams[0]}"
+    return f"{clean_base_url}/stream?streams={'/'.join(streams)}"
 
 
 def _is_non_retryable_exchange_error(exc: Exception) -> bool:
@@ -1249,6 +1334,16 @@ def parse_price_update(message: dict[str, Any]) -> dict[str, Any] | None:
         return {
             "symbol": symbol,
             "price": (bid + ask) / 2,
+            "event_time": _event_time(message),
+        }
+    if event_type == "24hrTicker":
+        symbol = _non_empty_str_or_none(message.get("s"))
+        price = _positive_float_or_none(message.get("c"))
+        if symbol is None or price is None:
+            return None
+        return {
+            "symbol": symbol,
+            "price": price,
             "event_time": _event_time(message),
         }
     return None

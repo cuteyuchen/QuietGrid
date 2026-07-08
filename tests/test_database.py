@@ -66,6 +66,7 @@ def test_dashboard_summary_counts_open_orders(tmp_path) -> None:
     now = datetime(2026, 7, 4, tzinfo=timezone.utc)
     window_id = repo.create_window(now)
     session_id = repo.create_session(window_id, "AAPLUSDT", "RUNNING", 200, 10, now)
+    closed_session_id = repo.create_session(window_id, "MSFTUSDT", "RUNNING", 200, 10, now)
 
     repo.upsert_order(
         session_id,
@@ -97,6 +98,21 @@ def test_dashboard_summary_counts_open_orders(tmp_path) -> None:
             fill_price=101,
         ),
     )
+    repo.upsert_order(
+        closed_session_id,
+        GridOrder(
+            symbol="MSFTUSDT",
+            order_id="historical-open-1",
+            client_id="cid-historical-open-1",
+            grid_index=1,
+            side=OrderSide.BUY,
+            price=100,
+            qty=1,
+            status=OrderStatus.OPEN,
+            created_at=now,
+        ),
+    )
+    repo.close_session(closed_session_id, "startup_recovery_skipped_symbol", now)
 
     summary = repo.dashboard_summary()
 
@@ -111,6 +127,7 @@ def test_dashboard_order_status_counts_and_recent_alerts(tmp_path) -> None:
     now = datetime(2026, 7, 4, tzinfo=timezone.utc)
     window_id = repo.create_window(now)
     session_id = repo.create_session(window_id, "AAPLUSDT", "RUNNING", 200, 10, now)
+    closed_session_id = repo.create_session(window_id, "MSFTUSDT", "RUNNING", 200, 10, now)
 
     for status in (OrderStatus.OPEN, OrderStatus.OPEN, OrderStatus.FILLED, OrderStatus.CANCELLED):
         suffix = status.value
@@ -128,6 +145,21 @@ def test_dashboard_order_status_counts_and_recent_alerts(tmp_path) -> None:
                 created_at=now,
             ),
         )
+    repo.upsert_order(
+        closed_session_id,
+        GridOrder(
+            symbol="MSFTUSDT",
+            order_id="historical-open-1",
+            client_id="cid-historical-open-1",
+            grid_index=1,
+            side=OrderSide.BUY,
+            price=100,
+            qty=10,
+            status=OrderStatus.OPEN,
+            created_at=now,
+        ),
+    )
+    repo.close_session(closed_session_id, "startup_recovery_skipped_symbol", now)
     repo.log_system("INFO", "controller", "normal loop", None, now)
     repo.log_system("WARN", "order_reconciliation", "Recovered filled order.", "client_id=cid-open", now)
     repo.log_system("ERROR", "position_reconciliation", "Position mismatch.", "symbol=AAPLUSDT", now)
@@ -143,6 +175,24 @@ def test_dashboard_order_status_counts_and_recent_alerts(tmp_path) -> None:
     assert [alert["level"] for alert in alerts] == ["ERROR", "WARN"]
     assert alerts[0]["module"] == "position_reconciliation"
     assert alerts[1]["module"] == "order_reconciliation"
+
+
+def test_latest_system_logs_by_modules_returns_latest_per_module(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+
+    repo.log_system("INFO", "binance_check", "old", None, now)
+    repo.log_system("WARN", "commission_health", "fee warning", None, now)
+    repo.log_system("ERROR", "binance_check", "latest", "detail", now)
+
+    rows = repo.latest_system_logs_by_modules(["binance_check", "commission_health", "missing"])
+
+    assert [row["module"] for row in rows] == ["binance_check", "commission_health"]
+    assert rows[0]["message"] == "latest"
+    assert rows[0]["detail"] == "detail"
+    assert rows[1]["message"] == "fee warning"
 
 
 def test_log_system_calls_notifier_after_persisting(tmp_path) -> None:

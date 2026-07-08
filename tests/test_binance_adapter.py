@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+from types import SimpleNamespace
 from typing import Any
 
 from exchange.binance import (
     BinanceFuturesClient,
+    _futures_price_stream_url,
     _requests_params,
+    _server_time_offset_ms,
     parse_order_trade_update,
     parse_price_update,
     symbol_rules_from_exchange_info,
@@ -99,6 +103,74 @@ class FakeBinanceAsyncClient:
 
     async def futures_commission_rate(self, symbol: str) -> dict[str, str]:
         return {"symbol": symbol, "makerCommissionRate": "0.000000", "takerCommissionRate": "0.000500"}
+
+
+def test_binance_client_create_uses_futures_only_testnet_initialization(monkeypatch) -> None:
+    class FakeAsyncClient:
+        init_calls = 0
+        create_calls = 0
+        closed = 0
+
+        def __init__(self, **kwargs):
+            type(self).init_calls += 1
+            self.kwargs = kwargs
+            self.timestamp_offset = 0
+
+        async def futures_ping(self):
+            if type(self).init_calls == 1:
+                raise RuntimeError("proxy reset")
+
+        async def futures_time(self):
+            return {"serverTime": 1_900_000_000_000}
+
+        async def close_connection(self):
+            type(self).closed += 1
+
+        @classmethod
+        async def create(cls, **kwargs):
+            cls.create_calls += 1
+            raise AssertionError("testnet futures client should not ping spot API during creation")
+
+    async def run() -> None:
+        monkeypatch.setitem(sys.modules, "binance", SimpleNamespace(AsyncClient=FakeAsyncClient))
+
+        client = await BinanceFuturesClient.create(
+            api_key="key",
+            api_secret="secret",
+            testnet=True,
+            proxy_config={"enabled": True, "https": "http://127.0.0.1:7897"},
+            create_retry_delay_seconds=0,
+            create_retry_sleep=lambda seconds: None,
+        )
+
+        assert FakeAsyncClient.init_calls == 2
+        assert FakeAsyncClient.create_calls == 0
+        assert FakeAsyncClient.closed == 1
+        assert client.client.kwargs["requests_params"] == {"proxy": "http://127.0.0.1:7897"}
+        assert client.client.kwargs["testnet"] is True
+        assert client.client.timestamp_offset != 0
+
+    asyncio.run(run())
+
+
+def test_server_time_offset_requires_server_time() -> None:
+    assert isinstance(_server_time_offset_ms({"serverTime": "1900000000000"}), int)
+
+    try:
+        _server_time_offset_ms({"server_time": 1900000000000})
+    except ValueError as exc:
+        assert "serverTime" in str(exc)
+    else:
+        raise AssertionError("missing serverTime should fail")
+
+
+def test_futures_price_stream_url_uses_raw_single_and_combined_multi_streams() -> None:
+    assert _futures_price_stream_url("wss://stream.binancefuture.com/", ["btcusdt"]) == (
+        "wss://stream.binancefuture.com/ws/btcusdt@ticker"
+    )
+    assert _futures_price_stream_url("wss://stream.binancefuture.com", ["BTCUSDT", "ETHUSDT"]) == (
+        "wss://stream.binancefuture.com/stream?streams=btcusdt@ticker/ethusdt@ticker"
+    )
 
 
 class FlakyBalanceClient(FakeBinanceAsyncClient):
@@ -1800,6 +1872,19 @@ def test_parse_price_update_supports_multiplex_payload() -> None:
     assert event["price"] == 99.5
 
 
+def test_parse_price_update_supports_futures_ticker_payload() -> None:
+    event = parse_price_update(
+        {
+            "stream": "btcusdt@ticker",
+            "data": {"e": "24hrTicker", "E": 1780000000000, "s": "BTCUSDT", "c": "63524.00"},
+        }
+    )
+
+    assert event is not None
+    assert event["symbol"] == "BTCUSDT"
+    assert event["price"] == 63524.0
+
+
 def test_parse_price_update_ignores_non_dict_messages() -> None:
     assert parse_price_update("bad message") is None
     assert parse_price_update(None) is None
@@ -2101,6 +2186,26 @@ def test_run_price_stream_dispatches_multiplex_events() -> None:
 
         assert len(events) == 1
         assert events[0]["price"] == 100.0
+
+    asyncio.run(run())
+
+
+def test_run_price_stream_decodes_raw_json_text_messages() -> None:
+    async def run() -> None:
+        client = BinanceFuturesClient(FakeBinanceAsyncClient())
+        events: list[dict[str, Any]] = []
+
+        await client.run_price_stream(
+            ["BTCUSDT"],
+            events.append,
+            socket_factory=lambda: FakeSocket(
+                ['{"e":"24hrTicker","E":1780000000000,"s":"BTCUSDT","c":"63524.00"}']
+            ),
+        )
+
+        assert len(events) == 1
+        assert events[0]["symbol"] == "BTCUSDT"
+        assert events[0]["price"] == 63524.0
 
     asyncio.run(run())
 

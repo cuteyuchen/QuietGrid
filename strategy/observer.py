@@ -66,5 +66,6 @@ class Observer:
             atr_period=self.grid_config.atr_period,
             stop_buffer_pct=self.grid_config.stop_buffer_pct,
             min_samples=self.observer_config.min_samples,
+            volatility_refresh_seconds=self.grid_config.volatility_refresh_seconds,
         )
         return calculate_grid_params(symbol, klines, current_price, funding_rate, effective_grid_config)

@@ -6,10 +6,9 @@ import csv
 import hashlib
 import hmac
 import json
-import time
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
-from math import isfinite
+from math import isfinite, sqrt
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -39,6 +38,18 @@ class _SmokeComplete(Exception):
 
 ORDER_CREATE_RECOVERY_ATTEMPTS = 5
 ORDER_CREATE_RECOVERY_DELAY_SECONDS = 0.25
+BINANCE_TESTNET_SUBSTITUTE_SYMBOLS = {"BTCUSDT", "ETHUSDT", "BCHUSDT"}
+
+
+class _TestnetAlwaysOpenScheduler:
+    def is_in_window(self, now_utc: datetime | None = None) -> bool:
+        return True
+
+    def should_force_close(self, now_utc: datetime | None = None) -> bool:
+        return False
+
+    def minutes_to_next_open(self, now_utc: datetime | None = None) -> float:
+        return float("inf")
 
 
 def main() -> None:
@@ -53,15 +64,17 @@ def main() -> None:
     parser.add_argument("--binance-market-roundtrip-smoke", action="store_true", help="使用 Binance 测试网执行最小 Market 开平仓烟测")
     parser.add_argument("--binance-direct-order-diagnose", action="store_true", help="绕过 SDK 直接请求 Binance Futures /order 诊断真实下单接口")
     parser.add_argument("--binance-price-stream-smoke", action="store_true", help="接收一条 Binance 测试网价格 WebSocket 事件")
+    parser.add_argument("--binance-signed-write-health", action="store_true", help="只执行 Binance 测试网签名写接口预检，不启动网格")
     parser.add_argument("--binance-listen-key-smoke", action="store_true", help="验证 Binance Futures 用户流 listenKey 生命周期")
     parser.add_argument("--binance-algo-stop-smoke", action="store_true", help="创建并撤销一个 Binance Futures Algo STOP_MARKET 条件单")
     parser.add_argument("--binance-position-smoke", action="store_true", help="只读检查 Binance 测试网持仓模式、持仓和未成交订单")
     parser.add_argument("--binance-safety-sweep", action="store_true", help="清理 Binance 测试网 allowlist 标的的挂单和仓位")
     parser.add_argument("--backtest-csv", help="读取本地CSV K线文件执行离线网格回测，不连接交易所")
+    parser.add_argument("--backtest-dir", help="读取目录内所有CSV K线文件执行批量离线回测，不连接交易所")
     parser.add_argument("--backtest-observe-rows", type=int, default=60, help="CSV前多少行作为观察期样本，默认60")
     parser.add_argument("--backtest-symbol", default="AAPLUSDT", help="回测标的名，默认AAPLUSDT")
     parser.add_argument("--backtest-funding-rate", type=float, default=0.0, help="观察期网格计算使用的资金费率，默认0")
-    parser.add_argument("--backtest-output", help="可选：把完整回测报告写入JSON文件")
+    parser.add_argument("--backtest-output", help="可选：把单文件完整回测报告或批量汇总报告写入JSON文件")
     args = parser.parse_args()
 
     config = load_config()
@@ -79,11 +92,13 @@ def main() -> None:
         args.binance_market_roundtrip_smoke,
         args.binance_direct_order_diagnose,
         args.binance_price_stream_smoke,
+        args.binance_signed_write_health,
         args.binance_listen_key_smoke,
         args.binance_algo_stop_smoke,
         args.binance_position_smoke,
         args.binance_safety_sweep,
         args.backtest_csv is not None,
+        args.backtest_dir is not None,
     ]
     if sum(1 for enabled in selected_modes if enabled) > 1:
         raise SystemExit("一次只能选择一个运行模式。")
@@ -119,6 +134,10 @@ def main() -> None:
         result = asyncio.run(_run_binance_price_stream_smoke(config))
         logger.info("Binance testnet price stream smoke result: {}", result)
         return
+    if args.binance_signed_write_health:
+        result = asyncio.run(_run_binance_signed_write_health(config))
+        logger.info("Binance testnet signed write health result: {}", result)
+        return
     if args.binance_listen_key_smoke:
         result = asyncio.run(_run_binance_listen_key_smoke(config))
         logger.info("Binance testnet listenKey smoke result: {}", result)
@@ -146,6 +165,17 @@ def main() -> None:
         )
         logger.info("CSV backtest result: {}", json.dumps(result, ensure_ascii=False))
         return
+    if args.backtest_dir:
+        result = _run_backtest_dir(
+            config,
+            Path(args.backtest_dir),
+            observe_rows=args.backtest_observe_rows,
+            symbol=args.backtest_symbol,
+            funding_rate=args.backtest_funding_rate,
+            output_path=Path(args.backtest_output) if args.backtest_output else None,
+        )
+        logger.info("CSV backtest batch result: {}", json.dumps(result, ensure_ascii=False))
+        return
     if args.mock_loop:
         asyncio.run(_run_mock_loop(config))
         return
@@ -154,7 +184,7 @@ def main() -> None:
         return
 
     logger.info(
-        "QuietGrid initialized in testnet-safe mode. Use --mock-once, --binance-check, --binance-order-smoke, --binance-test-order-smoke, --binance-market-roundtrip-smoke, --binance-direct-order-diagnose, --binance-price-stream-smoke, --binance-listen-key-smoke, --binance-algo-stop-smoke, --binance-position-smoke, --binance-safety-sweep, --backtest-csv, --binance-once, --mock-loop or --binance-loop."
+        "QuietGrid initialized in testnet-safe mode. Use --mock-once, --binance-check, --binance-order-smoke, --binance-test-order-smoke, --binance-market-roundtrip-smoke, --binance-direct-order-diagnose, --binance-price-stream-smoke, --binance-signed-write-health, --binance-listen-key-smoke, --binance-algo-stop-smoke, --binance-position-smoke, --binance-safety-sweep, --backtest-csv, --backtest-dir, --binance-once, --mock-loop or --binance-loop."
     )
 
 
@@ -166,6 +196,41 @@ async def _run_mock_once(config):
 async def _run_mock_loop(config):
     controller = _build_controller(MockExchangeClient(), config, live_observation=False)
     await controller.run_loop()
+
+
+async def _create_binance_client_for_module(config, module: str) -> BinanceFuturesClient:
+    try:
+        return await BinanceFuturesClient.create(
+            api_key=config.binance_api_key,
+            api_secret=config.binance_api_secret,
+            testnet=config.binance_testnet,
+            proxy_config=config.raw.get("proxy"),
+        )
+    except Exception as exc:
+        _log_binance_client_create_failure(config, module, exc)
+        raise
+
+
+def _log_binance_client_create_failure(config, module: str, exc: Exception) -> None:
+    try:
+        _build_repository(config).log_system(
+            "ERROR",
+            module,
+            "Binance testnet client creation failed.",
+            _json_log_detail(
+                {
+                    "ok": False,
+                    "stage": "client_create",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    "proxy_enabled": _proxy_enabled(config.raw.get("proxy")),
+                    "testnet": bool(config.binance_testnet),
+                }
+            ),
+            datetime.now(timezone.utc),
+        )
+    except Exception as log_exc:
+        logger.warning("Failed to persist Binance client creation failure: {}", log_exc)
 
 
 def _run_backtest_csv(
@@ -207,6 +272,81 @@ def _run_backtest_csv(
         _write_backtest_report(output_path, _backtest_report(result, params, summary))
         summary["output_path"] = str(output_path)
     return summary
+
+
+def _run_backtest_dir(
+    config,
+    csv_dir: Path,
+    observe_rows: int,
+    symbol: str,
+    funding_rate: float,
+    output_path: Path | None = None,
+) -> dict[str, Any]:
+    if not csv_dir.exists() or not csv_dir.is_dir():
+        raise RuntimeError(f"回测CSV目录不存在: {csv_dir}")
+    csv_paths = sorted(path for path in csv_dir.glob("*.csv") if path.is_file())
+    if not csv_paths:
+        raise RuntimeError(f"回测CSV目录没有CSV文件: {csv_dir}")
+
+    reports: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    for csv_path in csv_paths:
+        try:
+            summary = _run_backtest_csv(
+                config,
+                csv_path,
+                observe_rows=observe_rows,
+                symbol=symbol,
+                funding_rate=funding_rate,
+            )
+        except Exception as exc:
+            errors.append({"source_file": csv_path.name, "error": str(exc)})
+            continue
+        reports.append({"source_file": csv_path.name, **summary})
+
+    if not reports:
+        reasons = "; ".join(f"{item['source_file']}: {item['error']}" for item in errors)
+        raise RuntimeError(f"批量回测没有成功样本: {reasons}")
+
+    aggregate = _backtest_batch_summary(reports, errors)
+    if output_path is not None:
+        _write_backtest_report(output_path, {"summary": aggregate, "reports": reports, "errors": errors})
+        aggregate["output_path"] = str(output_path)
+    return aggregate
+
+
+def _backtest_batch_summary(reports: list[dict[str, Any]], errors: list[dict[str, str]]) -> dict[str, Any]:
+    total_pnl = sum(float(item.get("total_pnl", 0.0) or 0.0) for item in reports)
+    max_drawdown = max(float(item.get("max_drawdown", 0.0) or 0.0) for item in reports)
+    total_fills = sum(int(item.get("fills", 0) or 0) for item in reports)
+    total_backtest_rows = sum(int(item.get("backtest_rows", 0) or 0) for item in reports)
+    total_grid_trades = sum(int(item.get("grid_trade_count", 0) or 0) for item in reports)
+    winning_grid_trades = sum(int(item.get("winning_grid_trades", 0) or 0) for item in reports)
+    losing_grid_trades = sum(int(item.get("losing_grid_trades", 0) or 0) for item in reports)
+    break_even_grid_trades = sum(int(item.get("break_even_grid_trades", 0) or 0) for item in reports)
+    gross_grid_pnl = sum(float(item.get("gross_grid_pnl", 0.0) or 0.0) for item in reports)
+    stopped_count = sum(1 for item in reports if item.get("stopped_reason"))
+    return {
+        "files": len(reports) + len(errors),
+        "succeeded": len(reports),
+        "failed": len(errors),
+        "symbol": reports[0].get("symbol", ""),
+        "total_pnl": total_pnl,
+        "avg_total_pnl": total_pnl / len(reports),
+        "max_drawdown": max_drawdown,
+        "total_fills": total_fills,
+        "total_grid_trades": total_grid_trades,
+        "winning_grid_trades": winning_grid_trades,
+        "losing_grid_trades": losing_grid_trades,
+        "break_even_grid_trades": break_even_grid_trades,
+        "win_rate": winning_grid_trades / total_grid_trades if total_grid_trades else 0.0,
+        "avg_grid_pnl": gross_grid_pnl / total_grid_trades if total_grid_trades else 0.0,
+        "fills_per_bar": total_fills / total_backtest_rows if total_backtest_rows else 0.0,
+        "avg_equity_sharpe": sum(float(item.get("equity_sharpe", 0.0) or 0.0) for item in reports) / len(reports),
+        "stopped_count": stopped_count,
+        "best_file": max(reports, key=lambda item: float(item.get("total_pnl", 0.0) or 0.0))["source_file"],
+        "worst_file": min(reports, key=lambda item: float(item.get("total_pnl", 0.0) or 0.0))["source_file"],
+    }
 
 
 def _read_backtest_csv(csv_path: Path) -> list[dict[str, Any]]:
@@ -259,16 +399,22 @@ def _grid_config_from_raw(raw: dict[str, Any]) -> GridConfig:
 
 
 def _backtest_summary(result: BacktestResult, observe_rows: int, backtest_rows: int) -> dict[str, Any]:
+    grid_stats = _backtest_grid_trade_stats(result)
     return {
         "symbol": result.symbol,
         "observe_rows": observe_rows,
         "backtest_rows": backtest_rows,
         "fills": len(result.fills),
+        "fills_per_bar": len(result.fills) / backtest_rows if backtest_rows else 0.0,
+        **grid_stats,
         "gross_grid_pnl": result.gross_grid_pnl,
         "fees_paid": result.fees_paid,
         "realized_pnl": result.realized_pnl,
         "unrealized_pnl": result.unrealized_pnl,
         "total_pnl": result.total_pnl,
+        "max_equity": result.max_equity,
+        "max_drawdown": result.max_drawdown,
+        "equity_sharpe": _simple_equity_sharpe(result),
         "net_position_qty": result.net_position_qty,
         "open_order_count": result.open_order_count,
         "stopped_reason": result.stopped_reason,
@@ -276,6 +422,36 @@ def _backtest_summary(result: BacktestResult, observe_rows: int, backtest_rows: 
         "stopped_at_price": result.stopped_at_price,
         "last_price": result.last_price,
     }
+
+
+def _backtest_grid_trade_stats(result: BacktestResult) -> dict[str, Any]:
+    closed_grid_pnls = [float(fill.grid_pnl) for fill in result.fills if fill.grid_pnl is not None]
+    trade_count = len(closed_grid_pnls)
+    winning = sum(1 for pnl in closed_grid_pnls if pnl > 0)
+    losing = sum(1 for pnl in closed_grid_pnls if pnl < 0)
+    break_even = trade_count - winning - losing
+    return {
+        "grid_trade_count": trade_count,
+        "winning_grid_trades": winning,
+        "losing_grid_trades": losing,
+        "break_even_grid_trades": break_even,
+        "win_rate": winning / trade_count if trade_count else 0.0,
+        "avg_grid_pnl": sum(closed_grid_pnls) / trade_count if trade_count else 0.0,
+    }
+
+
+def _simple_equity_sharpe(result: BacktestResult) -> float:
+    equity_changes = [
+        result.equity_curve[index].equity - result.equity_curve[index - 1].equity
+        for index in range(1, len(result.equity_curve))
+    ]
+    if len(equity_changes) < 2:
+        return 0.0
+    mean_change = sum(equity_changes) / len(equity_changes)
+    variance = sum((change - mean_change) ** 2 for change in equity_changes) / (len(equity_changes) - 1)
+    if variance <= 0:
+        return 0.0
+    return mean_change / sqrt(variance) * sqrt(len(equity_changes))
 
 
 def _backtest_report(result: BacktestResult, params, summary: dict[str, Any]) -> dict[str, Any]:
@@ -308,6 +484,18 @@ def _backtest_report(result: BacktestResult, params, summary: dict[str, Any]) ->
             }
             for fill in result.fills
         ],
+        "equity_curve": [
+            {
+                "bar_index": point.bar_index,
+                "equity": point.equity,
+                "realized_pnl": point.realized_pnl,
+                "unrealized_pnl": point.unrealized_pnl,
+                "drawdown": point.drawdown,
+                "close": point.close,
+                "timestamp": point.timestamp,
+            }
+            for point in result.equity_curve
+        ],
     }
 
 
@@ -321,12 +509,7 @@ async def _run_binance_once(config):
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-once 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_once")
     try:
         eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
         await _require_binance_signed_write_health(exchange, config, eligible, "binance_once")
@@ -335,7 +518,7 @@ async def _run_binance_once(config):
             check = await controller.validate_startup()
             if not check.ok:
                 raise RuntimeError(check.reason)
-            await controller.recover_unclosed_sessions()
+            await controller.recover_unclosed_sessions(recoverable_symbols=set(eligible))
             return await controller.run_once()
         finally:
             closed = await _close_all_active_sessions_or_raise(controller, "binance_once_cleanup")
@@ -350,12 +533,7 @@ async def _run_binance_check(config):
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-check 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_check")
     try:
         await _require_binance_tradable_allowlist_symbols(exchange, config)
         controller = _build_controller(exchange, config, live_observation=False)
@@ -397,12 +575,7 @@ async def _run_binance_order_smoke(config):
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-order-smoke 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_order_smoke")
     attempted_symbols: list[str] = []
     failures: list[str] = []
     try:
@@ -429,12 +602,7 @@ async def _run_binance_test_order_smoke(config):
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-test-order-smoke 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_test_order_smoke")
     try:
         eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
         symbol = eligible[0]
@@ -466,7 +634,7 @@ async def _run_binance_test_order_smoke(config):
             )
         except Exception as exc:
             stop_error = str(exc)
-        return {
+        result = {
             "test_order_ok": True,
             "symbol": symbol,
             "last_price": params["last_price"],
@@ -479,6 +647,14 @@ async def _run_binance_test_order_smoke(config):
             "stop_supported": stop_response is not None,
             "stop_error": stop_error,
         }
+        _build_repository(config).log_system(
+            "INFO" if result["test_order_ok"] and result["stop_supported"] else "WARN",
+            "binance_test_order_smoke",
+            "Binance testnet order/test smoke completed.",
+            _json_log_detail(result),
+            datetime.now(timezone.utc),
+        )
+        return result
     finally:
         await exchange.close()
 
@@ -488,12 +664,7 @@ async def _run_binance_market_roundtrip_smoke(config):
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-market-roundtrip-smoke 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_market_roundtrip_smoke")
     symbol: str | None = None
     cleanup_errors: list[str] = []
     try:
@@ -562,7 +733,7 @@ async def _run_binance_market_roundtrip_smoke(config):
             "INFO",
             "binance_market_roundtrip_smoke",
             "Binance testnet market roundtrip smoke completed.",
-            json.dumps(result, ensure_ascii=False),
+            _json_log_detail(result),
             datetime.now(timezone.utc),
         )
         return result
@@ -579,12 +750,7 @@ async def _run_binance_direct_order_diagnose(config):
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-direct-order-diagnose 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_direct_order_diagnose")
     symbol: str | None = None
     order_id: str | None = None
     cleanup_errors: list[str] = []
@@ -663,7 +829,7 @@ async def _run_binance_direct_order_diagnose(config):
             "INFO" if result["direct_order_diagnose_ok"] and result["endpoint_order_ok"] else "ERROR",
             "binance_direct_order_diagnose",
             "Binance direct REST order endpoint diagnose completed.",
-            json.dumps(result, ensure_ascii=False),
+            _json_log_detail(result),
             datetime.now(timezone.utc),
         )
         if cleanup_errors:
@@ -721,7 +887,7 @@ async def _binance_commission_health(exchange, config, symbols: list[str], at: d
         "ERROR" if status == "error" else "WARN" if status == "warn" else "INFO",
         "commission_health",
         "Binance maker fee health check completed.",
-        json.dumps(result, ensure_ascii=False),
+        _json_log_detail(result),
         at,
     )
     return result
@@ -769,7 +935,7 @@ async def _require_binance_signed_write_health(
         "INFO" if result["signed_write_ok"] else "ERROR",
         "binance_signed_write_health",
         f"Binance signed write health check {'passed' if result['signed_write_ok'] else 'failed'} before {caller}.",
-        json.dumps(result, ensure_ascii=False),
+        _json_log_detail(result),
         datetime.now(timezone.utc),
     )
     if errors:
@@ -777,22 +943,38 @@ async def _require_binance_signed_write_health(
     return result
 
 
+async def _run_binance_signed_write_health(config):
+    require_testnet(config)
+    _require_binance_symbol_allowlist(config)
+    if not config.binance_api_key or not config.binance_api_secret:
+        raise RuntimeError("执行 --binance-signed-write-health 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
+    exchange = await _create_binance_client_for_module(config, "binance_signed_write_health")
+    try:
+        eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
+        return await _require_binance_signed_write_health(exchange, config, eligible, "binance_signed_write_health")
+    finally:
+        await exchange.close()
+
+
 async def _run_binance_listen_key_smoke(config):
     require_testnet(config)
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-listen-key-smoke 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_listen_key_smoke")
     listen_key: str | None = None
     try:
         listen_key = await exchange.create_futures_listen_key()
         await exchange.keepalive_futures_listen_key(listen_key)
-        return {"listen_key_ok": True, "listen_key_length": len(listen_key)}
+        result = {"listen_key_ok": True, "listen_key_length": len(listen_key)}
+        _build_repository(config).log_system(
+            "INFO",
+            "binance_listen_key_smoke",
+            "Binance testnet listenKey smoke completed.",
+            _json_log_detail(result),
+            datetime.now(timezone.utc),
+        )
+        return result
     finally:
         if listen_key:
             await exchange.close_futures_listen_key(listen_key)
@@ -804,12 +986,7 @@ async def _run_binance_algo_stop_smoke(config):
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-algo-stop-smoke 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_algo_stop_smoke")
     symbol: str | None = None
     algo_id: int | str | None = None
     try:
@@ -839,7 +1016,7 @@ async def _run_binance_algo_stop_smoke(config):
             if str(order.get("algoId")) == str(algo_id)
             or str(order.get("clientAlgoId", "")).startswith("qgalgo-")
         ]
-        return {
+        result = {
             "algo_stop_ok": True,
             "symbol": symbol,
             "position_side": position_side,
@@ -850,6 +1027,14 @@ async def _run_binance_algo_stop_smoke(config):
             "cancel_response": cancel_response,
             "remaining_open": len(remaining),
         }
+        _build_repository(config).log_system(
+            "INFO" if result["remaining_open"] == 0 else "WARN",
+            "binance_algo_stop_smoke",
+            "Binance testnet algo stop smoke completed.",
+            _json_log_detail(result),
+            datetime.now(timezone.utc),
+        )
+        return result
     finally:
         if symbol is not None and algo_id is not None:
             try:
@@ -864,14 +1049,9 @@ async def _run_binance_position_smoke(config):
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-position-smoke 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_position_smoke")
     try:
-        eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
+        eligible = await _require_binance_smoke_symbols(exchange, config)
         mode = await exchange.get_position_mode()
         symbols = []
         for symbol in eligible:
@@ -889,11 +1069,19 @@ async def _run_binance_position_smoke(config):
                     "algo_open": len(open_algo_orders),
                 }
             )
-        return {
+        result = {
             "position_smoke_ok": True,
             "dual_side_position": bool(mode.get("dualSidePosition")),
             "symbols": symbols,
         }
+        _build_repository(config).log_system(
+            "INFO",
+            "binance_position_smoke",
+            "Binance testnet position smoke completed.",
+            _json_log_detail(result),
+            datetime.now(timezone.utc),
+        )
+        return result
     finally:
         await exchange.close()
 
@@ -904,14 +1092,9 @@ async def _run_binance_safety_sweep(config):
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-safety-sweep 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
     repository = _build_repository(config)
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_safety_sweep")
     try:
-        eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
+        eligible = await _require_binance_smoke_symbols(exchange, config)
         results = []
         residuals: list[str] = []
         for symbol in eligible:
@@ -964,7 +1147,7 @@ async def _run_binance_safety_sweep(config):
                 "ERROR",
                 "binance_safety_sweep",
                 "Binance testnet safety sweep left residual exposure.",
-                json.dumps({"symbols": results, "residuals": residuals}, ensure_ascii=False),
+                _json_log_detail({"symbols": results, "residuals": residuals}),
                 datetime.now(timezone.utc),
             )
             raise RuntimeError(f"测试网安全清扫后仍有残留: {'; '.join(residuals)}")
@@ -976,7 +1159,7 @@ async def _run_binance_safety_sweep(config):
             "INFO",
             "binance_safety_sweep",
             "Binance testnet safety sweep completed.",
-            json.dumps(result, ensure_ascii=False),
+            _json_log_detail(result),
             datetime.now(timezone.utc),
         )
         return result
@@ -984,21 +1167,15 @@ async def _run_binance_safety_sweep(config):
         await exchange.close()
 
 
-async def _run_binance_price_stream_smoke(config, timeout_seconds: float = 20):
+async def _run_binance_price_stream_smoke(config, timeout_seconds: float = 45):
     require_testnet(config)
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-price-stream-smoke 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_price_stream_smoke")
     event_holder: list[dict] = []
     try:
-        eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
-        symbol = eligible[0]
+        symbol = _first_configured_binance_symbol(config)
 
         async def handler(event):
             event_holder.append(event)
@@ -1006,18 +1183,26 @@ async def _run_binance_price_stream_smoke(config, timeout_seconds: float = 20):
 
         try:
             await asyncio.wait_for(
-                exchange.run_price_stream([symbol], handler, reconnect_delay_seconds=1, max_reconnects=0),
+                exchange.run_price_stream([symbol], handler, reconnect_delay_seconds=1, max_reconnects=2),
                 timeout=timeout_seconds,
             )
         except _SmokeComplete:
             pass
         if not event_holder:
             raise RuntimeError("Binance price stream smoke timed out without receiving an event.")
-        return {
+        result = {
             "stream_ok": True,
             "symbol": symbol,
             "event": event_holder[0],
         }
+        _build_repository(config).log_system(
+            "INFO",
+            "binance_price_stream_smoke",
+            "Binance testnet price stream smoke completed.",
+            _json_log_detail(result),
+            datetime.now(timezone.utc),
+        )
+        return result
     finally:
         await exchange.close()
 
@@ -1120,12 +1305,7 @@ async def _run_binance_loop(config):
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 --binance-loop 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await BinanceFuturesClient.create(
-        api_key=config.binance_api_key,
-        api_secret=config.binance_api_secret,
-        testnet=config.binance_testnet,
-        proxy_config=config.raw.get("proxy"),
-    )
+    exchange = await _create_binance_client_for_module(config, "binance_loop")
     try:
         eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
         await _require_binance_signed_write_health(exchange, config, eligible, "binance_loop")
@@ -1133,7 +1313,7 @@ async def _run_binance_loop(config):
         check = await controller.validate_startup()
         if not check.ok:
             raise RuntimeError(check.reason)
-        await controller.recover_unclosed_sessions()
+        await controller.recover_unclosed_sessions(recoverable_symbols=set(eligible))
         user_stream_task = asyncio.create_task(exchange.run_user_stream(controller.handle_order_filled_event))
         price_stream_task = asyncio.create_task(
             _run_dynamic_price_stream(exchange, controller, poll_seconds=float(config.raw["timing"]["loop_interval_seconds"]))
@@ -1246,6 +1426,28 @@ def _require_binance_symbol_allowlist(config) -> None:
         raise RuntimeError("真实 Binance 入口要求配置 selection.symbol_allowlist，避免误选非目标合约。")
 
 
+def _first_configured_binance_symbol(config) -> str:
+    symbols = _configured_binance_symbols(config)
+    if not symbols:
+        raise RuntimeError("selection.symbol_allowlist 未配置可用于测试网价格流的 USDT 合约。")
+    return symbols[0]
+
+
+def _configured_binance_symbols(config) -> list[str]:
+    selection = config.raw.get("selection", {})
+    blacklist = _normalized_symbols(selection.get("symbol_blacklist", []))
+    symbols = []
+    seen = set()
+    for raw_symbol in selection.get("symbol_allowlist", []):
+        symbol = _normalized_symbol(raw_symbol)
+        if not symbol or symbol in seen or symbol in blacklist:
+            continue
+        seen.add(symbol)
+        if symbol.endswith("USDT"):
+            symbols.append(symbol)
+    return symbols
+
+
 async def _require_binance_tradable_allowlist_symbols(exchange, config) -> list[str]:
     selection = config.raw.get("selection", {})
     blacklist = _normalized_symbols(selection.get("symbol_blacklist", []))
@@ -1269,6 +1471,18 @@ async def _require_binance_tradable_allowlist_symbols(exchange, config) -> list[
     if not eligible:
         raise RuntimeError("selection.symbol_allowlist 未匹配到任何可交易 USDT 合约，请检查测试网合约列表和黑名单配置。")
     return eligible
+
+
+async def _require_binance_smoke_symbols(exchange, config) -> list[str]:
+    try:
+        return await _require_binance_tradable_allowlist_symbols(exchange, config)
+    except Exception as exc:
+        if bool(config.binance_testnet):
+            fallback = [symbol for symbol in _configured_binance_symbols(config) if symbol in BINANCE_TESTNET_SUBSTITUTE_SYMBOLS]
+            if fallback:
+                logger.warning("Falling back to configured Binance testnet substitute symbols after exchangeInfo failure: {}", exc)
+                return fallback
+        raise
 
 
 def _normalized_symbols(symbols) -> set[str]:
@@ -1433,12 +1647,6 @@ async def _binance_direct_signed_request(
     except ImportError as exc:
         raise RuntimeError("缺少 httpx 依赖，请先安装 requirements.txt。") from exc
 
-    signed_params = {
-        **params,
-        "recvWindow": 5000,
-        "timestamp": int(time.time() * 1000),
-    }
-    payload = _binance_signed_query(signed_params, config.binance_api_secret)
     base_url = "https://testnet.binancefuture.com" if config.binance_testnet else "https://fapi.binance.com"
     url = f"{base_url}{path}"
     headers = {
@@ -1449,6 +1657,11 @@ async def _binance_direct_signed_request(
     client = _build_httpx_async_client(httpx, proxy, timeout=20.0)
     async with client:
         try:
+            timestamp_ms = await _binance_direct_server_time_ms(client, base_url)
+            payload = _binance_signed_query(
+                _binance_direct_signed_params(params, timestamp_ms),
+                config.binance_api_secret,
+            )
             if method.upper() == "GET":
                 response = await client.request(method.upper(), f"{url}?{payload}", headers=headers)
             else:
@@ -1469,6 +1682,21 @@ async def _binance_direct_signed_request(
         "status_code": response.status_code,
         "json": response_json,
         "text": _truncate_text(response_text),
+    }
+
+
+async def _binance_direct_server_time_ms(client: Any, base_url: str) -> int:
+    response = await client.request("GET", f"{base_url}/fapi/v1/time")
+    response.raise_for_status()
+    body = response.json()
+    return int(body["serverTime"])
+
+
+def _binance_direct_signed_params(params: dict[str, Any], timestamp_ms: int) -> dict[str, Any]:
+    return {
+        **params,
+        "recvWindow": 60000,
+        "timestamp": timestamp_ms,
     }
 
 
@@ -1698,6 +1926,10 @@ def _position_sweep_exposure(summary: dict[str, float]) -> float:
     return max(abs(summary["qty"]), abs(summary["long_qty"]), abs(summary["short_qty"]))
 
 
+def _json_log_detail(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
 def _round_down(value: float, step: float) -> float:
     return _round_to_step(value, step, ROUND_FLOOR)
 
@@ -1726,9 +1958,20 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
     grid = raw["grid"]
     cooldown = raw["cooldown"]
     selection = raw["selection"]
+    testnet_force_window = bool(getattr(config, "binance_testnet", False)) and bool(timing.get("testnet_force_window", False))
+    testnet_fast_observation = bool(getattr(config, "binance_testnet", False)) and bool(
+        timing.get("testnet_fast_observation", False)
+    )
+    effective_live_observation = bool(live_observation) if live_observation is not None else bool(timing.get("live_observation", False))
+    if testnet_fast_observation:
+        effective_live_observation = False
     return TradingController(
         exchange=exchange,
-        scheduler=Scheduler(force_close_minutes=int(timing["force_close_minutes"])),
+        scheduler=(
+            _TestnetAlwaysOpenScheduler()
+            if testnet_force_window
+            else Scheduler(force_close_minutes=int(timing["force_close_minutes"]))
+        ),
         repository=_build_repository(config),
         selector_config=SelectionConfig(
             max_concurrent=int(trading["max_concurrent"]),
@@ -1742,7 +1985,7 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             observe_hours=float(timing["observe_hours"]),
             kline_interval=str(timing["observe_kline_interval"]),
             min_samples=30,
-            live_observation=bool(live_observation) if live_observation is not None else bool(timing.get("live_observation", False)),
+            live_observation=effective_live_observation,
             observe_check_seconds=float(timing.get("observe_check_seconds", 60)),
         ),
         grid_config=GridConfig(

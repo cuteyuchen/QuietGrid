@@ -5,12 +5,14 @@ trading:
   take_profit_usdt: 10
   stop_buffer_pct: 0.015
   max_concurrent: 3
-  max_maker_fee_rate: 0.0
+  max_maker_fee_rate: 0.0002
 
 timing:
   observe_hours: 3
   observe_kline_interval: "1m"
   live_observation: false
+  testnet_force_window: true
+  testnet_fast_observation: true
   observe_check_seconds: 60
   force_close_minutes: 120
   cooldown_re_observe_hours: 1

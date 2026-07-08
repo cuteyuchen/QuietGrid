@@ -304,14 +304,17 @@ class Repository:
             rows = conn.execute(
                 """
                 SELECT
-                    status,
+                    orders.status AS status,
                     COUNT(*) AS count,
-                    COALESCE(SUM(qty), 0) AS qty,
-                    COALESCE(SUM(price * qty), 0) AS notional
+                    COALESCE(SUM(orders.qty), 0) AS qty,
+                    COALESCE(SUM(orders.price * orders.qty), 0) AS notional
                 FROM orders
-                GROUP BY status
+                JOIN sessions ON sessions.id = orders.session_id
+                WHERE sessions.close_time IS NULL
+                  AND sessions.state != 'STOPPED'
+                GROUP BY orders.status
                 ORDER BY
-                    CASE status
+                    CASE orders.status
                         WHEN 'open' THEN 0
                         WHEN 'pending' THEN 1
                         WHEN 'filled' THEN 2
@@ -319,7 +322,7 @@ class Repository:
                         WHEN 'rejected' THEN 4
                         ELSE 5
                     END,
-                    status
+                    orders.status
                 """
             ).fetchall()
             return [
@@ -343,6 +346,30 @@ class Repository:
                 LIMIT ?
                 """,
                 (limit,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def latest_system_logs_by_modules(self, modules: list[str]) -> list[dict[str, Any]]:
+        normalized = [str(module).strip() for module in modules if str(module).strip()]
+        if not normalized:
+            return []
+        placeholders = ", ".join("?" for _ in normalized)
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT log.id, log.log_time, log.level, log.module, log.message, log.detail
+                FROM system_logs AS log
+                JOIN (
+                    SELECT module, MAX(id) AS latest_id
+                    FROM system_logs
+                    WHERE module IN ({placeholders})
+                    GROUP BY module
+                ) AS latest
+                  ON log.module = latest.module
+                 AND log.id = latest.latest_id
+                ORDER BY log.id DESC
+                """,
+                normalized,
             ).fetchall()
             return [dict(row) for row in rows]
 
@@ -377,7 +404,16 @@ class Repository:
             active_sessions = conn.execute(
                 "SELECT COUNT(*) AS value FROM sessions WHERE close_time IS NULL AND state != 'STOPPED'"
             ).fetchone()["value"]
-            open_orders = conn.execute("SELECT COUNT(*) AS value FROM orders WHERE status = 'open'").fetchone()["value"]
+            open_orders = conn.execute(
+                """
+                SELECT COUNT(*) AS value
+                FROM orders
+                JOIN sessions ON sessions.id = orders.session_id
+                WHERE orders.status = 'open'
+                  AND sessions.close_time IS NULL
+                  AND sessions.state != 'STOPPED'
+                """
+            ).fetchone()["value"]
             realized_pnl = conn.execute("SELECT COALESCE(SUM(realized_pnl), 0) AS value FROM sessions").fetchone()["value"]
             latest_log = conn.execute("SELECT message FROM system_logs ORDER BY id DESC LIMIT 1").fetchone()
             return {

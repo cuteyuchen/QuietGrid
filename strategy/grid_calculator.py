@@ -7,6 +7,10 @@ from statistics import fmean, pstdev
 from typing import Any, Iterable
 
 from core.models import GridParams
+from strategy.volatility import OHLC_VOLATILITY_METHODS, VolatilityCalculationError, estimate_ohlc_volatility
+
+
+SUPPORTED_RANGE_METHODS = {"std", "quantile", *OHLC_VOLATILITY_METHODS}
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,7 @@ class GridConfig:
     atr_period: int = 14
     stop_buffer_pct: float = 0.015
     min_samples: int = 30
+    volatility_refresh_seconds: float = 60.0
 
 
 class GridCalculationError(ValueError):
@@ -48,8 +53,9 @@ def calculate_grid_params(
     lows = [_positive_number(row, "low") for row in rows]
     _validate_kline_price_relationships(highs, lows, closes)
 
+    method = _normalized_range_method(config.range_method)
     center = fmean(closes)
-    lower, upper = _range_from_prices(closes, center, config)
+    lower, upper, volatility_value = _range_from_prices(rows, closes, center, method, config)
     if lower <= 0 or upper <= lower:
         raise GridCalculationError("区间计算结果非法。")
     if not lower <= current_price <= upper:
@@ -82,7 +88,24 @@ def calculate_grid_params(
         baseline_atr=baseline_atr,
         stop_loss_price=stop_loss_price,
         calculated_at=calculated_at or datetime.now(timezone.utc),
+        volatility_method=method,
+        volatility_value=volatility_value,
+        volatility_window=len(rows),
     )
+
+
+def calculate_volatility_metric(klines: Iterable[dict[str, Any]], config: GridConfig) -> tuple[str, float, int]:
+    _validate_grid_config(config)
+    rows = list(klines)
+    if len(rows) < config.min_samples:
+        raise GridCalculationError(f"K线样本不足: {len(rows)} < {config.min_samples}")
+    closes = [_positive_number(row, "close") for row in rows]
+    highs = [_positive_number(row, "high") for row in rows]
+    lows = [_positive_number(row, "low") for row in rows]
+    _validate_kline_price_relationships(highs, lows, closes)
+    method = _normalized_range_method(config.range_method)
+    _lower, _upper, volatility_value = _range_from_prices(rows, closes, fmean(closes), method, config)
+    return method, volatility_value, len(rows)
 
 
 def calculate_atr(highs: list[float], lows: list[float], closes: list[float], period: int) -> float:
@@ -117,6 +140,7 @@ def _validate_grid_config(config: GridConfig) -> None:
         raise GridCalculationError("atr_period无效。")
     if config.min_samples < 1:
         raise GridCalculationError("min_samples无效。")
+    _positive_value(config.volatility_refresh_seconds, "volatility_refresh_seconds")
     stop_buffer_pct = _finite_value(config.stop_buffer_pct, "stop_buffer_pct")
     if stop_buffer_pct < 0 or stop_buffer_pct >= 1:
         raise GridCalculationError("stop_buffer_pct无效。")
@@ -124,15 +148,36 @@ def _validate_grid_config(config: GridConfig) -> None:
     upper = _finite_value(config.quantile_upper, "分位数")
     if not 0 <= lower < upper <= 1:
         raise GridCalculationError("分位数必须满足 0 <= lower < upper <= 1。")
+    _normalized_range_method(config.range_method)
 
 
-def _range_from_prices(closes: list[float], center: float, config: GridConfig) -> tuple[float, float]:
-    if config.range_method == "std":
+def _range_from_prices(
+    rows: list[dict[str, Any]],
+    closes: list[float],
+    center: float,
+    method: str,
+    config: GridConfig,
+) -> tuple[float, float, float]:
+    if method == "std":
         sigma = pstdev(closes)
-        return center - config.std_k * sigma, center + config.std_k * sigma
-    if config.range_method == "quantile":
-        return _quantile(closes, config.quantile_lower), _quantile(closes, config.quantile_upper)
-    raise GridCalculationError(f"不支持的区间算法: {config.range_method}")
+        return center - config.std_k * sigma, center + config.std_k * sigma, sigma / center
+    if method == "quantile":
+        lower = _quantile(closes, config.quantile_lower)
+        upper = _quantile(closes, config.quantile_upper)
+        return lower, upper, (upper - lower) / (2 * center)
+    try:
+        volatility_value = estimate_ohlc_volatility(rows, method)
+    except VolatilityCalculationError as exc:
+        raise GridCalculationError(str(exc)) from exc
+    half_width_pct = config.std_k * volatility_value
+    return center * (1 - half_width_pct), center * (1 + half_width_pct), volatility_value
+
+
+def _normalized_range_method(method: str) -> str:
+    normalized = str(method).strip().lower()
+    if normalized not in SUPPORTED_RANGE_METHODS:
+        raise GridCalculationError(f"不支持的区间算法: {method}")
+    return normalized
 
 
 def _quantile(values: list[float], q: float) -> float:

@@ -862,6 +862,59 @@ def test_controller_recovers_unclosed_sessions_on_startup(tmp_path) -> None:
     asyncio.run(run())
 
 
+def test_controller_skips_startup_recovery_for_unsupported_symbol(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        window_id = repo.create_window(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session_id = repo.create_session(
+            window_id,
+            "AAPLUSDT",
+            "RUNNING",
+            200,
+            10,
+            datetime(2026, 7, 4, 10, 0, tzinfo=NY),
+        )
+        exchange = PositionedExchange()
+        exchange.positions["AAPLUSDT"] = 1.5
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        recovered = await controller.recover_unclosed_sessions(
+            datetime(2026, 7, 4, 10, 1, tzinfo=NY),
+            recoverable_symbols={"BTCUSDT"},
+        )
+
+        session_row = repo.recent_rows("sessions", limit=1)[0]
+        state_log = repo.recent_rows("state_logs", limit=1)[0]
+        system_log = repo.recent_rows("system_logs", limit=1)[0]
+
+        assert recovered == [session_id]
+        assert exchange.market_orders == []
+        assert exchange.positions["AAPLUSDT"] == 1.5
+        assert session_row["state"] == "STOPPED"
+        assert session_row["close_reason"] == "startup_recovery_skipped_symbol"
+        assert state_log["trigger"] == "startup_recovery_skipped_symbol"
+        assert system_log["level"] == "WARN"
+        assert system_log["message"] == "Skipped startup recovery for unsupported symbol."
+
+    asyncio.run(run())
+
+
 def test_controller_keeps_unclosed_session_when_startup_recovery_fails(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"

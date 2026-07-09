@@ -414,6 +414,8 @@ def _grid_config_from_raw(raw: dict[str, Any]) -> GridConfig:
         atr_period=int(cooldown.get("atr_period", 14)),
         stop_buffer_pct=float(trading.get("stop_buffer_pct", 0.015)),
         volatility_refresh_seconds=float(grid.get("volatility_refresh_seconds", 60.0)),
+        rolling_regrid_enabled=bool(grid.get("rolling_regrid_enabled", False)),
+        rolling_regrid_seconds=float(grid.get("rolling_regrid_seconds", 7200.0)),
     )
 
 
@@ -2160,6 +2162,8 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             atr_period=int(cooldown["atr_period"]),
             stop_buffer_pct=float(trading["stop_buffer_pct"]),
             volatility_refresh_seconds=float(grid.get("volatility_refresh_seconds", 60.0)),
+            rolling_regrid_enabled=bool(grid.get("rolling_regrid_enabled", False)),
+            rolling_regrid_seconds=float(grid.get("rolling_regrid_seconds", 7200.0)),
         ),
         controller_config=ControllerConfig(
             capital_per_symbol=float(trading["capital_per_symbol"]),

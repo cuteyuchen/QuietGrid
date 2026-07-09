@@ -134,6 +134,7 @@ def test_rejects_invalid_grid_config_values() -> None:
         (GridConfig(stop_buffer_pct=-0.01), "stop_buffer_pct"),
         (GridConfig(stop_buffer_pct=1.0), "stop_buffer_pct"),
         (GridConfig(min_samples=0), "min_samples"),
+        (GridConfig(rolling_regrid_seconds=0), "rolling_regrid_seconds"),
     ]
 
     for config, expected in invalid_configs:

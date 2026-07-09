@@ -83,5 +83,7 @@ class Observer:
             stop_buffer_pct=effective_base_grid_config.stop_buffer_pct,
             min_samples=effective_observer_config.min_samples,
             volatility_refresh_seconds=effective_base_grid_config.volatility_refresh_seconds,
+            rolling_regrid_enabled=effective_base_grid_config.rolling_regrid_enabled,
+            rolling_regrid_seconds=effective_base_grid_config.rolling_regrid_seconds,
         )
         return calculate_grid_params(symbol, klines, current_price, funding_rate, effective_grid_config)

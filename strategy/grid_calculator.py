@@ -27,6 +27,8 @@ class GridConfig:
     stop_buffer_pct: float = 0.015
     min_samples: int = 30
     volatility_refresh_seconds: float = 60.0
+    rolling_regrid_enabled: bool = False
+    rolling_regrid_seconds: float = 7200.0
 
 
 class GridCalculationError(ValueError):
@@ -141,6 +143,7 @@ def _validate_grid_config(config: GridConfig) -> None:
     if config.min_samples < 1:
         raise GridCalculationError("min_samples无效。")
     _positive_value(config.volatility_refresh_seconds, "volatility_refresh_seconds")
+    _positive_value(config.rolling_regrid_seconds, "rolling_regrid_seconds")
     stop_buffer_pct = _finite_value(config.stop_buffer_pct, "stop_buffer_pct")
     if stop_buffer_pct < 0 or stop_buffer_pct >= 1:
         raise GridCalculationError("stop_buffer_pct无效。")

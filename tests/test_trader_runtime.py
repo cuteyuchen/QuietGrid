@@ -2922,6 +2922,8 @@ def test_build_controller_reads_max_maker_fee_rate(tmp_path) -> None:
                 "safety_multiplier": 3.5,
                 "max_grid_num": 20,
                 "max_range_pct": 0.05,
+                "rolling_regrid_enabled": True,
+                "rolling_regrid_seconds": 3600,
             },
             "cooldown": {
                 "atr_period": 14,
@@ -2947,6 +2949,8 @@ def test_build_controller_reads_max_maker_fee_rate(tmp_path) -> None:
     assert controller.cooldown.config.atr_recovery_ratio == 0.65
     assert controller.cooldown.config.amplitude_multiplier == 1.5
     assert controller.cooldown.config.min_calm_minutes == 9
+    assert controller.grid_config.rolling_regrid_enabled is True
+    assert controller.grid_config.rolling_regrid_seconds == 3600
 
 
 def test_build_controller_applies_testnet_run_now_switches_only_in_testnet(tmp_path) -> None:

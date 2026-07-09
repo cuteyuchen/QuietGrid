@@ -105,6 +105,33 @@ class FailingVolatilityRefreshExchange(CountingVolatilityExchange):
         return await MockExchangeClient.get_klines(self, symbol, interval, limit)
 
 
+class RollingRegridExchange(CountingVolatilityExchange):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancel_all_calls = 0
+
+    async def get_klines(self, symbol: str, interval: str, limit: int):
+        self.kline_calls.append((symbol, interval, limit))
+        if len(self.kline_calls) == 1:
+            return await MockExchangeClient.get_klines(self, symbol, interval, limit)
+        return [
+            {"open": 100, "high": 100.6, "low": 99.4, "close": 100 + ((idx % 5) - 2) * 0.12}
+            for idx in range(limit)
+        ]
+
+    async def cancel_all_orders(self, symbol: str) -> None:
+        self.cancel_all_calls += 1
+        await super().cancel_all_orders(symbol)
+
+
+class FailingRollingRegridCalculationExchange(RollingRegridExchange):
+    async def get_klines(self, symbol: str, interval: str, limit: int):
+        self.kline_calls.append((symbol, interval, limit))
+        if len(self.kline_calls) == 1:
+            return await MockExchangeClient.get_klines(self, symbol, interval, limit)
+        return [{"open": 100, "high": 100.01, "low": 99.99, "close": 100.0} for _ in range(limit)]
+
+
 class FailingStopOrderExchange(MockExchangeClient):
     async def place_stop_market_order(
         self,
@@ -763,6 +790,141 @@ def test_controller_current_volatility_refresh_failure_warns_without_stopping(tm
         assert volatility_log["message"] == "Current volatility refresh failed."
         assert detail["symbol"] == "AAPLUSDT"
         assert detail["method"] == "parkinson"
+
+    asyncio.run(run())
+
+
+def test_controller_rolls_running_grid_when_regrid_interval_elapsed(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = RollingRegridExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(rolling_regrid_enabled=True, rolling_regrid_seconds=1),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        assert session.params is not None
+        old_upper = session.params.upper
+
+        actions = await controller.poll_active_sessions_once(session.params.calculated_at + timedelta(seconds=2))
+
+        repo = Repository(db_path)
+        state_log = next(row for row in repo.recent_rows("state_logs", limit=10) if row["trigger"] == "rolling_regrid")
+        system_log = next(row for row in repo.recent_rows("system_logs", limit=10) if row["module"] == "rolling_regrid")
+
+        assert actions == [("AAPLUSDT", "rolling_regrid")]
+        assert session.params.upper != old_upper
+        assert session.orders
+        assert all(order.status == OrderStatus.OPEN for order in session.orders)
+        assert exchange.cancel_all_calls == 1
+        assert exchange.orders["AAPLUSDT"]
+        assert state_log["from_state"] == "RUNNING"
+        assert state_log["to_state"] == "RUNNING"
+        assert system_log["message"] == "Rolling grid recalculated."
+
+    asyncio.run(run())
+
+
+def test_controller_skips_rolling_regrid_when_session_has_exposure(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = RollingRegridExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(rolling_regrid_enabled=True, rolling_regrid_seconds=1),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        assert session.params is not None
+        filled_order = session.orders[0]
+        filled_order.status = OrderStatus.FILLED
+        exchange.orders["AAPLUSDT"] = [
+            order for order in exchange.orders["AAPLUSDT"] if order["client_id"] != filled_order.client_id
+        ]
+        exchange.positions["AAPLUSDT"] = filled_order.qty if filled_order.side.value == "BUY" else -filled_order.qty
+        old_upper = session.params.upper
+
+        actions = await controller.poll_active_sessions_once(session.params.calculated_at + timedelta(seconds=2))
+
+        system_log = next(
+            row for row in Repository(db_path).recent_rows("system_logs", limit=10) if row["module"] == "rolling_regrid"
+        )
+        detail = json.loads(system_log["detail"])
+
+        assert actions == [("AAPLUSDT", "rolling_regrid_skipped")]
+        assert session.params.upper == old_upper
+        assert exchange.cancel_all_calls == 0
+        assert detail["reason"] == "session_has_filled_orders"
+
+    asyncio.run(run())
+
+
+def test_controller_rolling_regrid_calculation_failure_keeps_current_orders(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = FailingRollingRegridCalculationExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(rolling_regrid_enabled=True, rolling_regrid_seconds=1),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        assert session.params is not None
+        old_upper = session.params.upper
+        old_client_ids = [order.client_id for order in session.orders]
+
+        actions = await controller.poll_active_sessions_once(session.params.calculated_at + timedelta(seconds=2))
+
+        system_log = next(
+            row for row in Repository(db_path).recent_rows("system_logs", limit=10) if row["module"] == "rolling_regrid"
+        )
+
+        assert actions == [("AAPLUSDT", "rolling_regrid_failed")]
+        assert session.params.upper == old_upper
+        assert [order.client_id for order in session.orders] == old_client_ids
+        assert exchange.cancel_all_calls == 0
+        assert system_log["level"] == "WARN"
+        assert system_log["message"] == "Rolling grid recalculation failed before touching orders."
 
     asyncio.run(run())
 

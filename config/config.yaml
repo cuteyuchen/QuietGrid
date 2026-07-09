@@ -31,6 +31,8 @@ grid:
   max_grid_num: 20
   max_range_pct: 0.05
   volatility_refresh_seconds: 60
+  rolling_regrid_enabled: true
+  rolling_regrid_seconds: 7200
 
 cooldown:
   atr_period: 14

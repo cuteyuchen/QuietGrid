@@ -89,6 +89,7 @@ class TradingController:
         self.active_sessions: dict[str, SymbolSession] = {}
         self.current_window_id: int | None = None
         self._volatility_refreshed_at: dict[int, datetime] = {}
+        self._grid_recalculated_at: dict[int, datetime] = {}
         self._last_maker_fee_by_symbol: dict[str, float] = {}
         self._maker_fee_checked_at: datetime | None = None
         self._runtime_config_signature = self._runtime_config_signature_from_config(controller_config)
@@ -1079,6 +1080,11 @@ class TradingController:
                 actions.append((symbol, reconcile_action))
                 await self._close_session(session, "持仓对账异常，强制同步平仓。", current_time)
                 continue
+            regrid_action = await self._recalculate_session_grid_if_due(session, current_time)
+            if regrid_action is not None:
+                actions.append((symbol, regrid_action))
+                if regrid_action != "rolling_regrid_skipped":
+                    continue
             await self._refresh_session_current_volatility_if_due(session, current_time)
             last_price = await self._current_price(symbol)
             decision = self.risk.evaluate_symbol(session, last_price, current_time)
@@ -1751,6 +1757,169 @@ class TradingController:
             params.calculated_at,
         )
         self._volatility_refreshed_at[session_id] = params.calculated_at
+        self._grid_recalculated_at[session_id] = params.calculated_at
+
+    async def _recalculate_session_grid_if_due(self, session: SymbolSession, at: datetime) -> str | None:
+        if (
+            not self.grid_config.rolling_regrid_enabled
+            or session.state != GridState.RUNNING
+            or session.params is None
+        ):
+            return None
+        last_recalculated = self._grid_recalculated_at.get(session.session_id)
+        if last_recalculated is not None:
+            elapsed = (at - last_recalculated).total_seconds()
+            if elapsed < self.grid_config.rolling_regrid_seconds:
+                return None
+
+        self._grid_recalculated_at[session.session_id] = at
+        if any(order.status == OrderStatus.FILLED for order in session.orders):
+            self._log_rolling_regrid_skip(session, "session_has_filled_orders", at)
+            return "rolling_regrid_skipped"
+
+        position = await self.exchange.get_position(session.symbol)
+        tolerance = await self._position_tolerance(session.symbol)
+        exposure_qty = sum(qty for _side, qty, _position_side in _position_close_specs(position))
+        if exposure_qty > tolerance:
+            self._log_rolling_regrid_skip(
+                session,
+                "session_has_exchange_exposure",
+                at,
+                {**_position_log_fields(position), "tolerance": tolerance},
+            )
+            return "rolling_regrid_skipped"
+
+        old_params = session.params
+        current_price = await self._current_price(session.symbol)
+        effective_observer_config, effective_grid_config, _max_concurrent = self._effective_next_entry_settings(at)
+        try:
+            params = await self.observer.calculate_from_recent_klines(
+                session.symbol,
+                current_price,
+                observer_config=effective_observer_config,
+                grid_config=effective_grid_config,
+            )
+        except Exception as exc:
+            self.repository.log_system(
+                "WARN",
+                "rolling_regrid",
+                "Rolling grid recalculation failed before touching orders.",
+                json.dumps(
+                    {
+                        "session_id": session.session_id,
+                        "symbol": session.symbol,
+                        "reason": str(exc),
+                    },
+                    ensure_ascii=False,
+                ),
+                at,
+            )
+            return "rolling_regrid_failed"
+
+        try:
+            await self.exchange.cancel_all_orders(session.symbol)
+        except Exception as exc:
+            self.repository.log_system(
+                "ERROR",
+                "rolling_regrid",
+                "Rolling grid recalculation cancel-all failed; keeping current grid.",
+                json.dumps(
+                    {
+                        "session_id": session.session_id,
+                        "symbol": session.symbol,
+                        "reason": str(exc),
+                    },
+                    ensure_ascii=False,
+                ),
+                at,
+            )
+            return "rolling_regrid_failed"
+
+        for order in session.orders:
+            if order.status == OrderStatus.OPEN:
+                order.status = OrderStatus.CANCELLED
+        self._persist_session_orders(session)
+        session.orders.clear()
+        session.stop_protection_sides.clear()
+        session.params = params
+        self._persist_session_grid(session.session_id, params)
+        try:
+            await self.engine.start(session, current_price)
+        except Exception as exc:
+            self._persist_session_orders(session)
+            self.repository.log_system(
+                "ERROR",
+                "rolling_regrid",
+                "Rolling grid restart failed; closing session for safety.",
+                json.dumps(
+                    {
+                        "session_id": session.session_id,
+                        "symbol": session.symbol,
+                        "reason": str(exc),
+                    },
+                    ensure_ascii=False,
+                ),
+                at,
+            )
+            await self._close_session(session, "滚动重算区间失败，执行安全平仓。", at)
+            return "rolling_regrid_failed"
+
+        self._persist_session_orders(session)
+        self.repository.log_state(
+            session.session_id,
+            session.symbol,
+            GridState.RUNNING.value,
+            GridState.RUNNING.value,
+            "rolling_regrid",
+            (
+                f"old_lower={old_params.lower}, old_upper={old_params.upper}, "
+                f"new_lower={params.lower}, new_upper={params.upper}, "
+                f"grid_num={params.grid_num}, step_pct={params.step_pct}"
+            ),
+            at,
+        )
+        self.repository.log_system(
+            "INFO",
+            "rolling_regrid",
+            "Rolling grid recalculated.",
+            json.dumps(
+                {
+                    "session_id": session.session_id,
+                    "symbol": session.symbol,
+                    "old_lower": old_params.lower,
+                    "old_upper": old_params.upper,
+                    "new_lower": params.lower,
+                    "new_upper": params.upper,
+                    "grid_num": params.grid_num,
+                    "step_pct": params.step_pct,
+                },
+                ensure_ascii=False,
+            ),
+            at,
+        )
+        return "rolling_regrid"
+
+    def _log_rolling_regrid_skip(
+        self,
+        session: SymbolSession,
+        reason: str,
+        at: datetime,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        detail = {
+            "session_id": session.session_id,
+            "symbol": session.symbol,
+            "reason": reason,
+        }
+        if extra:
+            detail.update(extra)
+        self.repository.log_system(
+            "INFO",
+            "rolling_regrid",
+            "Rolling grid recalculation skipped.",
+            json.dumps(detail, ensure_ascii=False),
+            at,
+        )
 
     async def _refresh_session_current_volatility_if_due(self, session: SymbolSession, at: datetime) -> None:
         if session.params is None:

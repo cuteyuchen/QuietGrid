@@ -319,6 +319,60 @@ def test_main_selects_account_before_initializing_database(monkeypatch, tmp_path
     assert captured["max_seconds"] == 30.0
 
 
+def test_main_runs_binance_mode_for_all_accounts(monkeypatch, tmp_path) -> None:
+    main_db = tmp_path / "main.db"
+    hedge_db = tmp_path / "hedge.db"
+    base_config = SimpleNamespace(
+        binance_api_key="base-key",
+        binance_api_secret="base-secret",
+        binance_testnet=True,
+        database_path=tmp_path / "base.db",
+        raw={"logging": {}, "database": {"path": str(tmp_path / "base.db")}},
+    )
+    account_configs = (
+        SimpleNamespace(account_id="main", database_path=main_db),
+        SimpleNamespace(account_id="hedge", database_path=hedge_db),
+    )
+    captured = {"db_paths": [], "runner_accounts": []}
+
+    async def fake_run_binance_test_run(config_arg, max_seconds=600.0):
+        captured["runner_accounts"].append((config_arg.account_id, max_seconds))
+        return {"account": config_arg.account_id, "seconds": max_seconds}
+
+    monkeypatch.setattr(sys, "argv", ["trader.py", "--all-accounts", "--binance-test-run", "--loop-seconds", "45"])
+    monkeypatch.setattr("trader.load_config", lambda: base_config)
+    monkeypatch.setattr("trader.select_all_accounts", lambda config_arg: account_configs)
+    monkeypatch.setattr("trader.setup_logging", lambda raw: None)
+    monkeypatch.setattr("trader.init_db", lambda path: captured["db_paths"].append(path))
+    monkeypatch.setattr("trader._run_binance_test_run", fake_run_binance_test_run)
+
+    main()
+
+    assert captured["db_paths"] == [main_db, hedge_db]
+    assert sorted(captured["runner_accounts"]) == [("hedge", 45.0), ("main", 45.0)]
+
+
+def test_main_rejects_account_id_with_all_accounts(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "trader.db"
+    config = SimpleNamespace(
+        binance_api_key="key",
+        binance_api_secret="secret",
+        binance_testnet=True,
+        database_path=db_path,
+        raw={"logging": {}, "database": {"path": str(db_path)}},
+    )
+
+    monkeypatch.setattr(sys, "argv", ["trader.py", "--account-id", "main", "--all-accounts", "--binance-check"])
+    monkeypatch.setattr("trader.load_config", lambda: config)
+
+    try:
+        main()
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("--account-id and --all-accounts must be rejected together")
+
+
 def test_main_forwards_loop_bounds_to_binance_loop(monkeypatch, tmp_path) -> None:
     db_path = tmp_path / "trader.db"
     config = SimpleNamespace(

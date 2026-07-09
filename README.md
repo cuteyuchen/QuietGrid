@@ -21,6 +21,7 @@ python trader.py --binance-check
 python trader.py --binance-order-smoke
 python trader.py --binance-test-order-smoke
 python trader.py --account-id main --binance-check
+python trader.py --all-accounts --binance-check
 python trader.py --binance-market-roundtrip-smoke
 python trader.py --binance-direct-order-diagnose
 python trader.py --binance-price-stream-smoke
@@ -41,7 +42,7 @@ python web.py
 
 `web.py` 是只读监控页，除原始数据库表外，会单独展示订单状态汇总、挂单费率健康、最近离线回测报告和最近 WARN/ERROR 风险或恢复事件，方便排查测试网下单状态未知、订单同步、策略回测和强制平仓恢复链路。回测面板读取 `reports/*.json` 中最新的报告；运行 `--backtest-output reports/backtest.json` 后刷新页面即可查看。
 
-多账户配置可在 `config/config.yaml` 的 `accounts` 中声明账户 id、显示名、密钥环境变量名和独立数据库路径。运行时使用 `--account-id <id>` 选择账户，也可以用 `.env` 中的 `QUIETGRID_ACCOUNT_ID` 指定默认账户。未配置 `accounts` 时继续使用旧的 `BINANCE_API_KEY` / `BINANCE_API_SECRET`。
+多账户配置可在 `config/config.yaml` 的 `accounts` 中声明账户 id、显示名、密钥环境变量名和独立数据库路径。运行时使用 `--account-id <id>` 选择账户，也可以用 `.env` 中的 `QUIETGRID_ACCOUNT_ID` 指定默认账户；需要对全部账户执行同一个 Binance 检查、烟测或有界运行时使用 `--all-accounts`。未配置 `accounts` 时继续使用旧的 `BINANCE_API_KEY` / `BINANCE_API_SECRET`。
 
 交易循环会按 `trading.maker_fee_check_interval_seconds` 周期复查活动网格标的的 Maker 费率。若费率超过 `trading.max_maker_fee_rate` 或相对上次检查发生变化，会写入 `commission_health` WARN/ERROR 日志，Web 费率健康面板和已启用的外部通知会同步显示。
 

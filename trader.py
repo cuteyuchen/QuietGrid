@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from loguru import logger
 
-from core.config import load_config, require_testnet, select_account
+from core.config import load_config, require_testnet, select_account, select_all_accounts
 from core.logging_config import setup_logging
 from core.notifications import build_system_log_notifier
 from core.scheduler import Scheduler
@@ -73,6 +73,7 @@ def main() -> None:
     parser.add_argument("--binance-safety-sweep", action="store_true", help="清理 Binance 测试网 allowlist 标的的挂单和仓位")
     parser.add_argument("--binance-test-run", action="store_true", help="执行测试网有界运行流程：前置持仓检查、限时loop、安全清扫、后置持仓检查")
     parser.add_argument("--account-id", help="选择 config.yaml accounts 中的账户；未配置时使用默认 BINANCE_API_KEY/SECRET")
+    parser.add_argument("--all-accounts", action="store_true", help="对 config.yaml accounts 中全部账户并发执行同一个 Binance 运行模式")
     parser.add_argument("--loop-iterations", type=int, help="限制 --mock-loop 或 --binance-loop 的主循环轮数，留空则持续运行")
     parser.add_argument("--loop-seconds", type=float, help="限制 --mock-loop、--binance-loop 或 --binance-test-run 的运行秒数；测试流程默认600秒")
     parser.add_argument("--backtest-csv", help="读取本地CSV K线文件执行离线网格回测，不连接交易所")
@@ -88,10 +89,19 @@ def main() -> None:
         parser.error("--loop-seconds 必须是正数。")
 
     config = load_config()
-    if args.account_id:
+    account_configs = None
+    if args.account_id and args.all_accounts:
+        parser.error("--account-id 和 --all-accounts 不能同时使用。")
+    if args.all_accounts:
+        account_configs = select_all_accounts(config)
+    elif args.account_id:
         config = select_account(config, args.account_id)
     setup_logging(config.raw)
-    init_db(config.database_path)
+    if account_configs is None:
+        init_db(config.database_path)
+    else:
+        for account_config in account_configs:
+            init_db(account_config.database_path)
 
     selected_modes = [
         args.mock_once,
@@ -115,60 +125,62 @@ def main() -> None:
     ]
     if sum(1 for enabled in selected_modes if enabled) > 1:
         raise SystemExit("一次只能选择一个运行模式。")
+    if args.all_accounts and not _is_all_accounts_supported_mode(args):
+        raise SystemExit("--all-accounts 只支持 Binance 运行模式，且必须显式选择一个 Binance 模式。")
     if args.mock_once:
         result = asyncio.run(_run_mock_once(config))
         logger.info("Mock run_once result: {}", result)
         return
     if args.binance_once:
-        result = asyncio.run(_run_binance_once(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_once)
         logger.info("Binance testnet run_once result: {}", result)
         return
     if args.binance_check:
-        result = asyncio.run(_run_binance_check(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_check)
         logger.info("Binance testnet check result: {}", result)
         return
     if args.binance_order_smoke:
-        result = asyncio.run(_run_binance_order_smoke(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_order_smoke)
         logger.info("Binance testnet order smoke result: {}", result)
         return
     if args.binance_test_order_smoke:
-        result = asyncio.run(_run_binance_test_order_smoke(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_test_order_smoke)
         logger.info("Binance testnet order/test smoke result: {}", result)
         return
     if args.binance_market_roundtrip_smoke:
-        result = asyncio.run(_run_binance_market_roundtrip_smoke(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_market_roundtrip_smoke)
         logger.info("Binance testnet market roundtrip smoke result: {}", result)
         return
     if args.binance_direct_order_diagnose:
-        result = asyncio.run(_run_binance_direct_order_diagnose(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_direct_order_diagnose)
         logger.info("Binance testnet direct order diagnose result: {}", result)
         return
     if args.binance_price_stream_smoke:
-        result = asyncio.run(_run_binance_price_stream_smoke(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_price_stream_smoke)
         logger.info("Binance testnet price stream smoke result: {}", result)
         return
     if args.binance_signed_write_health:
-        result = asyncio.run(_run_binance_signed_write_health(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_signed_write_health)
         logger.info("Binance testnet signed write health result: {}", result)
         return
     if args.binance_listen_key_smoke:
-        result = asyncio.run(_run_binance_listen_key_smoke(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_listen_key_smoke)
         logger.info("Binance testnet listenKey smoke result: {}", result)
         return
     if args.binance_algo_stop_smoke:
-        result = asyncio.run(_run_binance_algo_stop_smoke(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_algo_stop_smoke)
         logger.info("Binance testnet algo stop smoke result: {}", result)
         return
     if args.binance_position_smoke:
-        result = asyncio.run(_run_binance_position_smoke(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_position_smoke)
         logger.info("Binance testnet position smoke result: {}", result)
         return
     if args.binance_safety_sweep:
-        result = asyncio.run(_run_binance_safety_sweep(config))
+        result = _run_binance_mode(config, account_configs, _run_binance_safety_sweep)
         logger.info("Binance testnet safety sweep result: {}", result)
         return
     if args.binance_test_run:
-        result = asyncio.run(_run_binance_test_run(config, max_seconds=args.loop_seconds or 600.0))
+        result = _run_binance_mode(config, account_configs, _run_binance_test_run, max_seconds=args.loop_seconds or 600.0)
         logger.info("Binance testnet bounded run result: {}", result)
         return
     if args.backtest_csv:
@@ -197,12 +209,60 @@ def main() -> None:
         asyncio.run(_run_mock_loop(config, max_iterations=args.loop_iterations, max_seconds=args.loop_seconds))
         return
     if args.binance_loop:
-        asyncio.run(_run_binance_loop(config, max_iterations=args.loop_iterations, max_seconds=args.loop_seconds))
+        _run_binance_mode(
+            config,
+            account_configs,
+            _run_binance_loop,
+            max_iterations=args.loop_iterations,
+            max_seconds=args.loop_seconds,
+        )
         return
 
     logger.info(
         "QuietGrid initialized in testnet-safe mode. Use --mock-once, --binance-check, --binance-order-smoke, --binance-test-order-smoke, --binance-market-roundtrip-smoke, --binance-direct-order-diagnose, --binance-price-stream-smoke, --binance-signed-write-health, --binance-listen-key-smoke, --binance-algo-stop-smoke, --binance-position-smoke, --binance-safety-sweep, --binance-test-run, --backtest-csv, --backtest-dir, --binance-once, --mock-loop or --binance-loop. Use --loop-iterations or --loop-seconds with loop commands for bounded test runs."
     )
+
+
+def _is_all_accounts_supported_mode(args) -> bool:
+    return any(
+        (
+            args.binance_once,
+            args.binance_loop,
+            args.binance_check,
+            args.binance_order_smoke,
+            args.binance_test_order_smoke,
+            args.binance_market_roundtrip_smoke,
+            args.binance_direct_order_diagnose,
+            args.binance_price_stream_smoke,
+            args.binance_signed_write_health,
+            args.binance_listen_key_smoke,
+            args.binance_algo_stop_smoke,
+            args.binance_position_smoke,
+            args.binance_safety_sweep,
+            args.binance_test_run,
+        )
+    )
+
+
+def _run_binance_mode(config, account_configs, runner, **kwargs):
+    if account_configs is None:
+        return asyncio.run(runner(config, **kwargs))
+    return asyncio.run(_run_for_account_configs(account_configs, runner, **kwargs))
+
+
+async def _run_for_account_configs(account_configs, runner, **kwargs) -> dict[str, Any]:
+    if not account_configs:
+        raise RuntimeError("没有可运行账户配置。")
+    tasks = [asyncio.create_task(runner(account_config, **kwargs)) for account_config in account_configs]
+    try:
+        results = await asyncio.gather(*tasks)
+    except Exception:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    return {str(account_config.account_id): result for account_config, result in zip(account_configs, results)}
 
 
 async def _run_mock_once(config):

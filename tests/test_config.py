@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from core.config import load_config, require_testnet, select_account
+from core.config import load_config, require_testnet, select_account, select_all_accounts
 
 
 def _write_config(path) -> None:
@@ -108,6 +108,7 @@ accounts:
     assert config.binance_api_secret == "main-secret"
     assert config.database_path == Path(base_db.with_name("trading-main.db"))
     assert [account.id for account in config.accounts] == ["main", "hedge"]
+    assert [account.account_id for account in select_all_accounts(config)] == ["main", "hedge"]
     assert hedge_config.account_id == "hedge"
     assert hedge_config.account_label == "对冲账户"
     assert hedge_config.binance_api_key == "hedge-key"

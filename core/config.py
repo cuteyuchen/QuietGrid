@@ -94,6 +94,10 @@ def select_account(config: AppConfig, account_id: str | None) -> AppConfig:
     raise ValueError(f"未找到账户配置: {normalized_id}")
 
 
+def select_all_accounts(config: AppConfig) -> tuple[AppConfig, ...]:
+    return tuple(select_account(config, account.id) for account in config.accounts)
+
+
 def require_testnet(config: AppConfig) -> None:
     raw_value = getattr(config, "binance_testnet_raw", None)
     if raw_value is not None and raw_value.strip().lower() != "true":

@@ -1479,6 +1479,11 @@ python web.py
 - `--binance-test-run --loop-seconds 180` 通过：前置持仓检查正常，交易 loop 按 180 秒上限结束，期间关闭过 BCHUSDT 活动会话，最终安全清扫成功，后置持仓检查正常。
 - 运行结束后再次执行 `--binance-position-smoke` 通过：BTCUSDT/ETHUSDT/BCHUSDT 净仓位、LONG、SHORT、普通挂单和 Algo 条件单均为 0。
 
+2026-07-09 单账户 10 分钟测试网运行记录：
+
+- `--binance-test-run --loop-seconds 600` 通过：前置持仓检查正常，交易 loop 按 600 秒上限结束，期间关闭过 BCHUSDT 活动会话，最终安全清扫成功，后置持仓检查正常。
+- 运行结束后再次执行 `--binance-position-smoke` 通过：BTCUSDT/ETHUSDT/BCHUSDT 净仓位、LONG、SHORT、普通挂单和 Algo 条件单均为 0。
+
 2026-07-09 `--all-accounts` 入口测试网运行记录：
 
 - 当前仅配置 `default` 一个账户；`--all-accounts --binance-check` 通过，结果按 `default` 聚合返回。

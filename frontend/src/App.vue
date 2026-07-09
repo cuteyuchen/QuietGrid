@@ -184,6 +184,12 @@ function formatStrategyValue(key: string, value: string | number) {
   if (key === 'observe_hours') {
     return `${Number(value).toFixed(2)} 小时`
   }
+  if (key === 'take_profit_usdt' || key === 'total_capital_limit') {
+    return `${Number(value).toFixed(2)} USDT`
+  }
+  if (key === 'max_maker_fee_rate') {
+    return formatPct(Number(value))
+  }
   return String(value)
 }
 
@@ -532,21 +538,21 @@ onMounted(() => {
         <section class="surface form-grid">
           <div class="section-title wide">
             <SlidersHorizontal :size="18" />
-            <h3>下轮生效参数草稿</h3>
+            <h3>策略与风控参数</h3>
           </div>
           <div class="config-summary wide">
             <div>
-              <span>当前运行配置</span>
+              <span>启动配置基线</span>
               <strong>{{ formatVolatilityMethod(strategyConfig.current.volatilityMethod) }}</strong>
               <small>
                 并发 {{ strategyConfig.current.maxConcurrent }} · 观察 {{ strategyConfig.current.observeHours }} 小时 ·
-                最小步长 {{ formatPct(strategyConfig.current.minStepPct) }}
+                止盈 {{ strategyConfig.current.takeProfitUsdt.toFixed(2) }} USDT
               </small>
             </div>
             <div>
               <span>草稿更新时间</span>
               <strong>{{ strategyConfig.draftUpdatedAt }}</strong>
-              <small>{{ strategyConfig.diff.length ? `有 ${strategyConfig.diff.length} 项下轮变更` : '草稿与当前配置一致' }}</small>
+              <small>{{ strategyConfig.diff.length ? `有 ${strategyConfig.diff.length} 项参数变更` : '草稿与当前配置一致' }}</small>
             </div>
           </div>
           <label>
@@ -573,6 +579,21 @@ onMounted(() => {
             <span>最大网格数量</span>
             <input v-model.number="strategyForm.maxGridNum" type="number" min="1" max="200" />
           </label>
+          <label>
+            <span>单标的止盈 USDT</span>
+            <input v-model.number="strategyForm.takeProfitUsdt" type="number" min="0.01" max="100000" step="0.01" />
+          </label>
+          <label>
+            <span>总资金上限 USDT</span>
+            <input v-model.number="strategyForm.totalCapitalLimit" type="number" min="1" max="10000000" step="1" />
+          </label>
+          <label>
+            <span>Maker 费率上限</span>
+            <input v-model.number="strategyForm.maxMakerFeeRate" type="number" min="0" max="0.01" step="0.0001" />
+          </label>
+          <div class="empty-state wide">
+            止盈、并发、总资金上限和 Maker 费率上限会在交易循环下一次轮询时热加载；波动率算法、观察窗口和网格参数用于下一轮新建网格。
+          </div>
           <div class="draft-diff wide" aria-live="polite">
             <div v-if="strategyConfig.diff.length === 0" class="empty-state">当前草稿与运行配置一致。</div>
             <div v-for="item in strategyConfig.diff" :key="item.key" class="diff-row">
@@ -586,7 +607,7 @@ onMounted(() => {
           </button>
           <button class="primary-button" type="button" :disabled="strategyBusy" @click="saveStrategyDraft">
             <CheckCircle2 :size="18" />
-            {{ strategyBusy ? '保存中' : '保存为下轮生效' }}
+            {{ strategyBusy ? '保存中' : '保存参数草稿' }}
           </button>
         </section>
       </section>

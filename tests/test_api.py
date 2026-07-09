@@ -359,6 +359,9 @@ def test_console_strategy_config_draft_api_persists_diff(tmp_path) -> None:
             "observe_hours": 1.5,
             "min_step_pct": 0.002,
             "max_grid_num": 12,
+            "take_profit_usdt": 8,
+            "total_capital_limit": 900,
+            "max_maker_fee_rate": 0.0001,
         },
     )
     invalid = client.post(
@@ -369,6 +372,9 @@ def test_console_strategy_config_draft_api_persists_diff(tmp_path) -> None:
             "observe_hours": 1.5,
             "min_step_pct": 0.002,
             "max_grid_num": 12,
+            "take_profit_usdt": 8,
+            "total_capital_limit": 900,
+            "max_maker_fee_rate": 0.0001,
         },
     )
 
@@ -376,8 +382,17 @@ def test_console_strategy_config_draft_api_persists_diff(tmp_path) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["draft"]["volatility_method"] == "yang_zhang"
-    assert {item["key"] for item in body["diff"]} >= {"volatility_method", "max_concurrent"}
-    assert Repository(db_path).strategy_config_draft()["volatility_method"] == "yang_zhang"
+    assert body["draft"]["take_profit_usdt"] == 8
+    assert {item["key"] for item in body["diff"]} >= {
+        "volatility_method",
+        "max_concurrent",
+        "take_profit_usdt",
+        "total_capital_limit",
+        "max_maker_fee_rate",
+    }
+    draft = Repository(db_path).strategy_config_draft()
+    assert draft["volatility_method"] == "yang_zhang"
+    assert draft["take_profit_usdt"] == 8
     assert invalid.status_code == 422
 
 

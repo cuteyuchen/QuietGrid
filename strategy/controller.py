@@ -91,6 +91,8 @@ class TradingController:
         self._volatility_refreshed_at: dict[int, datetime] = {}
         self._last_maker_fee_by_symbol: dict[str, float] = {}
         self._maker_fee_checked_at: datetime | None = None
+        self._runtime_config_signature = self._runtime_config_signature_from_config(controller_config)
+        self._runtime_config_error_signature: str | None = None
 
     async def validate_startup(self, at: datetime | None = None) -> StartupCheck:
         current_time = at or datetime.now(timezone.utc)
@@ -259,6 +261,7 @@ class TradingController:
 
     async def run_once(self, now: datetime | None = None) -> RunOnceResult:
         current_time = now or datetime.now(timezone.utc)
+        self._apply_runtime_config_draft(current_time)
         if self.scheduler.should_force_close(current_time):
             if self.active_sessions:
                 await self.close_all_active_sessions("临近盘前，触发全局强制离场。", current_time)
@@ -498,6 +501,94 @@ class TradingController:
                 max_grid_num=max_grid_num,
             ),
             max_concurrent,
+        )
+
+    def _apply_runtime_config_draft(self, at: datetime) -> None:
+        draft = self.repository.strategy_config_draft()
+        if not draft:
+            return
+        try:
+            max_concurrent = int(draft.get("max_concurrent", self.config.max_concurrent))
+            take_profit_usdt = float(draft.get("take_profit_usdt", self.config.take_profit_usdt))
+            total_capital_limit = float(draft.get("total_capital_limit", self.config.total_capital_limit))
+            max_maker_fee_rate = float(draft.get("max_maker_fee_rate", self.config.max_maker_fee_rate))
+            if max_concurrent < 1:
+                raise ValueError("max_concurrent 必须大于等于 1")
+            if take_profit_usdt <= 0:
+                raise ValueError("take_profit_usdt 必须大于 0")
+            if total_capital_limit <= 0:
+                raise ValueError("total_capital_limit 必须大于 0")
+            if max_maker_fee_rate < 0:
+                raise ValueError("max_maker_fee_rate 必须为非负数")
+            if not all(
+                isfinite(value)
+                for value in (
+                    float(max_concurrent),
+                    take_profit_usdt,
+                    total_capital_limit,
+                    max_maker_fee_rate,
+                )
+            ):
+                raise ValueError("运行中风控参数必须是有限数字")
+        except (TypeError, ValueError) as exc:
+            error_signature = json.dumps({"draft": draft, "error": str(exc)}, ensure_ascii=False, sort_keys=True)
+            if error_signature != self._runtime_config_error_signature:
+                self._runtime_config_error_signature = error_signature
+                self.repository.log_system(
+                    "WARN",
+                    "controller",
+                    "Runtime strategy config draft is invalid; using current runtime config.",
+                    error_signature,
+                    at,
+                )
+            return
+
+        next_config = replace(
+            self.config,
+            max_concurrent=max_concurrent,
+            take_profit_usdt=take_profit_usdt,
+            total_capital_limit=total_capital_limit,
+            max_maker_fee_rate=max_maker_fee_rate,
+        )
+        next_signature = self._runtime_config_signature_from_config(next_config)
+        if next_signature == self._runtime_config_signature:
+            return
+        previous = {
+            "max_concurrent": self.config.max_concurrent,
+            "take_profit_usdt": self.config.take_profit_usdt,
+            "total_capital_limit": self.config.total_capital_limit,
+            "max_maker_fee_rate": self.config.max_maker_fee_rate,
+        }
+        current = {
+            "max_concurrent": max_concurrent,
+            "take_profit_usdt": take_profit_usdt,
+            "total_capital_limit": total_capital_limit,
+            "max_maker_fee_rate": max_maker_fee_rate,
+        }
+        self.config = next_config
+        self.risk.config = replace(
+            self.risk.config,
+            max_concurrent=max_concurrent,
+            take_profit_usdt=take_profit_usdt,
+            total_capital_limit=total_capital_limit,
+        )
+        self._runtime_config_signature = next_signature
+        self._runtime_config_error_signature = None
+        self.repository.log_system(
+            "INFO",
+            "controller",
+            "Runtime strategy config draft applied.",
+            json.dumps({"previous": previous, "current": current}, ensure_ascii=False),
+            at,
+        )
+
+    @staticmethod
+    def _runtime_config_signature_from_config(config: ControllerConfig) -> tuple[int, float, float, float]:
+        return (
+            int(config.max_concurrent),
+            float(config.take_profit_usdt),
+            float(config.total_capital_limit),
+            float(config.max_maker_fee_rate),
         )
 
     async def _filter_symbols_by_maker_fee(self, symbols: list[str], at: datetime) -> list[str]:
@@ -864,6 +955,7 @@ class TradingController:
 
     async def poll_active_sessions_once(self, now: datetime | None = None) -> list[tuple[str, str]]:
         current_time = now or datetime.now(timezone.utc)
+        self._apply_runtime_config_draft(current_time)
         actions: list[tuple[str, str]] = []
         commission_action = await self._monitor_active_maker_fee_if_due(current_time)
         if commission_action is not None:

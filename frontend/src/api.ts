@@ -80,6 +80,9 @@ type ApiStrategySettings = {
   observe_hours: number
   min_step_pct: number
   max_grid_num: number
+  take_profit_usdt: number
+  total_capital_limit: number
+  max_maker_fee_rate: number
 }
 
 type ApiStrategyDiff = {
@@ -169,6 +172,9 @@ export async function saveStrategyConfigDraft(draft: StrategySettings): Promise<
       observe_hours: draft.observeHours,
       min_step_pct: draft.minStepPct,
       max_grid_num: draft.maxGridNum,
+      take_profit_usdt: draft.takeProfitUsdt,
+      total_capital_limit: draft.totalCapitalLimit,
+      max_maker_fee_rate: draft.maxMakerFeeRate,
     }),
   })
   const body = (await response.json()) as (ApiStrategyConfig & { message?: string }) | { detail?: string }
@@ -280,6 +286,9 @@ function mapStrategySettings(value: ApiStrategySettings): StrategySettings {
     observeHours: toNumber(value.observe_hours),
     minStepPct: toNumber(value.min_step_pct),
     maxGridNum: Math.trunc(toNumber(value.max_grid_num)),
+    takeProfitUsdt: toNumber(value.take_profit_usdt),
+    totalCapitalLimit: toNumber(value.total_capital_limit),
+    maxMakerFeeRate: toNumber(value.max_maker_fee_rate),
   }
 }
 

@@ -44,6 +44,8 @@ python web.py
 
 Vue 控制台的“停止”和“平仓”都会提交受控请求，由交易循环下一轮执行撤单和平仓。“停止”用于结束该网格会话，“平仓”用于明确的人工作业接管，两者会写入不同的审计动作和 `close_reason`，方便复盘。
 
+策略参数页保存的是控制台草稿。交易循环会在下一次 `run_once`/`poll_active_sessions_once` 时热加载草稿中的 `max_concurrent`、`take_profit_usdt`、`total_capital_limit` 和 `max_maker_fee_rate`；波动率算法、观察窗口、最小步长和最大网格数仍用于下一轮新建网格。
+
 系统日志通知默认关闭。需要外部告警时，在 `config/config.yaml` 中开启 `notifications.enabled` 并填写 `webhook_url`；`min_level` 默认只推送 `WARN`/`ERROR`，`format` 支持 `generic`、`dingtalk` 和 `telegram`。Telegram 使用 Bot API 的 `sendMessage` 地址作为 `webhook_url`，并额外填写 `telegram_chat_id`。通知发送失败不会阻断交易日志写入。
 
 离线回测已提供最小 API：先用观察期 K 线调用 `strategy.grid_calculator.calculate_grid_params` 得到 `GridParams`，再把后续 K 线传给 `strategy.backtest.run_grid_backtest`。也可以直接用 `python trader.py --backtest-csv <csv>` 运行单文件回测，或用 `python trader.py --backtest-dir <dir>` 汇总目录内多个 CSV 窗口；CSV 至少包含 `high`、`low`、`close` 列，可选 `timestamp`/`open_time`/`close_time`/`time`。单文件 `--backtest-output <json>` 会保存摘要、网格参数、成交明细、权益曲线、最大回撤、网格胜率、平均单格盈亏、成交密度和简化 Sharpe；批量模式会保存聚合指标、每个文件摘要和失败文件错误。当前回测按 K 线高低价触达模拟网格成交，并在同一根 K 线触发止损或区间击穿时优先停止，避免高估收益。

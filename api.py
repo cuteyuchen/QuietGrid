@@ -239,6 +239,9 @@ class StrategyConfigDraftRequest(BaseModel):
     observe_hours: float = Field(gt=0, le=24)
     min_step_pct: float = Field(gt=0, le=0.05)
     max_grid_num: int = Field(ge=1, le=200)
+    take_profit_usdt: float | None = Field(default=None, gt=0, le=100000)
+    total_capital_limit: float | None = Field(default=None, gt=0, le=10000000)
+    max_maker_fee_rate: float | None = Field(default=None, ge=0, le=0.01)
 
 
 app = create_app()
@@ -297,6 +300,7 @@ def _save_strategy_config_draft(
     method = str(request.volatility_method).strip().lower()
     if method not in SUPPORTED_RANGE_METHODS:
         raise HTTPException(status_code=422, detail=f"不支持的波动率算法：{request.volatility_method}")
+    current = _current_strategy_config(config)
     draft = {
         "volatility_method": method,
         "max_concurrent": int(request.max_concurrent),
@@ -304,8 +308,19 @@ def _save_strategy_config_draft(
         "min_step_pct": float(request.min_step_pct),
         "max_grid_num": int(request.max_grid_num),
     }
+    if request.take_profit_usdt is not None:
+        draft["take_profit_usdt"] = float(request.take_profit_usdt)
+    else:
+        draft["take_profit_usdt"] = float(current["take_profit_usdt"])
+    if request.total_capital_limit is not None:
+        draft["total_capital_limit"] = float(request.total_capital_limit)
+    else:
+        draft["total_capital_limit"] = float(current["total_capital_limit"])
+    if request.max_maker_fee_rate is not None:
+        draft["max_maker_fee_rate"] = float(request.max_maker_fee_rate)
+    else:
+        draft["max_maker_fee_rate"] = float(current["max_maker_fee_rate"])
     now = datetime.now(timezone.utc)
-    current = _current_strategy_config(config)
     before = repo.strategy_config_draft()
     repo.log_system(
         "INFO",
@@ -341,6 +356,9 @@ def _current_strategy_config(config: AppConfig) -> dict[str, Any]:
         "observe_hours": float(timing.get("observe_hours", 3)),
         "min_step_pct": float(grid.get("min_step_pct", 0.0015)),
         "max_grid_num": int(grid.get("max_grid_num", 20)),
+        "take_profit_usdt": float(trading.get("take_profit_usdt", 10)),
+        "total_capital_limit": float(trading.get("total_capital_limit", 1000)),
+        "max_maker_fee_rate": float(trading.get("max_maker_fee_rate", 0)),
     }
 
 
@@ -351,6 +369,9 @@ def _strategy_config_diff(current: dict[str, Any], draft: dict[str, Any]) -> lis
         "observe_hours": "观察窗口小时",
         "min_step_pct": "最小网格步长",
         "max_grid_num": "最大网格数量",
+        "take_profit_usdt": "单标的止盈",
+        "total_capital_limit": "总资金上限",
+        "max_maker_fee_rate": "Maker 费率上限",
     }
     diff: list[dict[str, Any]] = []
     for key, label in labels.items():

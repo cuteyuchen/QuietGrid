@@ -46,6 +46,9 @@ export type StrategySettings = {
   observeHours: number
   minStepPct: number
   maxGridNum: number
+  takeProfitUsdt: number
+  totalCapitalLimit: number
+  maxMakerFeeRate: number
 }
 
 export type StrategyDiff = {
@@ -111,6 +114,9 @@ export const strategyConfig: StrategyConfigData = {
     observeHours: 3,
     minStepPct: 0.0015,
     maxGridNum: 20,
+    takeProfitUsdt: 10,
+    totalCapitalLimit: 1000,
+    maxMakerFeeRate: 0.0002,
   },
   draft: {
     volatilityMethod: 'std',
@@ -118,6 +124,9 @@ export const strategyConfig: StrategyConfigData = {
     observeHours: 3,
     minStepPct: 0.0015,
     maxGridNum: 20,
+    takeProfitUsdt: 10,
+    totalCapitalLimit: 1000,
+    maxMakerFeeRate: 0.0002,
   },
   diff: [],
   draftUpdatedAt: '-',

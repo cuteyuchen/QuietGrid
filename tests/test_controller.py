@@ -4186,6 +4186,114 @@ def test_controller_run_loop_starts_then_polls_active_sessions(tmp_path) -> None
     asyncio.run(run())
 
 
+def test_controller_poll_applies_runtime_take_profit_draft(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        exchange = MockExchangeClient()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+        start_at = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+
+        await controller.run_once(start_at)
+        session = controller.active_sessions["AAPLUSDT"]
+        session.realized_pnl = 5
+        repo.set_strategy_config_draft(
+            {
+                "volatility_method": "std",
+                "max_concurrent": 1,
+                "observe_hours": 1,
+                "min_step_pct": 0.0015,
+                "max_grid_num": 20,
+                "take_profit_usdt": 4,
+                "total_capital_limit": 1000,
+                "max_maker_fee_rate": 0,
+            },
+            start_at,
+        )
+
+        actions = await controller.poll_active_sessions_once(start_at + timedelta(seconds=10))
+
+        session_row = repo.get_session(session.session_id)
+        log = next(row for row in repo.recent_rows("system_logs", limit=10) if row["message"] == "Runtime strategy config draft applied.")
+
+        assert controller.config.take_profit_usdt == 4
+        assert controller.risk.config.take_profit_usdt == 4
+        assert actions == [("AAPLUSDT", "close")]
+        assert session_row is not None
+        assert session_row["close_reason"] == "单标的止盈达标。"
+        assert log["level"] == "INFO"
+
+    asyncio.run(run())
+
+
+def test_controller_poll_applies_runtime_maker_fee_limit_draft(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        exchange = ChangingCommissionExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+                max_maker_fee_rate=0.0003,
+                maker_fee_check_interval_seconds=1,
+            ),
+        )
+        start_at = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+
+        await controller.run_once(start_at)
+        exchange.maker_fee = 0.0002
+        repo.set_strategy_config_draft(
+            {
+                "volatility_method": "std",
+                "max_concurrent": 1,
+                "observe_hours": 1,
+                "min_step_pct": 0.0015,
+                "max_grid_num": 20,
+                "take_profit_usdt": 10,
+                "total_capital_limit": 1000,
+                "max_maker_fee_rate": 0,
+            },
+            start_at,
+        )
+
+        actions = await controller.poll_active_sessions_once(start_at + timedelta(seconds=2))
+
+        health = repo.latest_commission_health()
+        assert controller.config.max_maker_fee_rate == 0
+        assert actions[0] == ("*", "commission_warn")
+        assert health is not None
+        assert health["status"] == "warn"
+        assert health["symbols"][0]["max_maker_fee_rate"] == 0
+
+    asyncio.run(run())
+
+
 def test_controller_price_event_enters_cooldown(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"

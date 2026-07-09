@@ -76,3 +76,56 @@ def test_webhook_notifier_posts_dingtalk_payload() -> None:
     assert "[QuietGrid][WARN] commission_health" in payload["text"]["content"]
     assert "Maker fee changed." in payload["text"]["content"]
     assert "detail=maker=0.0002" in payload["text"]["content"]
+
+
+def test_telegram_notifications_require_chat_id() -> None:
+    with pytest.raises(ValueError, match="telegram_chat_id"):
+        WebhookNotifier(
+            "https://api.telegram.org/botTOKEN/sendMessage",
+            payload_format="telegram",
+        )
+
+
+def test_webhook_notifier_posts_telegram_payload() -> None:
+    calls: list[tuple[str, dict[str, Any], float]] = []
+    now = datetime(2026, 7, 5, 12, 30, tzinfo=timezone.utc)
+    notifier = WebhookNotifier(
+        "https://api.telegram.org/botTOKEN/sendMessage",
+        payload_format="telegram",
+        telegram_chat_id="-100123456",
+        timeout_seconds=3,
+        post_json=lambda url, payload, timeout: calls.append((url, payload, timeout)),
+    )
+
+    notifier("ERROR", "risk", "Position mismatch.", "symbol=AAPLUSDT", now)
+
+    payload = calls[0][1]
+    assert calls[0][0] == "https://api.telegram.org/botTOKEN/sendMessage"
+    assert calls[0][2] == 3
+    assert payload["chat_id"] == "-100123456"
+    assert payload["disable_web_page_preview"] is True
+    assert "[QuietGrid][ERROR] risk" in payload["text"]
+    assert "Position mismatch." in payload["text"]
+    assert "detail=symbol=AAPLUSDT" in payload["text"]
+
+
+def test_build_system_log_notifier_reads_telegram_config() -> None:
+    calls: list[tuple[str, dict[str, Any], float]] = []
+    notifier = build_system_log_notifier(
+        {
+            "enabled": True,
+            "webhook_url": "https://api.telegram.org/botTOKEN/sendMessage",
+            "format": "telegram",
+            "telegram_chat_id": "-100123456",
+        }
+    )
+    assert notifier is not None
+    object.__setattr__(
+        notifier,
+        "post_json",
+        lambda url, payload, timeout: calls.append((url, payload, timeout)),
+    )
+
+    notifier("WARN", "commission_health", "Maker fee changed.", None, datetime(2026, 7, 5, tzinfo=timezone.utc))
+
+    assert calls[0][1]["chat_id"] == "-100123456"

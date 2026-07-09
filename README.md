@@ -42,7 +42,7 @@ python web.py
 
 交易循环会按 `trading.maker_fee_check_interval_seconds` 周期复查活动网格标的的 Maker 费率。若费率超过 `trading.max_maker_fee_rate` 或相对上次检查发生变化，会写入 `commission_health` WARN/ERROR 日志，Web 费率健康面板和已启用的外部通知会同步显示。
 
-系统日志通知默认关闭。需要外部告警时，在 `config/config.yaml` 中开启 `notifications.enabled` 并填写 `webhook_url`；`min_level` 默认只推送 `WARN`/`ERROR`，`format` 支持 `generic` 和 `dingtalk`。通知发送失败不会阻断交易日志写入。
+系统日志通知默认关闭。需要外部告警时，在 `config/config.yaml` 中开启 `notifications.enabled` 并填写 `webhook_url`；`min_level` 默认只推送 `WARN`/`ERROR`，`format` 支持 `generic`、`dingtalk` 和 `telegram`。Telegram 使用 Bot API 的 `sendMessage` 地址作为 `webhook_url`，并额外填写 `telegram_chat_id`。通知发送失败不会阻断交易日志写入。
 
 离线回测已提供最小 API：先用观察期 K 线调用 `strategy.grid_calculator.calculate_grid_params` 得到 `GridParams`，再把后续 K 线传给 `strategy.backtest.run_grid_backtest`。也可以直接用 `python trader.py --backtest-csv <csv>` 运行单文件回测，或用 `python trader.py --backtest-dir <dir>` 汇总目录内多个 CSV 窗口；CSV 至少包含 `high`、`low`、`close` 列，可选 `timestamp`/`open_time`/`close_time`/`time`。单文件 `--backtest-output <json>` 会保存摘要、网格参数、成交明细、权益曲线、最大回撤、网格胜率、平均单格盈亏、成交密度和简化 Sharpe；批量模式会保存聚合指标、每个文件摘要和失败文件错误。当前回测按 K 线高低价触达模拟网格成交，并在同一根 K 线触发止损或区间击穿时优先停止，避免高估收益。
 

@@ -71,6 +71,7 @@ web:
 notifications:
   enabled: false
   webhook_url: ""
+  telegram_chat_id: ""
   min_level: "WARN"
   timeout_seconds: 5
   format: "generic"

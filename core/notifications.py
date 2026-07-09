@@ -23,6 +23,7 @@ class WebhookNotifier:
     min_level: str = "WARN"
     timeout_seconds: float = 5.0
     payload_format: str = "generic"
+    telegram_chat_id: str = ""
     post_json: PostJson | None = None
 
     def __post_init__(self) -> None:
@@ -32,8 +33,10 @@ class WebhookNotifier:
             raise ValueError("notification timeout_seconds must be positive")
         if _level_priority(self.min_level) is None:
             raise ValueError(f"unsupported notification min_level: {self.min_level}")
-        if self.payload_format not in {"generic", "dingtalk"}:
+        if self.payload_format not in {"generic", "dingtalk", "telegram"}:
             raise ValueError(f"unsupported notification format: {self.payload_format}")
+        if self.payload_format == "telegram" and not self.telegram_chat_id.strip():
+            raise ValueError("notification telegram_chat_id is required when format is telegram")
 
     def __call__(
         self,
@@ -68,6 +71,19 @@ class WebhookNotifier:
             if detail:
                 lines.append(f"detail={detail}")
             return {"msgtype": "text", "text": {"content": "\n".join(lines)}}
+        if self.payload_format == "telegram":
+            lines = [
+                f"[QuietGrid][{level.upper()}] {module}",
+                message,
+                f"time={log_time.isoformat()}",
+            ]
+            if detail:
+                lines.append(f"detail={detail}")
+            return {
+                "chat_id": self.telegram_chat_id,
+                "text": _telegram_text("\n".join(lines)),
+                "disable_web_page_preview": True,
+            }
         return {
             "source": "quietgrid",
             "level": level.upper(),
@@ -86,6 +102,7 @@ def build_system_log_notifier(raw_config: dict[str, Any] | None) -> WebhookNotif
         min_level=str(raw_config.get("min_level", "WARN")),
         timeout_seconds=float(raw_config.get("timeout_seconds", 5)),
         payload_format=str(raw_config.get("format", "generic")),
+        telegram_chat_id=str(raw_config.get("telegram_chat_id", "")),
     )
 
 
@@ -99,3 +116,9 @@ def _post_json_with_httpx(webhook_url: str, payload: dict[str, Any], timeout_sec
     with httpx.Client(timeout=timeout_seconds) as client:
         response = client.post(webhook_url, json=payload)
         response.raise_for_status()
+
+
+def _telegram_text(text: str) -> str:
+    if len(text) <= 4096:
+        return text
+    return text[:4093] + "..."

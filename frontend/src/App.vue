@@ -241,6 +241,16 @@ function stopSessionAction(session: (typeof sessions.value)[number]): ActionConf
   }
 }
 
+function stopAllSessionsAction(): ActionConfig {
+  return {
+    action: 'all-sessions-stop',
+    title: '停止全部活动网格',
+    description: '将为所有活动网格提交停止请求。交易循环下一轮会逐个撤单并尝试同步平仓，完成结果会写入审计日志。',
+    buttonLabel: '确认停止全部',
+    tone: 'danger',
+  }
+}
+
 function symbolToggleAction(session: (typeof sessions.value)[number]): ActionConfig {
   const willEnable = session.nextEntryDisabled
   return {
@@ -429,7 +439,12 @@ onMounted(() => {
           <span class="control-note">
             当前：{{ paused ? '已暂停新开仓' : '允许新开仓' }} · {{ controlState.newEntriesPausedUpdatedAt }}
           </span>
-          <button class="danger-button" type="button" disabled>
+          <button
+            class="danger-button"
+            type="button"
+            :disabled="Boolean(actionBusy) || summary.activeSessions === 0"
+            @click="openAction(stopAllSessionsAction())"
+          >
             <Square :size="18" />
             停止全部网格
           </button>

@@ -188,6 +188,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         _require_confirm(request)
         return _request_session_stop(repo, session_id, request)
 
+    @app.post("/api/actions/sessions/stop-all")
+    def action_stop_all_sessions(
+        request: ConsoleActionRequest,
+        repo: Repository = Depends(get_repository),
+    ) -> dict[str, Any]:
+        _require_confirm(request)
+        return _request_all_sessions_stop(repo, request)
+
     @app.post("/api/actions/symbols/{symbol}/disable-next-entry")
     def action_disable_symbol_next_entry(
         symbol: str,
@@ -527,6 +535,59 @@ def _request_session_stop(repo: Repository, session_id: int, request: ConsoleAct
             f"{row.get('symbol')} 停止请求已记录。"
             f"开放订单 {before['open_orders']} -> {after['open_orders']}，仓位确认等待交易循环处理。"
         ),
+        "control_state": _control_state_payload(repo),
+        "result": result,
+    }
+
+
+def _request_all_sessions_stop(repo: Repository, request: ConsoleActionRequest) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    rows = repo.console_sessions(active_only=True, limit=200)
+    request_id = request.request_id or str(uuid4())
+    now = datetime.now(timezone.utc)
+    action = "all_sessions_stop"
+    label = "停止全部网格"
+    detail = _action_detail(action, label, request, request_id, {"session_count": len(rows)})
+    repo.log_system("WARN", "console_action", "Console action requested.", _json_detail(detail), now)
+    requests = []
+    before = []
+    for row in rows:
+        session_id = int(row.get("id") or 0)
+        before.append(_session_control_snapshot(repo, session_id))
+        requests.append(
+            repo.request_session_stop(
+                session_id=session_id,
+                symbol=str(row.get("symbol") or ""),
+                reason=request.reason,
+                request_id=f"{request_id}:{session_id}",
+                requested_at=now,
+            )
+        )
+    after = [_session_control_snapshot(repo, int(row.get("id") or 0)) for row in rows]
+    result = {
+        "before": before,
+        "after": after,
+        "stop_requests": requests,
+        "position_confirmation": {
+            "status": "queued",
+            "status_label": "等待交易循环确认",
+            "message": "交易循环会逐个处理停止请求，完成后每个会话会写入 close_reason 与审计日志。",
+        },
+    }
+    repo.log_system(
+        "INFO",
+        "console_action",
+        "Console action completed.",
+        _json_detail({**detail, "result": result}),
+        datetime.now(timezone.utc),
+    )
+    return {
+        "ok": True,
+        "action": action,
+        "label": label,
+        "request_id": request_id,
+        "message": f"已记录 {len(requests)} 个活动网格停止请求，仓位确认等待交易循环处理。",
         "control_state": _control_state_payload(repo),
         "result": result,
     }

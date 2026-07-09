@@ -104,6 +104,7 @@ export type ConsoleAction =
   | 'pause-new-entries'
   | 'resume-new-entries'
   | 'session-stop'
+  | 'all-sessions-stop'
   | 'symbol-disable-next-entry'
   | 'symbol-enable-next-entry'
 
@@ -208,6 +209,9 @@ function actionUrl(action: ConsoleAction, payload: ConsoleActionPayload): string
       throw new Error('缺少会话编号，无法停止网格')
     }
     return `/api/actions/sessions/${payload.sessionId}/stop`
+  }
+  if (action === 'all-sessions-stop') {
+    return '/api/actions/sessions/stop-all'
   }
   if (action === 'symbol-disable-next-entry' || action === 'symbol-enable-next-entry') {
     if (!payload.symbol) {

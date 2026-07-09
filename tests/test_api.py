@@ -261,6 +261,30 @@ def test_console_session_stop_records_request_and_snapshot(tmp_path) -> None:
     assert session["stop_request_status"] == "requested"
 
 
+def test_console_stop_all_sessions_records_requests(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    first_session = repo.create_session(window_id, "BTCUSDT", "RUNNING", 200, 10, now)
+    second_session = repo.create_session(window_id, "ETHUSDT", "COOLDOWN", 200, 10, now)
+    client = TestClient(create_app(_test_config(db_path)))
+
+    response = client.post(
+        "/api/actions/sessions/stop-all",
+        json={"confirm": True, "reason": "全部停止", "request_id": "stop-all-1"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"] == "all_sessions_stop"
+    assert len(body["result"]["stop_requests"]) == 2
+    pending = Repository(db_path).pending_session_stop_requests()
+    assert set(pending) == {first_session, second_session}
+    assert pending[first_session]["request_id"] == f"stop-all-1:{first_session}"
+
+
 def test_console_session_stop_rejects_stopped_session(tmp_path) -> None:
     db_path = tmp_path / "quietgrid.db"
     init_db(db_path)

@@ -41,6 +41,7 @@ const tabs = [
 
 const activeTab = ref<(typeof tabs)[number]['key']>('overview')
 const testRunSeconds = ref(600)
+const selectedStartSymbol = ref('')
 const loading = ref(false)
 const actionBusy = ref<ConsoleAction | ''>('')
 const strategyBusy = ref(false)
@@ -90,6 +91,8 @@ const statusCards = computed(() => [
 
 const dataSourceLabel = computed(() => (dataError.value ? '离线示例' : '实时数据'))
 const paused = computed(() => controlState.value.newEntriesPaused)
+const startableSymbols = computed(() => controlState.value.startableSymbols)
+const startGridSymbol = computed(() => selectedStartSymbol.value || startableSymbols.value[0] || '')
 
 type ActionConfig = {
   action: ConsoleAction
@@ -142,6 +145,9 @@ async function refreshData() {
     sessions.value = data.sessions
     verificationRows.value = data.verificationRows
     auditLogs.value = data.auditLogs
+    if (!selectedStartSymbol.value || !data.controlState.startableSymbols.includes(selectedStartSymbol.value)) {
+      selectedStartSymbol.value = data.controlState.startableSymbols[0] || ''
+    }
     dataError.value = ''
   } catch (error) {
     dataError.value = error instanceof Error ? error.message : '无法连接控制台 API'
@@ -218,7 +224,7 @@ async function confirmAction() {
   try {
     const result = await executeConsoleAction(config.action, {
       reason: actionReason.value.trim() || config.title,
-      loopSeconds: config.action === 'testnet-run' ? testRunSeconds.value : undefined,
+      loopSeconds: config.action === 'testnet-run' || config.action === 'symbol-start-grid' ? testRunSeconds.value : undefined,
       sessionId: config.sessionId,
       symbol: config.symbol,
     })
@@ -294,6 +300,18 @@ function testnetRunAction(): ActionConfig {
     title: '执行一键测试网流程',
     description: `将运行 ${testRunSeconds.value} 秒有界测试，并自动执行前置持仓检查、安全清扫和后置检查。`,
     buttonLabel: '确认执行',
+    tone: 'primary',
+  }
+}
+
+function startSymbolGridAction(): ActionConfig {
+  const symbol = startGridSymbol.value
+  return {
+    action: 'symbol-start-grid',
+    symbol,
+    title: `启动 ${symbol || '指定标的'} 网格`,
+    description: `将只针对 ${symbol || '所选标的'} 运行 ${testRunSeconds.value} 秒测试网有界网格流程，并沿用前置持仓检查、安全清扫和后置检查。`,
+    buttonLabel: '确认启动',
     tone: 'primary',
   }
 }
@@ -455,6 +473,21 @@ onMounted(() => {
 
       <section v-if="activeTab === 'grids'" class="panel-stack">
         <div class="control-bar">
+          <label class="symbol-start-control">
+            <span>启动标的</span>
+            <select v-model="selectedStartSymbol" :disabled="Boolean(actionBusy) || startableSymbols.length === 0">
+              <option v-for="symbol in startableSymbols" :key="symbol" :value="symbol">{{ symbol }}</option>
+            </select>
+          </label>
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="Boolean(actionBusy) || !startGridSymbol"
+            @click="openAction(startSymbolGridAction())"
+          >
+            <Play :size="18" />
+            启动网格
+          </button>
           <button class="secondary-button" type="button" :disabled="Boolean(actionBusy)" @click="openAction(pauseToggleAction())">
             <CirclePause :size="18" />
             {{ paused ? '恢复新开仓' : '暂停新开仓' }}

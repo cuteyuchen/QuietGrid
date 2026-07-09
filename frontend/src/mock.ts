@@ -37,6 +37,7 @@ export type ControlState = {
   newEntriesPausedUpdatedAt: string
   disabledSymbols: string[]
   disabledSymbolsUpdatedAt: string
+  startableSymbols: string[]
   sessionStopRequests: Array<Record<string, unknown>>
 }
 
@@ -104,6 +105,7 @@ export const controlState: ControlState = {
   newEntriesPausedUpdatedAt: '-',
   disabledSymbols: [],
   disabledSymbolsUpdatedAt: '-',
+  startableSymbols: ['BTCUSDT', 'ETHUSDT', 'BCHUSDT'],
   sessionStopRequests: [],
 }
 

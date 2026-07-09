@@ -71,6 +71,7 @@ type ApiControlState = {
   new_entries_paused_updated_at: string
   disabled_symbols: string[]
   disabled_symbols_updated_at: string
+  startable_symbols: string[]
   session_stop_requests: Array<Record<string, unknown>>
 }
 
@@ -112,6 +113,7 @@ export type ConsoleAction =
   | 'all-sessions-stop'
   | 'symbol-disable-next-entry'
   | 'symbol-enable-next-entry'
+  | 'symbol-start-grid'
 
 export type ConsoleActionPayload = {
   reason: string
@@ -234,6 +236,12 @@ function actionUrl(action: ConsoleAction, payload: ConsoleActionPayload): string
     const operation = action === 'symbol-disable-next-entry' ? 'disable-next-entry' : 'enable-next-entry'
     return `/api/actions/symbols/${encodeURIComponent(payload.symbol)}/${operation}`
   }
+  if (action === 'symbol-start-grid') {
+    if (!payload.symbol) {
+      throw new Error('缺少标的，无法启动网格')
+    }
+    return `/api/actions/symbols/${encodeURIComponent(payload.symbol)}/start-grid`
+  }
   return `/api/actions/${action}`
 }
 
@@ -251,6 +259,7 @@ function mapControlState(value: ApiControlState): ControlState {
     newEntriesPausedUpdatedAt: compactTime(value.new_entries_paused_updated_at),
     disabledSymbols: Array.isArray(value.disabled_symbols) ? value.disabled_symbols : [],
     disabledSymbolsUpdatedAt: compactTime(value.disabled_symbols_updated_at),
+    startableSymbols: Array.isArray(value.startable_symbols) ? value.startable_symbols : [],
     sessionStopRequests: Array.isArray(value.session_stop_requests) ? value.session_stop_requests : [],
   }
 }

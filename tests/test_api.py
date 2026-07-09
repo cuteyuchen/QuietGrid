@@ -437,12 +437,61 @@ def test_console_testnet_run_rejects_non_testnet(monkeypatch, tmp_path) -> None:
     assert response.status_code == 409
 
 
+def test_console_symbol_start_grid_runs_single_allowlisted_symbol(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    seen = {}
+
+    async def fake_symbol_run(config, symbol, seconds):
+        seen["symbol"] = symbol
+        seen["seconds"] = seconds
+        seen["allowlist"] = list(config.raw["selection"]["symbol_allowlist"])
+        return {"test_run_ok": True, "symbol": symbol, "max_seconds": seconds}
+
+    monkeypatch.setattr(api_module, "_run_symbol_testnet_run_action", fake_symbol_run)
+    client = TestClient(create_app(_test_config(db_path, testnet=True)))
+
+    response = client.post(
+        "/api/actions/symbols/btcusdt/start-grid",
+        json={"confirm": True, "reason": "启动 BTC", "request_id": "start-btc", "loop_seconds": 30},
+    )
+    control_state = client.get("/api/control-state").json()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"] == "symbol_start_grid"
+    assert body["result"]["symbol"] == "BTCUSDT"
+    assert seen == {"symbol": "BTCUSDT", "seconds": 30.0, "allowlist": ["BTCUSDT", "ETHUSDT", "BCHUSDT"]}
+    assert control_state["startable_symbols"] == ["BTCUSDT", "ETHUSDT", "BCHUSDT"]
+
+
+def test_console_symbol_start_grid_rejects_non_allowlisted_symbol(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+
+    async def fake_symbol_run(config, symbol, seconds):
+        raise AssertionError("non-allowlisted symbol must be rejected before runner")
+
+    monkeypatch.setattr(api_module, "_run_symbol_testnet_run_action", fake_symbol_run)
+    client = TestClient(create_app(_test_config(db_path, testnet=True)))
+
+    response = client.post(
+        "/api/actions/symbols/notrealusdt/start-grid",
+        json={"confirm": True, "reason": "启动非法标的", "loop_seconds": 30},
+    )
+
+    assert response.status_code == 422
+    assert "allowlist" in response.json()["detail"]
+
+
 def _test_config(db_path, testnet: bool = True) -> AppConfig:
     return AppConfig(
         raw={
             "database": {"path": str(db_path)},
             "web": {"address": "127.0.0.1", "port": 8080},
             "api": {"address": "127.0.0.1", "port": 8000},
+            "selection": {
+                "symbol_allowlist": ["BTCUSDT", "ETHUSDT", "BCHUSDT"],
+                "symbol_blacklist": [],
+            },
         },
         binance_api_key="",
         binance_api_secret="",

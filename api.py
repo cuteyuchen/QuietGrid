@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
 from typing import Any
@@ -66,7 +67,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @app.get("/api/control-state")
     def control_state(repo: Repository = Depends(get_repository)) -> dict[str, Any]:
-        return _control_state_payload(repo)
+        return _control_state_payload(app_config, repo)
 
     @app.get("/api/strategy-config")
     def strategy_config(repo: Repository = Depends(get_repository)) -> dict[str, Any]:
@@ -163,13 +164,34 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             extra_detail={"loop_seconds": seconds},
         )
 
+    @app.post("/api/actions/symbols/{symbol}/start-grid")
+    async def action_start_symbol_grid(
+        symbol: str,
+        request: ConsoleActionRequest,
+        repo: Repository = Depends(get_repository),
+    ) -> dict[str, Any]:
+        _ensure_testnet_action(app_config)
+        _require_confirm(request)
+        normalized_symbol = _normalize_startable_symbol(app_config, symbol)
+        seconds = float(request.loop_seconds or 600)
+        if seconds < 20:
+            raise HTTPException(status_code=422, detail="运行秒数不能小于 20。")
+        return await _run_console_action(
+            repo,
+            action="symbol_start_grid",
+            label="启动指定标的网格",
+            request=request,
+            runner=lambda: _run_symbol_testnet_run_action(app_config, normalized_symbol, seconds),
+            extra_detail={"symbol": normalized_symbol, "loop_seconds": seconds},
+        )
+
     @app.post("/api/actions/pause-new-entries")
     def action_pause_new_entries(
         request: ConsoleActionRequest,
         repo: Repository = Depends(get_repository),
     ) -> dict[str, Any]:
         _require_confirm(request)
-        return _set_new_entries_paused(repo, request, paused=True)
+        return _set_new_entries_paused(app_config, repo, request, paused=True)
 
     @app.post("/api/actions/resume-new-entries")
     def action_resume_new_entries(
@@ -177,7 +199,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         repo: Repository = Depends(get_repository),
     ) -> dict[str, Any]:
         _require_confirm(request)
-        return _set_new_entries_paused(repo, request, paused=False)
+        return _set_new_entries_paused(app_config, repo, request, paused=False)
 
     @app.post("/api/actions/sessions/{session_id}/stop")
     def action_stop_session(
@@ -186,7 +208,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         repo: Repository = Depends(get_repository),
     ) -> dict[str, Any]:
         _require_confirm(request)
-        return _request_session_stop(repo, session_id, request)
+        return _request_session_stop(app_config, repo, session_id, request)
 
     @app.post("/api/actions/sessions/{session_id}/manual-close")
     def action_manual_close_session(
@@ -195,7 +217,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         repo: Repository = Depends(get_repository),
     ) -> dict[str, Any]:
         _require_confirm(request)
-        return _request_session_manual_close(repo, session_id, request)
+        return _request_session_manual_close(app_config, repo, session_id, request)
 
     @app.post("/api/actions/sessions/stop-all")
     def action_stop_all_sessions(
@@ -203,7 +225,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         repo: Repository = Depends(get_repository),
     ) -> dict[str, Any]:
         _require_confirm(request)
-        return _request_all_sessions_stop(repo, request)
+        return _request_all_sessions_stop(app_config, repo, request)
 
     @app.post("/api/actions/symbols/{symbol}/disable-next-entry")
     def action_disable_symbol_next_entry(
@@ -212,7 +234,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         repo: Repository = Depends(get_repository),
     ) -> dict[str, Any]:
         _require_confirm(request)
-        return _set_symbol_next_entry_disabled(repo, symbol, request, disabled=True)
+        return _set_symbol_next_entry_disabled(app_config, repo, symbol, request, disabled=True)
 
     @app.post("/api/actions/symbols/{symbol}/enable-next-entry")
     def action_enable_symbol_next_entry(
@@ -221,7 +243,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         repo: Repository = Depends(get_repository),
     ) -> dict[str, Any]:
         _require_confirm(request)
-        return _set_symbol_next_entry_disabled(repo, symbol, request, disabled=False)
+        return _set_symbol_next_entry_disabled(app_config, repo, symbol, request, disabled=False)
 
     return app
 
@@ -261,7 +283,7 @@ def _ensure_testnet_action(config: AppConfig) -> None:
         raise HTTPException(status_code=409, detail="当前不是测试网模式，拒绝执行交易控制动作。")
 
 
-def _control_state_payload(repo: Repository) -> dict[str, Any]:
+def _control_state_payload(config: AppConfig, repo: Repository) -> dict[str, Any]:
     state = repo.get_control_state()
     pause_state = state.get("new_entries_paused")
     disabled_state = state.get("disabled_symbols")
@@ -270,8 +292,33 @@ def _control_state_payload(repo: Repository) -> dict[str, Any]:
         "new_entries_paused_updated_at": pause_state.get("updated_at") if isinstance(pause_state, dict) else "",
         "disabled_symbols": sorted(repo.disabled_symbols()),
         "disabled_symbols_updated_at": disabled_state.get("updated_at") if isinstance(disabled_state, dict) else "",
+        "startable_symbols": _configured_startable_symbols(config),
         "session_stop_requests": list(repo.session_stop_requests().values()),
     }
+
+
+def _configured_startable_symbols(config: AppConfig) -> list[str]:
+    selection = config.raw.get("selection", {})
+    blacklist = {str(symbol).strip().upper() for symbol in selection.get("symbol_blacklist", []) if str(symbol).strip()}
+    symbols: list[str] = []
+    seen: set[str] = set()
+    for raw_symbol in selection.get("symbol_allowlist", []):
+        symbol = str(raw_symbol).strip().upper()
+        if not symbol or symbol in seen or symbol in blacklist:
+            continue
+        seen.add(symbol)
+        symbols.append(symbol)
+    return symbols
+
+
+def _normalize_startable_symbol(config: AppConfig, symbol: str) -> str:
+    normalized = str(symbol).strip().upper()
+    if not normalized:
+        raise HTTPException(status_code=422, detail="标的不能为空。")
+    startable = set(_configured_startable_symbols(config))
+    if normalized not in startable:
+        raise HTTPException(status_code=422, detail=f"{normalized} 不在配置的可启动标的 allowlist 中。")
+    return normalized
 
 
 def _strategy_config_payload(config: AppConfig, repo: Repository) -> dict[str, Any]:
@@ -441,7 +488,7 @@ async def _run_console_action(
     }
 
 
-def _set_new_entries_paused(repo: Repository, request: ConsoleActionRequest, paused: bool) -> dict[str, Any]:
+def _set_new_entries_paused(config: AppConfig, repo: Repository, request: ConsoleActionRequest, paused: bool) -> dict[str, Any]:
     from datetime import datetime, timezone
 
     request_id = request.request_id or str(uuid4())
@@ -464,11 +511,12 @@ def _set_new_entries_paused(repo: Repository, request: ConsoleActionRequest, pau
         "label": label,
         "request_id": request_id,
         "message": f"{label}已完成。",
-        "control_state": _control_state_payload(repo),
+        "control_state": _control_state_payload(config, repo),
     }
 
 
 def _set_symbol_next_entry_disabled(
+    config: AppConfig,
     repo: Repository,
     symbol: str,
     request: ConsoleActionRequest,
@@ -501,7 +549,7 @@ def _set_symbol_next_entry_disabled(
         "label": label,
         "request_id": request_id,
         "message": f"{normalized_symbol} 下一轮开仓已{state_word}。",
-        "control_state": _control_state_payload(repo),
+        "control_state": _control_state_payload(config, repo),
         "result": {
             "symbol": normalized_symbol,
             "disabled_symbols_before": before,
@@ -510,8 +558,9 @@ def _set_symbol_next_entry_disabled(
     }
 
 
-def _request_session_stop(repo: Repository, session_id: int, request: ConsoleActionRequest) -> dict[str, Any]:
+def _request_session_stop(config: AppConfig, repo: Repository, session_id: int, request: ConsoleActionRequest) -> dict[str, Any]:
     return _request_session_close_control(
+        config=config,
         repo=repo,
         session_id=session_id,
         request=request,
@@ -523,8 +572,9 @@ def _request_session_stop(repo: Repository, session_id: int, request: ConsoleAct
     )
 
 
-def _request_session_manual_close(repo: Repository, session_id: int, request: ConsoleActionRequest) -> dict[str, Any]:
+def _request_session_manual_close(config: AppConfig, repo: Repository, session_id: int, request: ConsoleActionRequest) -> dict[str, Any]:
     return _request_session_close_control(
+        config=config,
         repo=repo,
         session_id=session_id,
         request=request,
@@ -537,6 +587,7 @@ def _request_session_manual_close(repo: Repository, session_id: int, request: Co
 
 
 def _request_session_close_control(
+    config: AppConfig,
     repo: Repository,
     session_id: int,
     request: ConsoleActionRequest,
@@ -599,12 +650,12 @@ def _request_session_close_control(
             f"{row.get('symbol')} {label}请求已记录。"
             f"开放订单 {before['open_orders']} -> {after['open_orders']}，{result_message_suffix}"
         ),
-        "control_state": _control_state_payload(repo),
+        "control_state": _control_state_payload(config, repo),
         "result": result,
     }
 
 
-def _request_all_sessions_stop(repo: Repository, request: ConsoleActionRequest) -> dict[str, Any]:
+def _request_all_sessions_stop(config: AppConfig, repo: Repository, request: ConsoleActionRequest) -> dict[str, Any]:
     from datetime import datetime, timezone
 
     rows = repo.console_sessions(active_only=True, limit=200)
@@ -652,7 +703,7 @@ def _request_all_sessions_stop(repo: Repository, request: ConsoleActionRequest) 
         "label": label,
         "request_id": request_id,
         "message": f"已记录 {len(requests)} 个活动网格停止请求，仓位确认等待交易循环处理。",
-        "control_state": _control_state_payload(repo),
+        "control_state": _control_state_payload(config, repo),
         "result": result,
     }
 
@@ -687,6 +738,31 @@ async def _run_testnet_run_action(config: AppConfig, seconds: float) -> dict[str
     from trader import _run_binance_test_run
 
     return await _run_binance_test_run(config, max_seconds=seconds)
+
+
+async def _run_symbol_testnet_run_action(config: AppConfig, symbol: str, seconds: float) -> dict[str, Any]:
+    from trader import _run_binance_test_run
+
+    single_symbol_config = _single_symbol_testnet_config(config, symbol)
+    return await _run_binance_test_run(single_symbol_config, max_seconds=seconds)
+
+
+def _single_symbol_testnet_config(config: AppConfig, symbol: str) -> AppConfig:
+    raw = deepcopy(config.raw)
+    raw.setdefault("selection", {})
+    raw.setdefault("trading", {})
+    raw["selection"]["symbol_allowlist"] = [symbol]
+    raw["selection"]["symbol_blacklist"] = [
+        item for item in raw["selection"].get("symbol_blacklist", []) if str(item).strip().upper() != symbol
+    ]
+    raw["trading"]["max_concurrent"] = 1
+    return AppConfig(
+        raw=raw,
+        binance_api_key=config.binance_api_key,
+        binance_api_secret=config.binance_api_secret,
+        binance_testnet=config.binance_testnet,
+        binance_testnet_raw=config.binance_testnet_raw,
+    )
 
 
 def _risk_level(latest_log: dict[str, Any] | None) -> str:

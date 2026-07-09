@@ -1458,7 +1458,8 @@ python web.py
 
 - [x] 用 `--binance-check`、`--binance-position-smoke`、`--binance-safety-sweep` 完成测试网前置验证
 - [x] 用 `--binance-test-run --loop-seconds <seconds>` 完成单账户有界测试网运行
-- [ ] 如配置多个账户，用 `--all-accounts --binance-check` 和短时 `--all-accounts --binance-test-run` 验证账户隔离
+- [x] 在当前 `default` 单账户配置下，用 `--all-accounts --binance-check` 和短时 `--all-accounts --binance-test-run` 验证并发入口兼容
+- [ ] 配置第二套测试网 API Key 后，用 `--all-accounts --binance-check` 和短时 `--all-accounts --binance-test-run` 验证多账户隔离
 - [x] 确认测试网运行结束后，所有 allowlist 标的挂单和仓位残留为 0
 - [ ] 在测试网稳定后，再安排极小资金、低杠杆、单标的实盘验证
 
@@ -1472,6 +1473,13 @@ python web.py
 
 - `--binance-test-run --loop-seconds 60` 通过：前置持仓检查正常，交易 loop 按 60 秒上限结束，安全清扫成功，后置持仓检查正常。
 - 运行结束后再次执行 `--binance-position-smoke` 通过：BTCUSDT/ETHUSDT/BCHUSDT 净仓位、LONG、SHORT、普通挂单和 Algo 条件单均为 0。
+
+2026-07-09 `--all-accounts` 入口测试网运行记录：
+
+- 当前仅配置 `default` 一个账户；`--all-accounts --binance-check` 通过，结果按 `default` 聚合返回。
+- `--all-accounts --binance-test-run --loop-seconds 30` 通过：前置持仓检查正常，交易 loop 按 30 秒上限结束，安全清扫成功，后置持仓检查正常。
+- 运行结束后再次执行 `--binance-position-smoke` 通过：BTCUSDT/ETHUSDT/BCHUSDT 净仓位、LONG、SHORT、普通挂单和 Algo 条件单均为 0。
+- 由于尚未配置第二套测试网 API Key，真实多账户隔离验证仍需后续补测。
 
 ### 10.5 长期 Backlog
 

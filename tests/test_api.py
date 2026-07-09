@@ -194,6 +194,91 @@ def test_console_pause_and_resume_new_entries_persist_state(tmp_path) -> None:
     assert any("pause_new_entries" in row["detail"] for row in logs)
 
 
+def test_console_symbol_disable_and_enable_next_entry(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "BTCUSDT", "RUNNING", 200, 10, now)
+    client = TestClient(create_app(_test_config(db_path)))
+
+    disable_response = client.post(
+        "/api/actions/symbols/btcusdt/disable-next-entry",
+        json={"confirm": True, "reason": "临时屏蔽", "request_id": "disable-1"},
+    )
+    disabled_session = client.get("/api/sessions/active").json()["items"][0]
+    enable_response = client.post(
+        "/api/actions/symbols/BTCUSDT/enable-next-entry",
+        json={"confirm": True, "reason": "恢复", "request_id": "enable-1"},
+    )
+
+    assert disable_response.status_code == 200
+    assert disable_response.json()["control_state"]["disabled_symbols"] == ["BTCUSDT"]
+    assert disabled_session["id"] == session_id
+    assert disabled_session["next_entry_disabled"] is True
+    assert enable_response.status_code == 200
+    assert enable_response.json()["control_state"]["disabled_symbols"] == []
+
+
+def test_console_session_stop_records_request_and_snapshot(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "BTCUSDT", "RUNNING", 200, 10, now)
+    repo.upsert_order(
+        session_id,
+        GridOrder(
+            symbol="BTCUSDT",
+            order_id="order-1",
+            client_id="cid-1",
+            grid_index=1,
+            side=OrderSide.BUY,
+            price=100,
+            qty=0.5,
+            status=OrderStatus.OPEN,
+            created_at=now,
+        ),
+    )
+    client = TestClient(create_app(_test_config(db_path)))
+
+    response = client.post(
+        f"/api/actions/sessions/{session_id}/stop",
+        json={"confirm": True, "reason": "网页手动停止", "request_id": "stop-1"},
+    )
+    session = client.get("/api/sessions/active").json()["items"][0]
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"] == "session_stop"
+    assert body["result"]["before"]["open_orders"] == 1
+    assert body["result"]["after"]["open_orders"] == 1
+    assert body["result"]["position_confirmation"]["status"] == "queued"
+    assert Repository(db_path).pending_session_stop_requests()[session_id]["request_id"] == "stop-1"
+    assert session["stop_requested"] is True
+    assert session["stop_request_status"] == "requested"
+
+
+def test_console_session_stop_rejects_stopped_session(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "BTCUSDT", "STOPPED", 200, 10, now)
+    repo.close_session(session_id, "done", now)
+    client = TestClient(create_app(_test_config(db_path)))
+
+    response = client.post(
+        f"/api/actions/sessions/{session_id}/stop",
+        json={"confirm": True, "reason": "重复停止"},
+    )
+
+    assert response.status_code == 409
+
+
 def test_console_safety_sweep_action_runs_with_audit_log(monkeypatch, tmp_path) -> None:
     db_path = tmp_path / "quietgrid.db"
 

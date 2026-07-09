@@ -307,6 +307,31 @@ def test_repository_persists_control_state(tmp_path) -> None:
     assert repo.new_entries_paused() is False
 
 
+def test_repository_persists_disabled_symbols_and_stop_requests(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 8, tzinfo=timezone.utc)
+
+    assert repo.set_symbol_disabled("btcusdt", True, now) == ["BTCUSDT"]
+    assert repo.disabled_symbols() == {"BTCUSDT"}
+    assert repo.set_symbol_disabled("ETHUSDT", True, now) == ["BTCUSDT", "ETHUSDT"]
+    assert repo.set_symbol_disabled("BTCUSDT", False, now) == ["ETHUSDT"]
+    assert repo.disabled_symbols() == {"ETHUSDT"}
+
+    request = repo.request_session_stop(12, "ethusdt", "手动停止", "req-1", now)
+
+    assert request["symbol"] == "ETHUSDT"
+    assert repo.pending_session_stop_requests()[12]["status"] == "requested"
+
+    repo.update_session_stop_request(12, "completed", "已处理", now)
+
+    assert repo.pending_session_stop_requests() == {}
+    stored = repo.session_stop_requests(include_terminal=True)["12"]
+    assert stored["status"] == "completed"
+    assert stored["detail"] == "已处理"
+
+
 def test_latest_commission_health_parses_latest_detail(tmp_path) -> None:
     db_path = tmp_path / "quietgrid.db"
     init_db(db_path)

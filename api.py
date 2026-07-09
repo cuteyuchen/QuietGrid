@@ -74,15 +74,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         repo: Repository = Depends(get_repository),
     ) -> dict[str, Any]:
         rows = repo.console_sessions(active_only=not include_recent, limit=limit)
-        return {"items": [_session_payload(row) for row in rows]}
+        disabled_symbols = repo.disabled_symbols()
+        stop_requests = repo.pending_session_stop_requests()
+        return {"items": [_session_payload(row, disabled_symbols, stop_requests) for row in rows]}
 
     @app.get("/api/sessions/{session_id}")
     def session_detail(session_id: int, repo: Repository = Depends(get_repository)) -> dict[str, Any]:
         row = repo.get_session(session_id)
         if row is None:
             raise HTTPException(status_code=404, detail="会话不存在")
+        disabled_symbols = repo.disabled_symbols()
+        stop_requests = repo.pending_session_stop_requests()
         return {
-            "session": _session_payload(row),
+            "session": _session_payload(row, disabled_symbols, stop_requests),
             "orders": [_order_payload(item) for item in repo.console_orders(session_id=session_id)],
             "trades": [_trade_payload(item) for item in repo.console_trades(session_id=session_id)],
         }
@@ -163,6 +167,33 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         _require_confirm(request)
         return _set_new_entries_paused(repo, request, paused=False)
 
+    @app.post("/api/actions/sessions/{session_id}/stop")
+    def action_stop_session(
+        session_id: int,
+        request: ConsoleActionRequest,
+        repo: Repository = Depends(get_repository),
+    ) -> dict[str, Any]:
+        _require_confirm(request)
+        return _request_session_stop(repo, session_id, request)
+
+    @app.post("/api/actions/symbols/{symbol}/disable-next-entry")
+    def action_disable_symbol_next_entry(
+        symbol: str,
+        request: ConsoleActionRequest,
+        repo: Repository = Depends(get_repository),
+    ) -> dict[str, Any]:
+        _require_confirm(request)
+        return _set_symbol_next_entry_disabled(repo, symbol, request, disabled=True)
+
+    @app.post("/api/actions/symbols/{symbol}/enable-next-entry")
+    def action_enable_symbol_next_entry(
+        symbol: str,
+        request: ConsoleActionRequest,
+        repo: Repository = Depends(get_repository),
+    ) -> dict[str, Any]:
+        _require_confirm(request)
+        return _set_symbol_next_entry_disabled(repo, symbol, request, disabled=False)
+
     return app
 
 
@@ -193,9 +224,13 @@ def _ensure_testnet_action(config: AppConfig) -> None:
 def _control_state_payload(repo: Repository) -> dict[str, Any]:
     state = repo.get_control_state()
     pause_state = state.get("new_entries_paused")
+    disabled_state = state.get("disabled_symbols")
     return {
         "new_entries_paused": bool(pause_state.get("value")) if isinstance(pause_state, dict) else False,
         "new_entries_paused_updated_at": pause_state.get("updated_at") if isinstance(pause_state, dict) else "",
+        "disabled_symbols": sorted(repo.disabled_symbols()),
+        "disabled_symbols_updated_at": disabled_state.get("updated_at") if isinstance(disabled_state, dict) else "",
+        "session_stop_requests": list(repo.session_stop_requests().values()),
     }
 
 
@@ -268,6 +303,108 @@ def _set_new_entries_paused(repo: Repository, request: ConsoleActionRequest, pau
     }
 
 
+def _set_symbol_next_entry_disabled(
+    repo: Repository,
+    symbol: str,
+    request: ConsoleActionRequest,
+    disabled: bool,
+) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    normalized_symbol = str(symbol).strip().upper()
+    if not normalized_symbol:
+        raise HTTPException(status_code=422, detail="标的不能为空。")
+    request_id = request.request_id or str(uuid4())
+    now = datetime.now(timezone.utc)
+    action = "disable_symbol_next_entry" if disabled else "enable_symbol_next_entry"
+    label = "禁用标的下一轮开仓" if disabled else "启用标的下一轮开仓"
+    before = sorted(repo.disabled_symbols())
+    detail = _action_detail(action, label, request, request_id, {"symbol": normalized_symbol})
+    repo.log_system("INFO", "console_action", "Console action requested.", _json_detail(detail), now)
+    after = repo.set_symbol_disabled(normalized_symbol, disabled, now)
+    repo.log_system(
+        "INFO",
+        "console_action",
+        "Console action completed.",
+        _json_detail({**detail, "disabled_symbols_before": before, "disabled_symbols_after": after}),
+        datetime.now(timezone.utc),
+    )
+    state_word = "禁用" if disabled else "启用"
+    return {
+        "ok": True,
+        "action": action,
+        "label": label,
+        "request_id": request_id,
+        "message": f"{normalized_symbol} 下一轮开仓已{state_word}。",
+        "control_state": _control_state_payload(repo),
+        "result": {
+            "symbol": normalized_symbol,
+            "disabled_symbols_before": before,
+            "disabled_symbols_after": after,
+        },
+    }
+
+
+def _request_session_stop(repo: Repository, session_id: int, request: ConsoleActionRequest) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    row = repo.get_session(session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="会话不存在。")
+    if row.get("close_time") or str(row.get("state") or "").upper() == "STOPPED":
+        raise HTTPException(status_code=409, detail="会话已经停止，无需重复停止。")
+    request_id = request.request_id or str(uuid4())
+    now = datetime.now(timezone.utc)
+    before = _session_control_snapshot(repo, session_id)
+    action = "session_stop"
+    label = "停止单个网格"
+    detail = _action_detail(
+        action,
+        label,
+        request,
+        request_id,
+        {"session_id": session_id, "symbol": row.get("symbol")},
+    )
+    repo.log_system("WARN", "console_action", "Console action requested.", _json_detail(detail), now)
+    stop_request = repo.request_session_stop(
+        session_id=session_id,
+        symbol=str(row.get("symbol") or ""),
+        reason=request.reason,
+        request_id=request_id,
+        requested_at=now,
+    )
+    after = _session_control_snapshot(repo, session_id)
+    result = {
+        "before": before,
+        "after": after,
+        "stop_request": stop_request,
+        "position_confirmation": {
+            "status": "queued",
+            "status_label": "等待交易循环确认",
+            "message": "交易循环处理该请求时会撤单并尝试同步平仓，完成后会写入会话 close_reason 与审计日志。",
+        },
+    }
+    repo.log_system(
+        "INFO",
+        "console_action",
+        "Console action completed.",
+        _json_detail({**detail, "result": result}),
+        datetime.now(timezone.utc),
+    )
+    return {
+        "ok": True,
+        "action": action,
+        "label": label,
+        "request_id": request_id,
+        "message": (
+            f"{row.get('symbol')} 停止请求已记录。"
+            f"开放订单 {before['open_orders']} -> {after['open_orders']}，仓位确认等待交易循环处理。"
+        ),
+        "control_state": _control_state_payload(repo),
+        "result": result,
+    }
+
+
 def _action_detail(
     action: str,
     label: str,
@@ -311,11 +448,18 @@ def _risk_level(latest_log: dict[str, Any] | None) -> str:
     return "正常"
 
 
-def _session_payload(row: dict[str, Any]) -> dict[str, Any]:
+def _session_payload(
+    row: dict[str, Any],
+    disabled_symbols: set[str] | None = None,
+    stop_requests: dict[int, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    symbol = str(row.get("symbol") or "")
+    session_id = int(row.get("id") or 0)
+    stop_request = stop_requests.get(session_id) if stop_requests else None
     return {
-        "id": row.get("id"),
+        "id": session_id,
         "window_id": row.get("window_id"),
-        "symbol": row.get("symbol"),
+        "symbol": symbol,
         "state": row.get("state"),
         "state_label": legacy_web._localize_scalar_text(str(row.get("state") or "")),
         "upper": row.get("grid_upper"),
@@ -339,6 +483,37 @@ def _session_payload(row: dict[str, Any]) -> dict[str, Any]:
         "close_reason": row.get("close_reason"),
         "open_order_count": int(row.get("open_order_count") or 0),
         "trade_count": int(row.get("trade_count") or 0),
+        "next_entry_disabled": symbol.upper() in (disabled_symbols or set()),
+        "stop_requested": stop_request is not None,
+        "stop_request_status": stop_request.get("status") if stop_request else "",
+    }
+
+
+def _session_control_snapshot(repo: Repository, session_id: int) -> dict[str, Any]:
+    row = repo.get_session(session_id)
+    if row is None:
+        return {
+            "session_id": session_id,
+            "state": "NOT_FOUND",
+            "state_label": "未找到",
+            "open_orders": 0,
+            "orders_by_status": {},
+        }
+    orders = repo.console_orders(session_id=session_id, limit=300)
+    orders_by_status: dict[str, int] = {}
+    for order in orders:
+        status = str(order.get("status") or "")
+        orders_by_status[status] = orders_by_status.get(status, 0) + 1
+    open_orders = orders_by_status.get("open", 0)
+    return {
+        "session_id": session_id,
+        "symbol": row.get("symbol"),
+        "state": row.get("state"),
+        "state_label": legacy_web._localize_scalar_text(str(row.get("state") or "")),
+        "open_orders": open_orders,
+        "orders_by_status": orders_by_status,
+        "close_time": row.get("close_time"),
+        "close_reason": row.get("close_reason"),
     }
 
 

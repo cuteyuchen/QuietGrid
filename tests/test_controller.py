@@ -475,6 +475,82 @@ def test_controller_run_once_respects_paused_new_entries(tmp_path) -> None:
     asyncio.run(run())
 
 
+def test_controller_run_once_skips_disabled_symbols(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        repo.set_symbol_disabled("AAPLUSDT", True, now)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        result = await controller.run_once(now)
+
+        assert result.status == "all_symbols_disabled"
+        assert result.selected_symbols == ["AAPLUSDT"]
+        assert result.started_symbols == []
+        assert repo.recent_rows("windows") == []
+        log = repo.recent_rows("system_logs", limit=1)[0]
+        assert log["module"] == "controller"
+        assert log["message"] == "Disabled symbols skipped before opening new grids."
+
+    asyncio.run(run())
+
+
+def test_controller_poll_applies_session_stop_request(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+        await controller.run_once(now)
+        session = controller.active_sessions["AAPLUSDT"]
+        repo.request_session_stop(session.session_id, "AAPLUSDT", "网页停止", "stop-1", now)
+
+        actions = await controller.poll_active_sessions_once(now + timedelta(seconds=10))
+
+        assert actions == [("AAPLUSDT", "manual_stop")]
+        assert controller.active_sessions == {}
+        assert repo.pending_session_stop_requests() == {}
+        stop_request = repo.session_stop_requests(include_terminal=True)[str(session.session_id)]
+        assert stop_request["status"] == "completed"
+        row = repo.get_session(session.session_id)
+        assert row is not None
+        assert row["state"] == "STOPPED"
+        assert row["close_reason"] == "控制台手动停止网格：网页停止"
+
+    asyncio.run(run())
+
+
 def test_controller_run_once_persists_volatility_snapshot(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"

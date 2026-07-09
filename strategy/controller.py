@@ -282,7 +282,21 @@ class TradingController:
         self._log_selection(selected, current_time)
         if not selected_symbols:
             return RunOnceResult("no_symbols", [], [])
-        fee_eligible_symbols = await self._filter_symbols_by_maker_fee(selected_symbols, current_time)
+        disabled_symbols = self.repository.disabled_symbols()
+        enabled_symbols = [symbol for symbol in selected_symbols if symbol.upper() not in disabled_symbols]
+        if disabled_symbols:
+            skipped_symbols = [symbol for symbol in selected_symbols if symbol.upper() in disabled_symbols]
+            if skipped_symbols:
+                self.repository.log_system(
+                    "INFO",
+                    "controller",
+                    "Disabled symbols skipped before opening new grids.",
+                    json.dumps({"symbols": skipped_symbols}, ensure_ascii=False),
+                    current_time,
+                )
+        if not enabled_symbols:
+            return RunOnceResult("all_symbols_disabled", selected_symbols, [])
+        fee_eligible_symbols = await self._filter_symbols_by_maker_fee(enabled_symbols, current_time)
         if not fee_eligible_symbols:
             return RunOnceResult("no_fee_eligible", selected_symbols, [])
 
@@ -795,8 +809,14 @@ class TradingController:
         current_time = now or datetime.now(timezone.utc)
         actions: list[tuple[str, str]] = []
         processed_symbols: set[str] = set()
+        stop_requests = self.repository.pending_session_stop_requests()
         for symbol, session in list(self.active_sessions.items()):
             processed_symbols.add(symbol)
+            stop_request = stop_requests.get(session.session_id)
+            if stop_request is not None:
+                action = await self._apply_session_stop_request(session, stop_request, current_time)
+                actions.append((symbol, action))
+                continue
             if self.scheduler.should_force_close(current_time):
                 await self._close_session(session, "临近盘前，触发全局强制离场。", current_time)
                 actions.append((symbol, RiskAction.FORCE_CLOSE.value))
@@ -1111,6 +1131,54 @@ class TradingController:
             if await self._close_session(session, reason, current_time):
                 closed.append(symbol)
         return closed
+
+    async def _apply_session_stop_request(
+        self,
+        session: SymbolSession,
+        request: dict[str, Any],
+        at: datetime,
+    ) -> str:
+        reason = str(request.get("reason") or "控制台手动停止网格")
+        request_id = str(request.get("request_id") or "")
+        detail = json.dumps(
+            {
+                "session_id": session.session_id,
+                "symbol": session.symbol,
+                "request_id": request_id,
+                "reason": reason,
+            },
+            ensure_ascii=False,
+        )
+        self.repository.log_system(
+            "WARN",
+            "console_action",
+            "Session stop request is being applied.",
+            detail,
+            at,
+        )
+        closed = await self._close_session(session, f"控制台手动停止网格：{reason}", at)
+        if closed:
+            self.repository.update_session_stop_request(
+                session.session_id,
+                "completed",
+                "已撤单并尝试同步平仓。",
+                at,
+            )
+            self.repository.log_system(
+                "INFO",
+                "console_action",
+                "Session stop request completed.",
+                detail,
+                at,
+            )
+            return "manual_stop"
+        self.repository.update_session_stop_request(
+            session.session_id,
+            "closing",
+            "停止请求已执行但清理未完成，下一轮继续重试。",
+            at,
+        )
+        return "manual_stop_pending"
 
     async def _apply_risk_decision(self, session: SymbolSession, action: RiskAction, reason: str, at: datetime) -> None:
         if action in {RiskAction.FORCE_CLOSE, RiskAction.CLOSE}:

@@ -30,6 +30,9 @@ type ApiSession = {
   current_volatility: number | null
   realized_pnl: number | null
   open_order_count: number
+  next_entry_disabled: boolean
+  stop_requested: boolean
+  stop_request_status: string
 }
 
 type ApiVerificationRow = {
@@ -55,13 +58,25 @@ type ApiAuditLog = {
 type ApiControlState = {
   new_entries_paused: boolean
   new_entries_paused_updated_at: string
+  disabled_symbols: string[]
+  disabled_symbols_updated_at: string
+  session_stop_requests: Array<Record<string, unknown>>
 }
 
-export type ConsoleAction = 'safety-sweep' | 'testnet-run' | 'pause-new-entries' | 'resume-new-entries'
+export type ConsoleAction =
+  | 'safety-sweep'
+  | 'testnet-run'
+  | 'pause-new-entries'
+  | 'resume-new-entries'
+  | 'session-stop'
+  | 'symbol-disable-next-entry'
+  | 'symbol-enable-next-entry'
 
 export type ConsoleActionPayload = {
   reason: string
   loopSeconds?: number
+  sessionId?: number
+  symbol?: string
 }
 
 export type ConsoleActionResult = {
@@ -104,7 +119,7 @@ export async function executeConsoleAction(
   action: ConsoleAction,
   payload: ConsoleActionPayload,
 ): Promise<ConsoleActionResult> {
-  const response = await fetch(`/api/actions/${action}`, {
+  const response = await fetch(actionUrl(action, payload), {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -124,6 +139,23 @@ export async function executeConsoleAction(
   return body as ConsoleActionResult
 }
 
+function actionUrl(action: ConsoleAction, payload: ConsoleActionPayload): string {
+  if (action === 'session-stop') {
+    if (typeof payload.sessionId !== 'number') {
+      throw new Error('缺少会话编号，无法停止网格')
+    }
+    return `/api/actions/sessions/${payload.sessionId}/stop`
+  }
+  if (action === 'symbol-disable-next-entry' || action === 'symbol-enable-next-entry') {
+    if (!payload.symbol) {
+      throw new Error('缺少标的，无法切换下一轮开仓状态')
+    }
+    const operation = action === 'symbol-disable-next-entry' ? 'disable-next-entry' : 'enable-next-entry'
+    return `/api/actions/symbols/${encodeURIComponent(payload.symbol)}/${operation}`
+  }
+  return `/api/actions/${action}`
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, { headers: { Accept: 'application/json' } })
   if (!response.ok) {
@@ -136,6 +168,9 @@ function mapControlState(value: ApiControlState): ControlState {
   return {
     newEntriesPaused: Boolean(value.new_entries_paused),
     newEntriesPausedUpdatedAt: compactTime(value.new_entries_paused_updated_at),
+    disabledSymbols: Array.isArray(value.disabled_symbols) ? value.disabled_symbols : [],
+    disabledSymbolsUpdatedAt: compactTime(value.disabled_symbols_updated_at),
+    sessionStopRequests: Array.isArray(value.session_stop_requests) ? value.session_stop_requests : [],
   }
 }
 
@@ -168,6 +203,9 @@ function mapSession(value: ApiSession): GridSession {
     volatilityMethodLabel: value.volatility_method_label || value.volatility_method || '-',
     currentVolatility: toNumber(value.current_volatility),
     openOrderCount: toNumber(value.open_order_count),
+    nextEntryDisabled: Boolean(value.next_entry_disabled),
+    stopRequested: Boolean(value.stop_requested),
+    stopRequestStatus: value.stop_request_status || '',
   }
 }
 

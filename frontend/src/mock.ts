@@ -26,11 +26,17 @@ export type GridSession = {
   volatilityMethodLabel: string
   currentVolatility: number
   openOrderCount: number
+  nextEntryDisabled: boolean
+  stopRequested: boolean
+  stopRequestStatus: string
 }
 
 export type ControlState = {
   newEntriesPaused: boolean
   newEntriesPausedUpdatedAt: string
+  disabledSymbols: string[]
+  disabledSymbolsUpdatedAt: string
+  sessionStopRequests: Array<Record<string, unknown>>
 }
 
 export type VerificationRow = {
@@ -64,6 +70,9 @@ export const summary: ConsoleSummary = {
 export const controlState: ControlState = {
   newEntriesPaused: false,
   newEntriesPausedUpdatedAt: '-',
+  disabledSymbols: [],
+  disabledSymbolsUpdatedAt: '-',
+  sessionStopRequests: [],
 }
 
 export const sessions: GridSession[] = [
@@ -81,6 +90,9 @@ export const sessions: GridSession[] = [
     volatilityMethodLabel: '标准差',
     currentVolatility: 0.004122,
     openOrderCount: 0,
+    nextEntryDisabled: false,
+    stopRequested: false,
+    stopRequestStatus: '',
   },
   {
     id: 487,
@@ -96,6 +108,9 @@ export const sessions: GridSession[] = [
     volatilityMethodLabel: '标准差',
     currentVolatility: 0.002496,
     openOrderCount: 0,
+    nextEntryDisabled: false,
+    stopRequested: false,
+    stopRequestStatus: '',
   },
 ]
 

@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import {
   Activity,
   AlertTriangle,
+  Ban,
   BarChart3,
   CheckCircle2,
   ChevronRight,
@@ -12,6 +13,7 @@ import {
   History,
   LayoutDashboard,
   Play,
+  Power,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
@@ -91,6 +93,8 @@ type ActionConfig = {
   description: string
   buttonLabel: string
   tone: 'primary' | 'danger' | 'secondary'
+  sessionId?: number
+  symbol?: string
 }
 
 function formatPct(value: number) {
@@ -107,6 +111,15 @@ function formatState(value: string) {
 
 function formatVolatilityMethod(value: string) {
   return volatilityLabels[value] ?? value
+}
+
+function formatStopRequestStatus(value: string) {
+  const labels: Record<string, string> = {
+    requested: '停止请求已提交',
+    closing: '停止清理中',
+    completed: '停止已完成',
+  }
+  return labels[value] ?? value
 }
 
 function formatAuditModule(value: string) {
@@ -156,6 +169,8 @@ async function confirmAction() {
     const result = await executeConsoleAction(config.action, {
       reason: actionReason.value.trim() || config.title,
       loopSeconds: config.action === 'testnet-run' ? testRunSeconds.value : undefined,
+      sessionId: config.sessionId,
+      symbol: config.symbol,
     })
     actionMessage.value = result.message
     pendingAction.value = null
@@ -164,6 +179,36 @@ async function confirmAction() {
     actionError.value = error instanceof Error ? error.message : '控制动作执行失败'
   } finally {
     actionBusy.value = ''
+  }
+}
+
+function canStopSession(session: (typeof sessions.value)[number]) {
+  return session.state !== 'STOPPED' && !session.stopRequested
+}
+
+function stopSessionAction(session: (typeof sessions.value)[number]): ActionConfig {
+  return {
+    action: 'session-stop',
+    sessionId: session.id,
+    symbol: session.symbol,
+    title: `停止 ${session.symbol} 网格`,
+    description: `将提交停止请求。交易循环下一轮会撤销 ${session.symbol} 挂单并尝试同步平仓，完成后会写入审计日志。`,
+    buttonLabel: '确认停止',
+    tone: 'danger',
+  }
+}
+
+function symbolToggleAction(session: (typeof sessions.value)[number]): ActionConfig {
+  const willEnable = session.nextEntryDisabled
+  return {
+    action: willEnable ? 'symbol-enable-next-entry' : 'symbol-disable-next-entry',
+    symbol: session.symbol,
+    title: willEnable ? `启用 ${session.symbol} 下一轮开仓` : `禁用 ${session.symbol} 下一轮开仓`,
+    description: willEnable
+      ? `${session.symbol} 将重新允许在后续交易循环中被选择并创建新网格。`
+      : `${session.symbol} 后续不会再新建网格；已存在会话仍会继续对账、风控和手动停止处理。`,
+    buttonLabel: willEnable ? '确认启用' : '确认禁用',
+    tone: willEnable ? 'secondary' : 'danger',
   }
 }
 
@@ -358,6 +403,7 @@ onMounted(() => {
               <span>区间</span>
               <span>网格</span>
               <span>波动率</span>
+              <span>下一轮开仓</span>
               <span>操作</span>
             </div>
             <div v-for="session in sessions" :key="session.id" class="table-row" role="row">
@@ -366,7 +412,30 @@ onMounted(() => {
               <span>{{ session.lower.toFixed(2) }} - {{ session.upper.toFixed(2) }}</span>
               <span>{{ session.gridNum }} / {{ formatPct(session.stepPct) }}</span>
               <span>{{ formatPct(session.currentVolatility) }}</span>
-              <button class="compact-danger" type="button" disabled>停止</button>
+              <span class="entry-state" :class="{ blocked: session.nextEntryDisabled }">
+                {{ session.nextEntryDisabled ? '已禁用' : '允许' }}
+              </span>
+              <div class="row-actions">
+                <button
+                  class="compact-danger"
+                  type="button"
+                  :disabled="Boolean(actionBusy) || !canStopSession(session)"
+                  @click="openAction(stopSessionAction(session))"
+                >
+                  <Power :size="16" />
+                  {{ session.stopRequested ? formatStopRequestStatus(session.stopRequestStatus) : '停止' }}
+                </button>
+                <button
+                  class="compact-secondary"
+                  :class="{ warning: !session.nextEntryDisabled }"
+                  type="button"
+                  :disabled="Boolean(actionBusy)"
+                  @click="openAction(symbolToggleAction(session))"
+                >
+                  <Ban :size="16" />
+                  {{ session.nextEntryDisabled ? '启用开仓' : '禁用开仓' }}
+                </button>
+              </div>
             </div>
             <div v-if="sessions.length === 0" class="table-row empty-row" role="row">
               <span>暂无活动或最近网格</span>

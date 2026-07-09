@@ -364,6 +364,103 @@ class Repository:
             return False
         return bool(state.get("value"))
 
+    def disabled_symbols(self) -> set[str]:
+        state = self.get_control_state().get("disabled_symbols")
+        if not isinstance(state, dict):
+            return set()
+        value = state.get("value")
+        if not isinstance(value, list):
+            return set()
+        return {str(symbol).strip().upper() for symbol in value if str(symbol).strip()}
+
+    def set_symbol_disabled(self, symbol: str, disabled: bool, updated_at: datetime) -> list[str]:
+        normalized_symbol = str(symbol).strip().upper()
+        if not normalized_symbol:
+            raise ValueError("symbol must not be empty")
+        symbols = self.disabled_symbols()
+        if disabled:
+            symbols.add(normalized_symbol)
+        else:
+            symbols.discard(normalized_symbol)
+        ordered = sorted(symbols)
+        self.set_control_state("disabled_symbols", ordered, updated_at)
+        return ordered
+
+    def request_session_stop(
+        self,
+        session_id: int,
+        symbol: str,
+        reason: str,
+        request_id: str,
+        requested_at: datetime,
+    ) -> dict[str, Any]:
+        requests = self.session_stop_requests(include_terminal=True)
+        key = str(int(session_id))
+        request = {
+            "session_id": int(session_id),
+            "symbol": str(symbol).strip().upper(),
+            "reason": str(reason),
+            "request_id": str(request_id),
+            "status": "requested",
+            "requested_at": requested_at.isoformat(),
+            "updated_at": requested_at.isoformat(),
+        }
+        requests[key] = request
+        self.set_control_state("session_stop_requests", requests, requested_at)
+        return request
+
+    def session_stop_requests(self, include_terminal: bool = False) -> dict[str, dict[str, Any]]:
+        state = self.get_control_state().get("session_stop_requests")
+        if not isinstance(state, dict):
+            return {}
+        value = state.get("value")
+        if not isinstance(value, dict):
+            return {}
+        requests: dict[str, dict[str, Any]] = {}
+        for key, raw_request in value.items():
+            if not isinstance(raw_request, dict):
+                continue
+            status = str(raw_request.get("status") or "")
+            if not include_terminal and status in {"completed", "cancelled", "not_found"}:
+                continue
+            try:
+                session_id = int(raw_request.get("session_id") or key)
+            except (TypeError, ValueError):
+                continue
+            requests[str(session_id)] = {
+                **raw_request,
+                "session_id": session_id,
+                "symbol": str(raw_request.get("symbol") or "").strip().upper(),
+                "status": status or "requested",
+            }
+        return requests
+
+    def pending_session_stop_requests(self) -> dict[int, dict[str, Any]]:
+        result: dict[int, dict[str, Any]] = {}
+        for request in self.session_stop_requests().values():
+            if str(request.get("status")) not in {"requested", "closing"}:
+                continue
+            result[int(request["session_id"])] = request
+        return result
+
+    def update_session_stop_request(
+        self,
+        session_id: int,
+        status: str,
+        detail: str | None,
+        updated_at: datetime,
+    ) -> None:
+        requests = self.session_stop_requests(include_terminal=True)
+        key = str(int(session_id))
+        request = requests.get(key)
+        if request is None:
+            return
+        request["status"] = str(status)
+        request["detail"] = detail
+        request["updated_at"] = updated_at.isoformat()
+        requests[key] = request
+        self.set_control_state("session_stop_requests", requests, updated_at)
+
     def recent_rows(self, table: str, limit: int = 50) -> list[dict[str, Any]]:
         if table not in {"windows", "sessions", "orders", "trades", "state_logs", "system_logs"}:
             raise ValueError(f"不支持查询表: {table}")

@@ -1457,9 +1457,9 @@ python web.py
 ### 10.4 当前剩余验收项
 
 - [x] 用 `--binance-check`、`--binance-position-smoke`、`--binance-safety-sweep` 完成测试网前置验证
-- [ ] 用 `--binance-test-run --loop-seconds <seconds>` 完成单账户有界测试网运行
+- [x] 用 `--binance-test-run --loop-seconds <seconds>` 完成单账户有界测试网运行
 - [ ] 如配置多个账户，用 `--all-accounts --binance-check` 和短时 `--all-accounts --binance-test-run` 验证账户隔离
-- [ ] 确认测试网运行结束后，所有 allowlist 标的挂单和仓位残留为 0
+- [x] 确认测试网运行结束后，所有 allowlist 标的挂单和仓位残留为 0
 - [ ] 在测试网稳定后，再安排极小资金、低杠杆、单标的实盘验证
 
 2026-07-09 前置验收记录：
@@ -1467,6 +1467,11 @@ python web.py
 - `--binance-check` 通过：测试网连接、余额读取、交易规则读取和 BTCUSDT/ETHUSDT/BCHUSDT Maker 费率健康检查均正常。
 - `--binance-position-smoke` 通过：Hedge Mode 下 BTCUSDT/ETHUSDT/BCHUSDT 净仓位、LONG、SHORT、普通挂单和 Algo 条件单均为 0。
 - `--binance-safety-sweep` 通过：清扫前后 BTCUSDT/ETHUSDT/BCHUSDT 普通挂单、Algo 条件单和仓位残留均为 0。
+
+2026-07-09 单账户短时测试网运行记录：
+
+- `--binance-test-run --loop-seconds 60` 通过：前置持仓检查正常，交易 loop 按 60 秒上限结束，安全清扫成功，后置持仓检查正常。
+- 运行结束后再次执行 `--binance-position-smoke` 通过：BTCUSDT/ETHUSDT/BCHUSDT 净仓位、LONG、SHORT、普通挂单和 Algo 条件单均为 0。
 
 ### 10.5 长期 Backlog
 

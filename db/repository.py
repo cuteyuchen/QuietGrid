@@ -461,6 +461,20 @@ class Repository:
         requests[key] = request
         self.set_control_state("session_stop_requests", requests, updated_at)
 
+    def strategy_config_draft(self) -> dict[str, Any] | None:
+        state = self.get_control_state().get("strategy_config_draft")
+        if not isinstance(state, dict):
+            return None
+        value = state.get("value")
+        if not isinstance(value, dict):
+            return None
+        return dict(value)
+
+    def set_strategy_config_draft(self, draft: dict[str, Any], updated_at: datetime) -> dict[str, Any]:
+        normalized = dict(draft)
+        self.set_control_state("strategy_config_draft", normalized, updated_at)
+        return normalized
+
     def recent_rows(self, table: str, limit: int = 50) -> list[dict[str, Any]]:
         if table not in {"windows", "sessions", "orders", "trades", "state_logs", "system_logs"}:
             raise ValueError(f"不支持查询表: {table}")

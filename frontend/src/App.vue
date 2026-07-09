@@ -20,14 +20,15 @@ import {
   Square,
   Trash2,
 } from '@lucide/vue'
-import { executeConsoleAction, loadConsoleData, type ConsoleAction } from './api'
+import { executeConsoleAction, loadConsoleData, saveStrategyConfigDraft, type ConsoleAction } from './api'
 import {
   auditLogs as fallbackAuditLogs,
   controlState as fallbackControlState,
   sessions as fallbackSessions,
+  strategyConfig as fallbackStrategyConfig,
   summary as fallbackSummary,
   verificationRows as fallbackVerificationRows,
-  volatilityOptions,
+  type StrategySettings,
 } from './mock'
 
 const tabs = [
@@ -39,15 +40,18 @@ const tabs = [
 ] as const
 
 const activeTab = ref<(typeof tabs)[number]['key']>('overview')
-const selectedVolatility = ref('std')
 const testRunSeconds = ref(600)
 const loading = ref(false)
 const actionBusy = ref<ConsoleAction | ''>('')
+const strategyBusy = ref(false)
 const dataError = ref('')
 const actionMessage = ref('')
 const actionError = ref('')
+const strategyError = ref('')
 const summary = ref(fallbackSummary)
 const controlState = ref(fallbackControlState)
+const strategyConfig = ref(fallbackStrategyConfig)
+const strategyForm = ref<StrategySettings>({ ...fallbackStrategyConfig.draft })
 const sessions = ref(fallbackSessions)
 const verificationRows = ref(fallbackVerificationRows)
 const auditLogs = ref(fallbackAuditLogs)
@@ -132,6 +136,8 @@ async function refreshData() {
     const data = await loadConsoleData()
     summary.value = data.summary
     controlState.value = data.controlState
+    strategyConfig.value = data.strategyConfig
+    strategyForm.value = { ...data.strategyConfig.draft }
     sessions.value = data.sessions
     verificationRows.value = data.verificationRows
     auditLogs.value = data.auditLogs
@@ -141,6 +147,43 @@ async function refreshData() {
   } finally {
     loading.value = false
   }
+}
+
+async function saveStrategyDraft() {
+  if (strategyBusy.value) {
+    return
+  }
+  strategyBusy.value = true
+  actionMessage.value = ''
+  strategyError.value = ''
+  try {
+    const result = await saveStrategyConfigDraft(strategyForm.value)
+    strategyConfig.value = result.config
+    strategyForm.value = { ...result.config.draft }
+    actionMessage.value = result.message
+    await refreshData()
+  } catch (error) {
+    strategyError.value = error instanceof Error ? error.message : '策略参数保存失败'
+  } finally {
+    strategyBusy.value = false
+  }
+}
+
+function resetStrategyDraft() {
+  strategyForm.value = { ...strategyConfig.value.current }
+}
+
+function formatStrategyValue(key: string, value: string | number) {
+  if (key === 'volatility_method') {
+    return formatVolatilityMethod(String(value))
+  }
+  if (key === 'min_step_pct') {
+    return formatPct(Number(value))
+  }
+  if (key === 'observe_hours') {
+    return `${Number(value).toFixed(2)} 小时`
+  }
+  return String(value)
 }
 
 function openAction(config: ActionConfig) {
@@ -450,29 +493,59 @@ onMounted(() => {
             <SlidersHorizontal :size="18" />
             <h3>下轮生效参数草稿</h3>
           </div>
+          <div class="config-summary wide">
+            <div>
+              <span>当前运行配置</span>
+              <strong>{{ formatVolatilityMethod(strategyConfig.current.volatilityMethod) }}</strong>
+              <small>
+                并发 {{ strategyConfig.current.maxConcurrent }} · 观察 {{ strategyConfig.current.observeHours }} 小时 ·
+                最小步长 {{ formatPct(strategyConfig.current.minStepPct) }}
+              </small>
+            </div>
+            <div>
+              <span>草稿更新时间</span>
+              <strong>{{ strategyConfig.draftUpdatedAt }}</strong>
+              <small>{{ strategyConfig.diff.length ? `有 ${strategyConfig.diff.length} 项下轮变更` : '草稿与当前配置一致' }}</small>
+            </div>
+          </div>
           <label>
             <span>波动率算法</span>
-            <select v-model="selectedVolatility">
-              <option v-for="option in volatilityOptions" :key="option" :value="option">
-                {{ formatVolatilityMethod(option) }}
+            <select v-model="strategyForm.volatilityMethod">
+              <option v-for="option in strategyConfig.volatilityOptions" :key="option.value" :value="option.value">
+                {{ option.label || formatVolatilityMethod(option.value) }}
               </option>
             </select>
           </label>
           <label>
             <span>最大并发标的</span>
-            <input value="3" type="number" min="1" max="5" />
+            <input v-model.number="strategyForm.maxConcurrent" type="number" min="1" max="10" />
           </label>
           <label>
-            <span>观察窗口分钟</span>
-            <input value="180" type="number" min="30" />
+            <span>观察窗口小时</span>
+            <input v-model.number="strategyForm.observeHours" type="number" min="0.1" max="24" step="0.1" />
           </label>
           <label>
             <span>最小网格步长</span>
-            <input value="0.0015" type="number" step="0.0001" />
+            <input v-model.number="strategyForm.minStepPct" type="number" min="0.0001" max="0.05" step="0.0001" />
           </label>
-          <button class="primary-button wide" type="button">
+          <label>
+            <span>最大网格数量</span>
+            <input v-model.number="strategyForm.maxGridNum" type="number" min="1" max="200" />
+          </label>
+          <div class="draft-diff wide" aria-live="polite">
+            <div v-if="strategyConfig.diff.length === 0" class="empty-state">当前草稿与运行配置一致。</div>
+            <div v-for="item in strategyConfig.diff" :key="item.key" class="diff-row">
+              <span>{{ item.label }}</span>
+              <strong>{{ formatStrategyValue(item.key, item.current) }} -> {{ formatStrategyValue(item.key, item.draft) }}</strong>
+            </div>
+          </div>
+          <p v-if="strategyError" class="form-error wide" role="alert">{{ strategyError }}</p>
+          <button class="secondary-button" type="button" :disabled="strategyBusy" @click="resetStrategyDraft">
+            恢复当前配置
+          </button>
+          <button class="primary-button" type="button" :disabled="strategyBusy" @click="saveStrategyDraft">
             <CheckCircle2 :size="18" />
-            保存为下轮生效
+            {{ strategyBusy ? '保存中' : '保存为下轮生效' }}
           </button>
         </section>
       </section>

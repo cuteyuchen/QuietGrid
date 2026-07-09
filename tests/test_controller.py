@@ -585,6 +585,48 @@ def test_controller_run_once_persists_volatility_snapshot(tmp_path) -> None:
     asyncio.run(run())
 
 
+def test_controller_run_once_uses_strategy_config_draft_for_next_grid(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        repo.set_strategy_config_draft(
+            {
+                "volatility_method": "yang_zhang",
+                "max_concurrent": 1,
+                "observe_hours": 0.5,
+                "min_step_pct": 0.0015,
+                "max_grid_num": 7,
+            },
+            datetime(2026, 7, 4, 9, 59, tzinfo=NY),
+        )
+        controller = TradingController(
+            exchange=CountingVolatilityExchange(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=3, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(range_method="std", max_grid_num=20),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=3,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        result = await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+
+        row = repo.active_session_volatility_rows()[0]
+        assert result.started_symbols == ["AAPLUSDT"]
+        assert row["volatility_method"] == "yang_zhang"
+        assert row["volatility_window"] == 30
+        assert row["grid_num"] <= 7
+
+    asyncio.run(run())
+
+
 def test_controller_poll_refreshes_current_volatility_by_interval(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"
@@ -1311,12 +1353,26 @@ def test_controller_aborted_second_observation_closes_started_sessions(tmp_path)
         original_observe = controller.observer.observe_then_calculate
         calls = 0
 
-        async def abort_second_observation(symbol, current_price, should_abort=None, sleep_fn=asyncio.sleep):
+        async def abort_second_observation(
+            symbol,
+            current_price,
+            should_abort=None,
+            sleep_fn=asyncio.sleep,
+            observer_config=None,
+            grid_config=None,
+        ):
             nonlocal calls
             calls += 1
             if calls == 2:
                 raise ObservationAborted("test abort")
-            return await original_observe(symbol, current_price, should_abort, sleep_fn)
+            return await original_observe(
+                symbol,
+                current_price,
+                should_abort,
+                sleep_fn,
+                observer_config=observer_config,
+                grid_config=grid_config,
+            )
 
         controller.observer.observe_then_calculate = abort_second_observation  # type: ignore[method-assign]
 

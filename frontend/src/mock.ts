@@ -39,6 +39,34 @@ export type ControlState = {
   sessionStopRequests: Array<Record<string, unknown>>
 }
 
+export type StrategySettings = {
+  volatilityMethod: string
+  maxConcurrent: number
+  observeHours: number
+  minStepPct: number
+  maxGridNum: number
+}
+
+export type StrategyDiff = {
+  key: string
+  label: string
+  current: string | number
+  draft: string | number
+}
+
+export type VolatilityOption = {
+  value: string
+  label: string
+}
+
+export type StrategyConfigData = {
+  current: StrategySettings
+  draft: StrategySettings
+  diff: StrategyDiff[]
+  draftUpdatedAt: string
+  volatilityOptions: VolatilityOption[]
+}
+
 export type VerificationRow = {
   name: string
   status: string
@@ -73,6 +101,33 @@ export const controlState: ControlState = {
   disabledSymbols: [],
   disabledSymbolsUpdatedAt: '-',
   sessionStopRequests: [],
+}
+
+export const strategyConfig: StrategyConfigData = {
+  current: {
+    volatilityMethod: 'std',
+    maxConcurrent: 3,
+    observeHours: 3,
+    minStepPct: 0.0015,
+    maxGridNum: 20,
+  },
+  draft: {
+    volatilityMethod: 'std',
+    maxConcurrent: 3,
+    observeHours: 3,
+    minStepPct: 0.0015,
+    maxGridNum: 20,
+  },
+  diff: [],
+  draftUpdatedAt: '-',
+  volatilityOptions: [
+    { value: 'std', label: '标准差' },
+    { value: 'parkinson', label: 'Parkinson 高低价' },
+    { value: 'garman_klass', label: 'Garman-Klass' },
+    { value: 'rogers_satchell', label: 'Rogers-Satchell' },
+    { value: 'yang_zhang', label: 'Yang-Zhang' },
+    { value: 'quantile', label: '分位数' },
+  ],
 }
 
 export const sessions: GridSession[] = [

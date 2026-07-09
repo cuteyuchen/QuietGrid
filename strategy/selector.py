@@ -34,7 +34,7 @@ class Selector:
         self.exchange = exchange
         self.config = config
 
-    async def select(self) -> list[SelectionScore]:
+    async def select(self, max_concurrent: int | None = None) -> list[SelectionScore]:
         candidates = await self.candidate_symbols()
         snapshots: list[tuple[str, float, float]] = []
         for symbol in candidates:
@@ -72,7 +72,8 @@ class Selector:
                 )
             )
 
-        return sorted(scored, key=lambda item: item.score, reverse=True)[: self.config.max_concurrent]
+        limit = self.config.max_concurrent if max_concurrent is None else max(1, int(max_concurrent))
+        return sorted(scored, key=lambda item: item.score, reverse=True)[:limit]
 
     async def candidate_symbols(self) -> list[str]:
         blacklist = _normalized_symbols(self.config.symbol_blacklist)

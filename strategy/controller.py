@@ -12,7 +12,7 @@ from core.scheduler import Scheduler
 from db.repository import Repository
 from exchange.base import ExchangeClient
 from strategy.cooldown import CooldownConfig, CooldownEvaluator
-from strategy.grid_calculator import GridCalculationError, GridConfig
+from strategy.grid_calculator import SUPPORTED_RANGE_METHODS, GridCalculationError, GridConfig
 from strategy.grid_calculator import calculate_volatility_metric
 from strategy.grid_engine import (
     ORDER_CREATE_RECOVERY_ATTEMPTS,
@@ -277,7 +277,8 @@ class TradingController:
             )
             return RunOnceResult("new_entries_paused", [], [])
 
-        selected = await self.selector.select()
+        effective_observer_config, effective_grid_config, effective_max_concurrent = self._effective_next_entry_settings(current_time)
+        selected = await self.selector.select(max_concurrent=effective_max_concurrent)
         selected_symbols = [item.symbol for item in selected]
         self._log_selection(selected, current_time)
         if not selected_symbols:
@@ -303,8 +304,12 @@ class TradingController:
         window_id = self.repository.create_window(current_time)
         self.current_window_id = window_id
         started: list[str] = []
-        for symbol in fee_eligible_symbols[: self.config.max_concurrent]:
-            allowed = self.risk.can_open_new_symbol(list(self.active_sessions.values()), self.config.capital_per_symbol)
+        effective_risk = RiskManager(
+            self.scheduler,
+            replace(self.risk.config, max_concurrent=effective_max_concurrent),
+        )
+        for symbol in fee_eligible_symbols[:effective_max_concurrent]:
+            allowed = effective_risk.can_open_new_symbol(list(self.active_sessions.values()), self.config.capital_per_symbol)
             if allowed.action != RiskAction.NONE:
                 continue
             session_id = self.repository.create_session(
@@ -331,6 +336,8 @@ class TradingController:
                     symbol,
                     current_price,
                     should_abort=lambda: self.scheduler.should_force_close(),
+                    observer_config=effective_observer_config,
+                    grid_config=effective_grid_config,
                 )
             except ObservationAborted:
                 self.repository.close_session(session_id, "observation_aborted_force_close", current_time)
@@ -447,6 +454,46 @@ class TradingController:
             return RunOnceResult("no_started", selected_symbols, started)
 
         return RunOnceResult("started", selected_symbols, started)
+
+    def _effective_next_entry_settings(self, at: datetime) -> tuple[ObserverConfig, GridConfig, int]:
+        draft = self.repository.strategy_config_draft()
+        if not draft:
+            return self.observer.observer_config, self.grid_config, self.config.max_concurrent
+        try:
+            volatility_method = str(draft.get("volatility_method", self.grid_config.range_method)).strip().lower()
+            if volatility_method not in SUPPORTED_RANGE_METHODS:
+                raise ValueError(f"不支持的波动率算法: {volatility_method}")
+            max_concurrent = int(draft.get("max_concurrent", self.config.max_concurrent))
+            observe_hours = float(draft.get("observe_hours", self.observer.observer_config.observe_hours))
+            min_step_pct = float(draft.get("min_step_pct", self.grid_config.min_step_pct))
+            max_grid_num = int(draft.get("max_grid_num", self.grid_config.max_grid_num))
+            if max_concurrent < 1:
+                raise ValueError("max_concurrent 必须大于等于 1")
+            if observe_hours <= 0:
+                raise ValueError("observe_hours 必须大于 0")
+            if min_step_pct <= 0:
+                raise ValueError("min_step_pct 必须大于 0")
+            if max_grid_num < 1:
+                raise ValueError("max_grid_num 必须大于等于 1")
+        except (TypeError, ValueError) as exc:
+            self.repository.log_system(
+                "WARN",
+                "controller",
+                "Strategy config draft is invalid; using file config.",
+                json.dumps({"draft": draft, "error": str(exc)}, ensure_ascii=False),
+                at,
+            )
+            return self.observer.observer_config, self.grid_config, self.config.max_concurrent
+        return (
+            replace(self.observer.observer_config, observe_hours=observe_hours),
+            replace(
+                self.grid_config,
+                range_method=volatility_method,
+                min_step_pct=min_step_pct,
+                max_grid_num=max_grid_num,
+            ),
+            max_concurrent,
+        )
 
     async def _filter_symbols_by_maker_fee(self, symbols: list[str], at: datetime) -> list[str]:
         eligible: list[str] = []

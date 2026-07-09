@@ -332,6 +332,27 @@ def test_repository_persists_disabled_symbols_and_stop_requests(tmp_path) -> Non
     assert stored["detail"] == "已处理"
 
 
+def test_repository_persists_strategy_config_draft(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 8, tzinfo=timezone.utc)
+    draft = {
+        "volatility_method": "yang_zhang",
+        "max_concurrent": 2,
+        "observe_hours": 1.5,
+        "min_step_pct": 0.002,
+        "max_grid_num": 12,
+    }
+
+    assert repo.strategy_config_draft() is None
+    repo.set_strategy_config_draft(draft, now)
+
+    assert repo.strategy_config_draft() == draft
+    state = repo.get_control_state()["strategy_config_draft"]
+    assert state["updated_at"] == now.isoformat()
+
+
 def test_latest_commission_health_parses_latest_detail(tmp_path) -> None:
     db_path = tmp_path / "quietgrid.db"
     init_db(db_path)

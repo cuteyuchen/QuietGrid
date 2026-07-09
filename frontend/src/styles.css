@@ -504,6 +504,51 @@ button:disabled:hover {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.config-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.config-summary > div,
+.diff-row {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 3%);
+  padding: 12px;
+}
+
+.config-summary span,
+.config-summary small,
+.diff-row span {
+  color: var(--muted);
+}
+
+.draft-diff {
+  display: grid;
+  gap: 10px;
+}
+
+.diff-row {
+  grid-template-columns: minmax(140px, 0.5fr) 1fr;
+  align-items: center;
+}
+
+.diff-row strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.form-error {
+  border: 1px solid rgb(239 100 97 / 44%);
+  border-radius: 8px;
+  background: rgb(239 100 97 / 12%);
+  color: #ffd9d8;
+  padding: 10px 12px;
+  line-height: 1.5;
+}
+
 label {
   display: grid;
   gap: 8px;
@@ -639,7 +684,12 @@ textarea {
   .nav-list,
   .metric-grid,
   .split-grid,
+  .config-summary,
   .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .diff-row {
     grid-template-columns: 1fr;
   }
 

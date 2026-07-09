@@ -279,6 +279,41 @@ def test_console_session_stop_rejects_stopped_session(tmp_path) -> None:
     assert response.status_code == 409
 
 
+def test_console_strategy_config_draft_api_persists_diff(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    client = TestClient(create_app(_test_config(db_path)))
+
+    initial = client.get("/api/strategy-config").json()
+    response = client.post(
+        "/api/strategy-config/draft",
+        json={
+            "volatility_method": "yang_zhang",
+            "max_concurrent": 2,
+            "observe_hours": 1.5,
+            "min_step_pct": 0.002,
+            "max_grid_num": 12,
+        },
+    )
+    invalid = client.post(
+        "/api/strategy-config/draft",
+        json={
+            "volatility_method": "unknown",
+            "max_concurrent": 2,
+            "observe_hours": 1.5,
+            "min_step_pct": 0.002,
+            "max_grid_num": 12,
+        },
+    )
+
+    assert initial["current"]["volatility_method"] == "std"
+    assert response.status_code == 200
+    body = response.json()
+    assert body["draft"]["volatility_method"] == "yang_zhang"
+    assert {item["key"] for item in body["diff"]} >= {"volatility_method", "max_concurrent"}
+    assert Repository(db_path).strategy_config_draft()["volatility_method"] == "yang_zhang"
+    assert invalid.status_code == 422
+
+
 def test_console_safety_sweep_action_runs_with_audit_log(monkeypatch, tmp_path) -> None:
     db_path = tmp_path / "quietgrid.db"
 

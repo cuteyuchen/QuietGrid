@@ -1,4 +1,14 @@
-import type { AuditLog, ConsoleSummary, ControlState, GridSession, VerificationRow } from './mock'
+import type {
+  AuditLog,
+  ConsoleSummary,
+  ControlState,
+  GridSession,
+  StrategyConfigData,
+  StrategyDiff,
+  StrategySettings,
+  VerificationRow,
+  VolatilityOption,
+} from './mock'
 
 type ApiList<T> = {
   items: T[]
@@ -63,6 +73,31 @@ type ApiControlState = {
   session_stop_requests: Array<Record<string, unknown>>
 }
 
+type ApiStrategySettings = {
+  volatility_method: string
+  max_concurrent: number
+  observe_hours: number
+  min_step_pct: number
+  max_grid_num: number
+}
+
+type ApiStrategyDiff = {
+  key: string
+  label: string
+  current: string | number
+  draft: string | number
+}
+
+type ApiStrategyConfig = {
+  current: ApiStrategySettings
+  draft: ApiStrategySettings
+  diff: ApiStrategyDiff[]
+  draft_updated_at: string
+  options: {
+    volatility_methods: VolatilityOption[]
+  }
+}
+
 export type ConsoleAction =
   | 'safety-sweep'
   | 'testnet-run'
@@ -92,15 +127,17 @@ export type ConsoleActionResult = {
 export type ConsoleData = {
   summary: ConsoleSummary
   controlState: ControlState
+  strategyConfig: StrategyConfigData
   sessions: GridSession[]
   verificationRows: VerificationRow[]
   auditLogs: AuditLog[]
 }
 
 export async function loadConsoleData(): Promise<ConsoleData> {
-  const [summary, controlState, sessions, verificationRows, auditLogs] = await Promise.all([
+  const [summary, controlState, strategyConfig, sessions, verificationRows, auditLogs] = await Promise.all([
     fetchJson<ApiSummary>('/api/summary'),
     fetchJson<ApiControlState>('/api/control-state'),
+    fetchJson<ApiStrategyConfig>('/api/strategy-config'),
     fetchJson<ApiList<ApiSession>>('/api/sessions/active?include_recent=true&limit=20'),
     fetchJson<ApiList<ApiVerificationRow>>('/api/verification/testnet'),
     fetchJson<ApiList<ApiAuditLog>>('/api/logs/system?limit=20'),
@@ -109,9 +146,35 @@ export async function loadConsoleData(): Promise<ConsoleData> {
   return {
     summary: mapSummary(summary),
     controlState: mapControlState(controlState),
+    strategyConfig: mapStrategyConfig(strategyConfig),
     sessions: sessions.items.map(mapSession),
     verificationRows: verificationRows.items.map(mapVerificationRow),
     auditLogs: auditLogs.items.map(mapAuditLog),
+  }
+}
+
+export async function saveStrategyConfigDraft(draft: StrategySettings): Promise<{ message: string; config: StrategyConfigData }> {
+  const response = await fetch('/api/strategy-config/draft', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      volatility_method: draft.volatilityMethod,
+      max_concurrent: draft.maxConcurrent,
+      observe_hours: draft.observeHours,
+      min_step_pct: draft.minStepPct,
+      max_grid_num: draft.maxGridNum,
+    }),
+  })
+  const body = (await response.json()) as (ApiStrategyConfig & { message?: string }) | { detail?: string }
+  if (!response.ok) {
+    throw new Error('detail' in body && body.detail ? body.detail : `请求失败：${response.status}`)
+  }
+  return {
+    message: 'message' in body && body.message ? body.message : '策略参数草稿已保存',
+    config: mapStrategyConfig(body as ApiStrategyConfig),
   }
 }
 
@@ -185,6 +248,35 @@ function mapSummary(value: ApiSummary): ConsoleSummary {
     balance: typeof value.balance === 'number' ? value.balance : null,
     riskLevel: value.risk_level,
     latestSystemMessage: value.latest_system_message,
+  }
+}
+
+function mapStrategyConfig(value: ApiStrategyConfig): StrategyConfigData {
+  return {
+    current: mapStrategySettings(value.current),
+    draft: mapStrategySettings(value.draft),
+    diff: Array.isArray(value.diff) ? value.diff.map(mapStrategyDiff) : [],
+    draftUpdatedAt: compactTime(value.draft_updated_at),
+    volatilityOptions: value.options?.volatility_methods || [],
+  }
+}
+
+function mapStrategySettings(value: ApiStrategySettings): StrategySettings {
+  return {
+    volatilityMethod: value.volatility_method || 'std',
+    maxConcurrent: Math.trunc(toNumber(value.max_concurrent)),
+    observeHours: toNumber(value.observe_hours),
+    minStepPct: toNumber(value.min_step_pct),
+    maxGridNum: Math.trunc(toNumber(value.max_grid_num)),
+  }
+}
+
+function mapStrategyDiff(value: ApiStrategyDiff): StrategyDiff {
+  return {
+    key: value.key,
+    label: value.label,
+    current: value.current,
+    draft: value.draft,
   }
 }
 

@@ -13,6 +13,7 @@ import web as legacy_web
 from core.config import AppConfig, load_config
 from db.database import init_db
 from db.repository import Repository
+from strategy.grid_calculator import SUPPORTED_RANGE_METHODS
 
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
@@ -66,6 +67,17 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     @app.get("/api/control-state")
     def control_state(repo: Repository = Depends(get_repository)) -> dict[str, Any]:
         return _control_state_payload(repo)
+
+    @app.get("/api/strategy-config")
+    def strategy_config(repo: Repository = Depends(get_repository)) -> dict[str, Any]:
+        return _strategy_config_payload(app_config, repo)
+
+    @app.post("/api/strategy-config/draft")
+    def save_strategy_config_draft(
+        request: StrategyConfigDraftRequest,
+        repo: Repository = Depends(get_repository),
+    ) -> dict[str, Any]:
+        return _save_strategy_config_draft(app_config, repo, request)
 
     @app.get("/api/sessions/active")
     def active_sessions(
@@ -204,6 +216,14 @@ class ConsoleActionRequest(BaseModel):
     loop_seconds: float | None = Field(default=None, ge=20, le=86400)
 
 
+class StrategyConfigDraftRequest(BaseModel):
+    volatility_method: str = Field(min_length=1, max_length=40)
+    max_concurrent: int = Field(ge=1, le=10)
+    observe_hours: float = Field(gt=0, le=24)
+    min_step_pct: float = Field(gt=0, le=0.05)
+    max_grid_num: int = Field(ge=1, le=200)
+
+
 app = create_app()
 
 
@@ -232,6 +252,113 @@ def _control_state_payload(repo: Repository) -> dict[str, Any]:
         "disabled_symbols_updated_at": disabled_state.get("updated_at") if isinstance(disabled_state, dict) else "",
         "session_stop_requests": list(repo.session_stop_requests().values()),
     }
+
+
+def _strategy_config_payload(config: AppConfig, repo: Repository) -> dict[str, Any]:
+    state = repo.get_control_state()
+    draft_state = state.get("strategy_config_draft")
+    current = _current_strategy_config(config)
+    draft = {**current, **(repo.strategy_config_draft() or {})}
+    return {
+        "current": current,
+        "draft": draft,
+        "diff": _strategy_config_diff(current, draft),
+        "draft_updated_at": draft_state.get("updated_at") if isinstance(draft_state, dict) else "",
+        "options": {
+            "volatility_methods": _volatility_method_options(),
+        },
+    }
+
+
+def _save_strategy_config_draft(
+    config: AppConfig,
+    repo: Repository,
+    request: StrategyConfigDraftRequest,
+) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    method = str(request.volatility_method).strip().lower()
+    if method not in SUPPORTED_RANGE_METHODS:
+        raise HTTPException(status_code=422, detail=f"不支持的波动率算法：{request.volatility_method}")
+    draft = {
+        "volatility_method": method,
+        "max_concurrent": int(request.max_concurrent),
+        "observe_hours": float(request.observe_hours),
+        "min_step_pct": float(request.min_step_pct),
+        "max_grid_num": int(request.max_grid_num),
+    }
+    now = datetime.now(timezone.utc)
+    current = _current_strategy_config(config)
+    before = repo.strategy_config_draft()
+    repo.log_system(
+        "INFO",
+        "console_action",
+        "Strategy config draft save requested.",
+        _json_detail({"before": before, "draft": draft}),
+        now,
+    )
+    repo.set_strategy_config_draft(draft, now)
+    repo.log_system(
+        "INFO",
+        "console_action",
+        "Strategy config draft saved.",
+        _json_detail({"draft": draft, "diff": _strategy_config_diff(current, draft)}),
+        datetime.now(timezone.utc),
+    )
+    payload = _strategy_config_payload(config, repo)
+    return {
+        "ok": True,
+        "message": "策略参数草稿已保存，将在下一轮新建网格时生效。",
+        **payload,
+    }
+
+
+def _current_strategy_config(config: AppConfig) -> dict[str, Any]:
+    raw = config.raw
+    trading = raw.get("trading", {})
+    timing = raw.get("timing", {})
+    grid = raw.get("grid", {})
+    return {
+        "volatility_method": str(grid.get("range_method", "std")),
+        "max_concurrent": int(trading.get("max_concurrent", 1)),
+        "observe_hours": float(timing.get("observe_hours", 3)),
+        "min_step_pct": float(grid.get("min_step_pct", 0.0015)),
+        "max_grid_num": int(grid.get("max_grid_num", 20)),
+    }
+
+
+def _strategy_config_diff(current: dict[str, Any], draft: dict[str, Any]) -> list[dict[str, Any]]:
+    labels = {
+        "volatility_method": "波动率算法",
+        "max_concurrent": "最大并发标的",
+        "observe_hours": "观察窗口小时",
+        "min_step_pct": "最小网格步长",
+        "max_grid_num": "最大网格数量",
+    }
+    diff: list[dict[str, Any]] = []
+    for key, label in labels.items():
+        current_value = current.get(key)
+        draft_value = draft.get(key)
+        if current_value == draft_value:
+            continue
+        diff.append(
+            {
+                "key": key,
+                "label": label,
+                "current": current_value,
+                "draft": draft_value,
+            }
+        )
+    return diff
+
+
+def _volatility_method_options() -> list[dict[str, str]]:
+    ordered = ["std", "parkinson", "garman_klass", "rogers_satchell", "yang_zhang", "quantile"]
+    return [
+        {"value": method, "label": legacy_web._localize_scalar_text(method)}
+        for method in ordered
+        if method in SUPPORTED_RANGE_METHODS
+    ]
 
 
 async def _run_console_action(

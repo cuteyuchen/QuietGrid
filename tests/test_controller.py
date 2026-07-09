@@ -287,6 +287,17 @@ class MixedCommissionExchange(MockExchangeClient):
         return {"maker": 0.0, "taker": 0.0005}
 
 
+class ChangingCommissionExchange(MockExchangeClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.maker_fee = 0.0
+        self.commission_calls = 0
+
+    async def get_commission_rate(self, symbol: str) -> dict[str, float]:
+        self.commission_calls += 1
+        return {"maker": self.maker_fee, "taker": 0.0005}
+
+
 class FailingTickerAfterStartExchange(MockExchangeClient):
     def __init__(self) -> None:
         super().__init__()
@@ -867,6 +878,85 @@ def test_controller_skips_symbol_when_maker_fee_is_negative(tmp_path) -> None:
     asyncio.run(run())
 
 
+def test_controller_poll_warns_when_active_maker_fee_changes(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = ChangingCommissionExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+                max_maker_fee_rate=0.0,
+                maker_fee_check_interval_seconds=60,
+            ),
+        )
+        start_at = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+
+        result = await controller.run_once(start_at)
+        exchange.maker_fee = 0.0002
+        actions = await controller.poll_active_sessions_once(start_at + timedelta(seconds=61))
+
+        health = Repository(db_path).latest_commission_health()
+        detail = json.loads(health["detail"])
+
+        assert result.status == "started"
+        assert actions[0] == ("*", "commission_warn")
+        assert health["level"] == "WARN"
+        assert health["message"] == "Maker fee changed."
+        assert detail["status"] == "warn"
+        assert detail["changed_count"] == 1
+        assert detail["symbols"][0]["symbol"] == "AAPLUSDT"
+        assert detail["symbols"][0]["previous_maker"] == 0.0
+        assert detail["symbols"][0]["maker"] == 0.0002
+
+    asyncio.run(run())
+
+
+def test_controller_poll_skips_active_maker_fee_check_before_interval(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = ChangingCommissionExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+                max_maker_fee_rate=0.0,
+                maker_fee_check_interval_seconds=60,
+            ),
+        )
+        start_at = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+
+        await controller.run_once(start_at)
+        calls_after_start = exchange.commission_calls
+        actions = await controller.poll_active_sessions_once(start_at + timedelta(seconds=30))
+
+        assert actions == []
+        assert exchange.commission_calls == calls_after_start
+        assert Repository(db_path).latest_commission_health() is None
+
+    asyncio.run(run())
+
+
 def test_controller_startup_check_passes_and_logs(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"
@@ -1032,6 +1122,8 @@ def test_controller_startup_check_rejects_invalid_trade_parameters(tmp_path) -> 
             {"take_profit_usdt": float("nan")},
             {"max_maker_fee_rate": float("nan")},
             {"max_maker_fee_rate": -0.001},
+            {"maker_fee_check_interval_seconds": float("nan")},
+            {"maker_fee_check_interval_seconds": -1},
         ]
         for index, overrides in enumerate(invalid_configs):
             db_path = tmp_path / f"controller-{index}.db"
@@ -1043,6 +1135,7 @@ def test_controller_startup_check_rejects_invalid_trade_parameters(tmp_path) -> 
                 "take_profit_usdt": 10,
                 "total_capital_limit": 1000,
                 "max_maker_fee_rate": 0.0,
+                "maker_fee_check_interval_seconds": 300,
             }
             config_values.update(overrides)
             controller = TradingController(

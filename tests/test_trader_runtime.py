@@ -2903,6 +2903,7 @@ def test_build_controller_reads_max_maker_fee_rate(tmp_path) -> None:
                 "total_capital_limit": 1000,
                 "stop_buffer_pct": 0.015,
                 "max_maker_fee_rate": 0.0001,
+                "maker_fee_check_interval_seconds": 123,
             },
             "timing": {
                 "observe_hours": 1,
@@ -2941,6 +2942,7 @@ def test_build_controller_reads_max_maker_fee_rate(tmp_path) -> None:
     controller = _build_controller(MockExchangeClient(), config)
 
     assert controller.config.max_maker_fee_rate == 0.0001
+    assert controller.config.maker_fee_check_interval_seconds == 123
     assert controller.cooldown.config.calm_window_minutes == 17
     assert controller.cooldown.config.atr_recovery_ratio == 0.65
     assert controller.cooldown.config.amplitude_multiplier == 1.5

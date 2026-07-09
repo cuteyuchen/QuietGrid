@@ -37,6 +37,7 @@ class ControllerConfig:
     take_profit_usdt: float
     total_capital_limit: float
     max_maker_fee_rate: float = 0.0
+    maker_fee_check_interval_seconds: float = 300.0
     loop_interval_seconds: float = 10
     scheduler_check_minutes: float = 5
 
@@ -88,6 +89,8 @@ class TradingController:
         self.active_sessions: dict[str, SymbolSession] = {}
         self.current_window_id: int | None = None
         self._volatility_refreshed_at: dict[int, datetime] = {}
+        self._last_maker_fee_by_symbol: dict[str, float] = {}
+        self._maker_fee_checked_at: datetime | None = None
 
     async def validate_startup(self, at: datetime | None = None) -> StartupCheck:
         current_time = at or datetime.now(timezone.utc)
@@ -113,6 +116,7 @@ class TradingController:
             not _positive_finite_number(self.config.leverage)
             or not _positive_finite_number(self.config.take_profit_usdt)
             or not _non_negative_finite_number(self.config.max_maker_fee_rate)
+            or not _non_negative_finite_number(self.config.maker_fee_check_interval_seconds)
         ):
             result = StartupCheck(False, "启动交易参数不是有效数字。", 0.0)
             self.repository.log_system(
@@ -122,7 +126,8 @@ class TradingController:
                 (
                     f"leverage={self.config.leverage}, "
                     f"take_profit_usdt={self.config.take_profit_usdt}, "
-                    f"max_maker_fee_rate={self.config.max_maker_fee_rate}"
+                    f"max_maker_fee_rate={self.config.max_maker_fee_rate}, "
+                    f"maker_fee_check_interval_seconds={self.config.maker_fee_check_interval_seconds}"
                 ),
                 current_time,
             )
@@ -497,6 +502,7 @@ class TradingController:
 
     async def _filter_symbols_by_maker_fee(self, symbols: list[str], at: datetime) -> list[str]:
         eligible: list[str] = []
+        checked = False
         for symbol in symbols:
             try:
                 commission = await self.exchange.get_commission_rate(symbol)
@@ -520,6 +526,8 @@ class TradingController:
                     at,
                 )
                 continue
+            checked = True
+            self._last_maker_fee_by_symbol[symbol] = maker_fee
             if maker_fee > self.config.max_maker_fee_rate:
                 self.repository.log_system(
                     "WARN",
@@ -530,6 +538,8 @@ class TradingController:
                 )
                 continue
             eligible.append(symbol)
+        if checked:
+            self._maker_fee_checked_at = at
         return eligible
 
     async def handle_order_filled_event(self, event: dict[str, Any]) -> GridOrder | None:
@@ -855,6 +865,9 @@ class TradingController:
     async def poll_active_sessions_once(self, now: datetime | None = None) -> list[tuple[str, str]]:
         current_time = now or datetime.now(timezone.utc)
         actions: list[tuple[str, str]] = []
+        commission_action = await self._monitor_active_maker_fee_if_due(current_time)
+        if commission_action is not None:
+            actions.append(("*", commission_action))
         processed_symbols: set[str] = set()
         stop_requests = self.repository.pending_session_stop_requests()
         for symbol, session in list(self.active_sessions.items()):
@@ -984,6 +997,85 @@ class TradingController:
         if not any(session.state == GridState.CLOSING for session in self.active_sessions.values()):
             actions.extend(await self._reconcile_inactive_positions_once(current_time, processed_symbols))
         return actions
+
+    async def _monitor_active_maker_fee_if_due(self, at: datetime) -> str | None:
+        if not self.active_sessions:
+            return None
+        interval = float(self.config.maker_fee_check_interval_seconds)
+        if interval <= 0:
+            return None
+        if self._maker_fee_checked_at is not None:
+            elapsed = (at - self._maker_fee_checked_at).total_seconds()
+            if elapsed < interval:
+                return None
+        result = await self._active_maker_fee_health(sorted(self.active_sessions))
+        self._maker_fee_checked_at = at
+        status = str(result["status"])
+        changed_count = int(result["changed_count"])
+        message = "Maker fee changed." if changed_count or status == "warn" else "Binance maker fee health check completed."
+        level = "ERROR" if status == "error" else "WARN" if status == "warn" or changed_count else "INFO"
+        self.repository.log_system(
+            level,
+            "commission_health",
+            message,
+            json.dumps(result, ensure_ascii=False),
+            at,
+        )
+        if status == "error":
+            return "commission_error"
+        if status == "warn":
+            return "commission_warn"
+        if changed_count:
+            return "commission_changed"
+        return None
+
+    async def _active_maker_fee_health(self, symbols: list[str]) -> dict[str, Any]:
+        details: list[dict[str, Any]] = []
+        for symbol in symbols:
+            previous = self._last_maker_fee_by_symbol.get(symbol)
+            try:
+                commission = await self.exchange.get_commission_rate(symbol)
+                maker_fee = _non_negative_float(_required_float(commission, "maker"), "maker")
+            except Exception as exc:
+                details.append(
+                    {
+                        "symbol": symbol,
+                        "status": "error",
+                        "previous_maker": previous,
+                        "commission": {},
+                        "error": str(exc),
+                    }
+                )
+                continue
+            changed = previous is not None and abs(maker_fee - previous) > 1e-12
+            status = "warn" if maker_fee > self.config.max_maker_fee_rate else "ok"
+            details.append(
+                {
+                    "symbol": symbol,
+                    "status": status,
+                    "maker": maker_fee,
+                    "previous_maker": previous,
+                    "changed": changed,
+                    "max_maker_fee_rate": self.config.max_maker_fee_rate,
+                    "commission": commission,
+                }
+            )
+            self._last_maker_fee_by_symbol[symbol] = maker_fee
+
+        error_count = sum(1 for item in details if item["status"] == "error")
+        warn_count = sum(1 for item in details if item["status"] == "warn")
+        changed_count = sum(1 for item in details if item.get("changed"))
+        status = "error" if error_count else "warn" if warn_count else "ok"
+        return {
+            "status": status,
+            "max_maker_fee_rate": self.config.max_maker_fee_rate,
+            "checked_symbols": len(details),
+            "ok_count": sum(1 for item in details if item["status"] == "ok"),
+            "warn_count": warn_count,
+            "error_count": error_count,
+            "changed_count": changed_count,
+            "symbols": details,
+        }
 
     async def run_loop(
         self,

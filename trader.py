@@ -2168,6 +2168,7 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             take_profit_usdt=float(trading["take_profit_usdt"]),
             total_capital_limit=float(trading["total_capital_limit"]),
             max_maker_fee_rate=float(trading.get("max_maker_fee_rate", 0.0)),
+            maker_fee_check_interval_seconds=float(trading.get("maker_fee_check_interval_seconds", 300.0)),
             loop_interval_seconds=float(timing["loop_interval_seconds"]),
             scheduler_check_minutes=float(timing["scheduler_check_minutes"]),
         ),

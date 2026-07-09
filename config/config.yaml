@@ -81,6 +81,20 @@ notifications:
 database:
   path: "data/trading.db"
 
+# 可选多账户配置。未配置 accounts 时继续使用 .env 中的 BINANCE_API_KEY / BINANCE_API_SECRET。
+# default_account_id: main
+# accounts:
+#   - id: main
+#     label: 主账户
+#     api_key_env: BINANCE_MAIN_API_KEY
+#     api_secret_env: BINANCE_MAIN_API_SECRET
+#     database_path: data/trading-main.db
+#   - id: hedge
+#     label: 对冲账户
+#     api_key_env: BINANCE_HEDGE_API_KEY
+#     api_secret_env: BINANCE_HEDGE_API_SECRET
+#     database_path: data/trading-hedge.db
+
 logging:
   level: "INFO"
   file: "logs/trader.log"

@@ -42,6 +42,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             "ok": True,
             "database": str(app_config.database_path),
             "mode": _mode_label(app_config),
+            "account_id": app_config.account_id,
+            "account_label": app_config.account_label,
         }
 
     @app.get("/api/summary")
@@ -62,6 +64,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             "latest_system_message": latest_message,
             "risk_level": risk_level,
             "database": str(app_config.database_path),
+            "account_id": app_config.account_id,
+            "account_label": app_config.account_label,
             "balance": None,
         }
 
@@ -762,6 +766,9 @@ def _single_symbol_testnet_config(config: AppConfig, symbol: str) -> AppConfig:
         binance_api_secret=config.binance_api_secret,
         binance_testnet=config.binance_testnet,
         binance_testnet_raw=config.binance_testnet_raw,
+        account_id=config.account_id,
+        account_label=config.account_label,
+        accounts=config.accounts,
     )
 
 

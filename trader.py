@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from loguru import logger
 
-from core.config import load_config, require_testnet
+from core.config import load_config, require_testnet, select_account
 from core.logging_config import setup_logging
 from core.notifications import build_system_log_notifier
 from core.scheduler import Scheduler
@@ -72,6 +72,7 @@ def main() -> None:
     parser.add_argument("--binance-position-smoke", action="store_true", help="只读检查 Binance 测试网持仓模式、持仓和未成交订单")
     parser.add_argument("--binance-safety-sweep", action="store_true", help="清理 Binance 测试网 allowlist 标的的挂单和仓位")
     parser.add_argument("--binance-test-run", action="store_true", help="执行测试网有界运行流程：前置持仓检查、限时loop、安全清扫、后置持仓检查")
+    parser.add_argument("--account-id", help="选择 config.yaml accounts 中的账户；未配置时使用默认 BINANCE_API_KEY/SECRET")
     parser.add_argument("--loop-iterations", type=int, help="限制 --mock-loop 或 --binance-loop 的主循环轮数，留空则持续运行")
     parser.add_argument("--loop-seconds", type=float, help="限制 --mock-loop、--binance-loop 或 --binance-test-run 的运行秒数；测试流程默认600秒")
     parser.add_argument("--backtest-csv", help="读取本地CSV K线文件执行离线网格回测，不连接交易所")
@@ -87,6 +88,8 @@ def main() -> None:
         parser.error("--loop-seconds 必须是正数。")
 
     config = load_config()
+    if args.account_id:
+        config = select_account(config, args.account_id)
     setup_logging(config.raw)
     init_db(config.database_path)
 

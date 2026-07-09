@@ -20,6 +20,7 @@ python trader.py --mock-once
 python trader.py --binance-check
 python trader.py --binance-order-smoke
 python trader.py --binance-test-order-smoke
+python trader.py --account-id main --binance-check
 python trader.py --binance-market-roundtrip-smoke
 python trader.py --binance-direct-order-diagnose
 python trader.py --binance-price-stream-smoke
@@ -39,6 +40,8 @@ python web.py
 不带参数的 `trader.py` 只做启动前安全校验和数据库初始化，不会发起交易。`--mock-once` 使用 mock 交易所执行一轮编排验证；`--binance-check` 只检查 Binance 测试网连接、余额和交易规则，不下单；`--binance-order-smoke` 会在 Binance 测试网创建并清理最小 POST_ONLY 限价单和 STOP_MARKET 止损单，用于验证真实下单接口；`--binance-test-order-smoke` 调用 Binance Futures `order/test` 校验签名下单参数，不创建真实订单，当前可验证 LIMIT 和 MARKET，STOP_MARKET 在该测试端点会返回不支持；`--binance-market-roundtrip-smoke` 会在 Binance 测试网用最小可交易数量执行 Market 开仓并立即 reduce-only 平仓，用于验证真实订单创建/平仓接口；`--binance-direct-order-diagnose` 会绕过 python-binance 直接请求 Futures `/order`，用于排查真实下单失败是否来自 SDK 包装层；`--binance-price-stream-smoke` 接收一条 Binance Futures 价格 WebSocket 事件，用于验证真实价格流；`--binance-signed-write-health` 只执行保证金模式和杠杆设置预检，不启动网格；`--binance-listen-key-smoke` 验证 Futures 用户流 listenKey 创建、保活和关闭；`--binance-algo-stop-smoke` 创建一个远离市价的数量型 Algo STOP_MARKET 条件单并立即撤销，用于验证交易所端条件单创建/查询/撤销链路；`--binance-position-smoke` 只读检查测试网持仓模式、每个候选标的的净持仓/LONG/SHORT 暴露和普通/Algo 未成交订单数量；`--binance-safety-sweep` 会撤销测试网 allowlist 标的的普通/Algo 挂单并用 reduce-only 市价单平掉残留仓位，用于烟测失败后的显式安全清扫；`--backtest-csv` 读取单个本地 K 线 CSV 做离线回测，`--backtest-dir` 批量读取目录内 CSV 并生成汇总，两者都不连接交易所、不要求测试网密钥；`--binance-once` 使用 Binance 测试网执行一轮。真实 Binance 单轮/循环会先执行配置的观察期，观察期内不下单；mock 入口默认跳过等待，便于本地验证。循环模式只在显式传入 `--mock-loop` 或 `--binance-loop` 时运行，且仍要求 `BINANCE_TESTNET=true`。
 
 `web.py` 是只读监控页，除原始数据库表外，会单独展示订单状态汇总、挂单费率健康、最近离线回测报告和最近 WARN/ERROR 风险或恢复事件，方便排查测试网下单状态未知、订单同步、策略回测和强制平仓恢复链路。回测面板读取 `reports/*.json` 中最新的报告；运行 `--backtest-output reports/backtest.json` 后刷新页面即可查看。
+
+多账户配置可在 `config/config.yaml` 的 `accounts` 中声明账户 id、显示名、密钥环境变量名和独立数据库路径。运行时使用 `--account-id <id>` 选择账户，也可以用 `.env` 中的 `QUIETGRID_ACCOUNT_ID` 指定默认账户。未配置 `accounts` 时继续使用旧的 `BINANCE_API_KEY` / `BINANCE_API_SECRET`。
 
 交易循环会按 `trading.maker_fee_check_interval_seconds` 周期复查活动网格标的的 Maker 费率。若费率超过 `trading.max_maker_fee_rate` 或相对上次检查发生变化，会写入 `commission_health` WARN/ERROR 日志，Web 费率健康面板和已启用的外部通知会同步显示。
 

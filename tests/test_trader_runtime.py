@@ -273,6 +273,52 @@ def test_main_default_mode_does_not_require_testnet(monkeypatch, tmp_path) -> No
     main()
 
 
+def test_main_selects_account_before_initializing_database(monkeypatch, tmp_path) -> None:
+    base_db = tmp_path / "base.db"
+    selected_db = tmp_path / "selected.db"
+    base_config = SimpleNamespace(
+        binance_api_key="base-key",
+        binance_api_secret="base-secret",
+        binance_testnet=True,
+        database_path=base_db,
+        raw={"logging": {}, "database": {"path": str(base_db)}},
+    )
+    selected_config = SimpleNamespace(
+        account_id="hedge",
+        binance_api_key="selected-key",
+        binance_api_secret="selected-secret",
+        binance_testnet=True,
+        database_path=selected_db,
+        raw={"logging": {}, "database": {"path": str(selected_db)}},
+    )
+    captured = {}
+
+    def fake_select_account(config_arg, account_id):
+        captured["selected_from"] = config_arg
+        captured["account_id"] = account_id
+        return selected_config
+
+    async def fake_run_binance_test_run(config_arg, max_seconds=600.0):
+        captured["runner_config"] = config_arg
+        captured["max_seconds"] = max_seconds
+        return {"test_run_ok": True}
+
+    monkeypatch.setattr(sys, "argv", ["trader.py", "--account-id", "hedge", "--binance-test-run", "--loop-seconds", "30"])
+    monkeypatch.setattr("trader.load_config", lambda: base_config)
+    monkeypatch.setattr("trader.select_account", fake_select_account)
+    monkeypatch.setattr("trader.setup_logging", lambda raw: captured.setdefault("logging_raw", raw))
+    monkeypatch.setattr("trader.init_db", lambda path: captured.setdefault("db_path", path))
+    monkeypatch.setattr("trader._run_binance_test_run", fake_run_binance_test_run)
+
+    main()
+
+    assert captured["selected_from"] is base_config
+    assert captured["account_id"] == "hedge"
+    assert captured["db_path"] == selected_db
+    assert captured["runner_config"] is selected_config
+    assert captured["max_seconds"] == 30.0
+
+
 def test_main_forwards_loop_bounds_to_binance_loop(monkeypatch, tmp_path) -> None:
     db_path = tmp_path / "trader.db"
     config = SimpleNamespace(

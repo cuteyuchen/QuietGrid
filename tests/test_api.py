@@ -53,6 +53,8 @@ def test_console_api_exposes_summary_and_active_sessions(tmp_path) -> None:
 
     summary = client.get("/api/summary").json()
     assert summary["mode"] == "测试网"
+    assert summary["account_id"] == "default"
+    assert summary["account_label"] == "默认账户"
     assert summary["active_sessions"] == 1
     assert summary["open_orders"] == 1
     assert summary["latest_system_message"] == "Binance 测试网持仓只读烟测完成。"

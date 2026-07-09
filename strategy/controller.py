@@ -723,9 +723,10 @@ class TradingController:
             new_order = await self.engine.handle_order_filled(session, client_id, fill_price=price)
         except Exception as exc:
             refill_error = exc
-        self.repository.upsert_order(session.session_id, filled_order)
+        changed_orders = [filled_order]
         if new_order is not None:
-            self.repository.upsert_order(session.session_id, new_order)
+            changed_orders.append(new_order)
+        self.repository.upsert_orders(session.session_id, changed_orders)
         self.repository.create_trade(
             session_id=session.session_id,
             symbol=symbol,
@@ -1734,8 +1735,7 @@ class TradingController:
         return _ticker_last_price(ticker)
 
     def _persist_session_orders(self, session: SymbolSession) -> None:
-        for order in session.orders:
-            self.repository.upsert_order(session.session_id, order)
+        self.repository.upsert_orders(session.session_id, session.orders)
 
     def _persist_session_grid(self, session_id: int, params) -> None:
         self.repository.update_session_grid(

@@ -13,6 +13,42 @@ from db.database import connect
 
 SystemLogNotifier = Callable[[str, str, str, str | None, datetime], None]
 
+ORDER_UPSERT_SQL = """
+INSERT INTO orders
+    (session_id, symbol, order_id, client_id, grid_index, side, price, qty,
+     status, entry_price, created_at, filled_at, fill_price, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(session_id, client_id) DO UPDATE SET
+    order_id = excluded.order_id,
+    grid_index = excluded.grid_index,
+    side = excluded.side,
+    price = excluded.price,
+    qty = excluded.qty,
+    status = excluded.status,
+    entry_price = excluded.entry_price,
+    filled_at = excluded.filled_at,
+    fill_price = excluded.fill_price,
+    updated_at = CURRENT_TIMESTAMP
+"""
+
+
+def _order_upsert_params(session_id: int, order: GridOrder) -> tuple[Any, ...]:
+    return (
+        session_id,
+        order.symbol,
+        order.order_id,
+        order.client_id,
+        order.grid_index,
+        order.side.value,
+        order.price,
+        order.qty,
+        order.status.value,
+        order.entry_price,
+        order.created_at.isoformat(),
+        order.filled_at.isoformat() if order.filled_at else None,
+        order.fill_price,
+    )
+
 
 class Repository:
     def __init__(self, db_path: str | Path, notifier: SystemLogNotifier | None = None) -> None:
@@ -240,40 +276,15 @@ class Repository:
             return row is not None
 
     def upsert_order(self, session_id: int, order: GridOrder) -> None:
+        self.upsert_orders(session_id, [order])
+
+    def upsert_orders(self, session_id: int, orders: list[GridOrder]) -> None:
+        if not orders:
+            return
         with connect(self.db_path) as conn:
-            conn.execute(
-                """
-                INSERT INTO orders
-                    (session_id, symbol, order_id, client_id, grid_index, side, price, qty,
-                     status, entry_price, created_at, filled_at, fill_price, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(session_id, client_id) DO UPDATE SET
-                    order_id = excluded.order_id,
-                    grid_index = excluded.grid_index,
-                    side = excluded.side,
-                    price = excluded.price,
-                    qty = excluded.qty,
-                    status = excluded.status,
-                    entry_price = excluded.entry_price,
-                    filled_at = excluded.filled_at,
-                    fill_price = excluded.fill_price,
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                (
-                    session_id,
-                    order.symbol,
-                    order.order_id,
-                    order.client_id,
-                    order.grid_index,
-                    order.side.value,
-                    order.price,
-                    order.qty,
-                    order.status.value,
-                    order.entry_price,
-                    order.created_at.isoformat(),
-                    order.filled_at.isoformat() if order.filled_at else None,
-                    order.fill_price,
-                ),
+            conn.executemany(
+                ORDER_UPSERT_SQL,
+                [_order_upsert_params(session_id, order) for order in orders],
             )
             conn.commit()
 

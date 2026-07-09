@@ -59,6 +59,25 @@ def test_database_init_persists_wal_for_new_connections(tmp_path) -> None:
     assert journal_mode == "wal"
 
 
+def test_database_connections_enable_runtime_pragmas_and_performance_indexes(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+
+    with connect(db_path) as conn:
+        session_indexes = {row["name"] for row in conn.execute("PRAGMA index_list(sessions)").fetchall()}
+        order_indexes = {row["name"] for row in conn.execute("PRAGMA index_list(orders)").fetchall()}
+        log_indexes = {row["name"] for row in conn.execute("PRAGMA index_list(system_logs)").fetchall()}
+
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
+        assert conn.execute("PRAGMA synchronous").fetchone()[0] == 1
+        assert "idx_sessions_active" in session_indexes
+        assert "idx_orders_session_status" in order_indexes
+        assert "idx_orders_status_session" in order_indexes
+        assert "idx_system_logs_level_id" in log_indexes
+        assert "idx_system_logs_module_id" in log_indexes
+
+
 def test_database_init_migrates_existing_sessions_with_volatility_columns(tmp_path) -> None:
     db_path = tmp_path / "quietgrid.db"
     with connect(db_path) as conn:
@@ -148,6 +167,70 @@ def test_dashboard_summary_counts_open_orders(tmp_path) -> None:
 
     assert summary["active_sessions"] == 1
     assert summary["open_orders"] == 1
+
+
+def test_repository_bulk_upserts_orders_in_one_call(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "AAPLUSDT", "RUNNING", 200, 10, now)
+
+    repo.upsert_orders(
+        session_id,
+        [
+            GridOrder(
+                symbol="AAPLUSDT",
+                order_id="order-1",
+                client_id="cid-1",
+                grid_index=1,
+                side=OrderSide.BUY,
+                price=100,
+                qty=0.5,
+                status=OrderStatus.OPEN,
+                created_at=now,
+            ),
+            GridOrder(
+                symbol="AAPLUSDT",
+                order_id="order-2",
+                client_id="cid-2",
+                grid_index=2,
+                side=OrderSide.SELL,
+                price=101,
+                qty=0.5,
+                status=OrderStatus.OPEN,
+                created_at=now,
+            ),
+        ],
+    )
+    repo.upsert_orders(
+        session_id,
+        [
+            GridOrder(
+                symbol="AAPLUSDT",
+                order_id="order-2-new",
+                client_id="cid-2",
+                grid_index=2,
+                side=OrderSide.SELL,
+                price=102,
+                qty=0.5,
+                status=OrderStatus.FILLED,
+                created_at=now,
+                filled_at=now,
+                fill_price=102,
+            )
+        ],
+    )
+
+    rows = sorted(repo.console_orders(session_id), key=lambda row: row["client_id"])
+
+    assert len(rows) == 2
+    assert rows[0]["order_id"] == "order-1"
+    assert rows[0]["status"] == "open"
+    assert rows[1]["order_id"] == "order-2-new"
+    assert rows[1]["status"] == "filled"
+    assert rows[1]["fill_price"] == 102
 
 
 def test_repository_persists_session_volatility_snapshot_and_current_value(tmp_path) -> None:

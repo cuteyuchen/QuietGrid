@@ -109,12 +109,17 @@ CREATE TABLE IF NOT EXISTS control_state (
 INDEX_SCHEMA_SQL = """
 CREATE INDEX IF NOT EXISTS idx_sessions_window ON sessions(window_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_symbol ON sessions(symbol);
+CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(close_time, state, id);
 CREATE INDEX IF NOT EXISTS idx_orders_session ON orders(session_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_session_status ON orders(session_id, status);
+CREATE INDEX IF NOT EXISTS idx_orders_status_session ON orders(status, session_id);
 CREATE INDEX IF NOT EXISTS idx_trades_session ON trades(session_id);
 CREATE INDEX IF NOT EXISTS idx_trades_time ON trades(trade_time);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_trades_session_order ON trades(session_id, order_id);
 CREATE INDEX IF NOT EXISTS idx_state_logs_session ON state_logs(session_id);
+CREATE INDEX IF NOT EXISTS idx_system_logs_level_id ON system_logs(level, id);
+CREATE INDEX IF NOT EXISTS idx_system_logs_module_id ON system_logs(module, id);
 """
 
 SCHEMA_SQL = TABLE_SCHEMA_SQL + "\n" + INDEX_SCHEMA_SQL
@@ -136,6 +141,10 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA temp_store = MEMORY")
     return conn
 
 

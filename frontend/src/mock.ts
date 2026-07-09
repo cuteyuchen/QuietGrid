@@ -29,6 +29,7 @@ export type GridSession = {
   nextEntryDisabled: boolean
   stopRequested: boolean
   stopRequestStatus: string
+  stopRequestType: string
 }
 
 export type ControlState = {
@@ -148,6 +149,7 @@ export const sessions: GridSession[] = [
     nextEntryDisabled: false,
     stopRequested: false,
     stopRequestStatus: '',
+    stopRequestType: '',
   },
   {
     id: 487,
@@ -166,6 +168,7 @@ export const sessions: GridSession[] = [
     nextEntryDisabled: false,
     stopRequested: false,
     stopRequestStatus: '',
+    stopRequestType: '',
   },
 ]
 

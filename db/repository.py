@@ -393,6 +393,7 @@ class Repository:
         reason: str,
         request_id: str,
         requested_at: datetime,
+        request_type: str = "stop",
     ) -> dict[str, Any]:
         requests = self.session_stop_requests(include_terminal=True)
         key = str(int(session_id))
@@ -401,6 +402,7 @@ class Repository:
             "symbol": str(symbol).strip().upper(),
             "reason": str(reason),
             "request_id": str(request_id),
+            "request_type": str(request_type).strip() or "stop",
             "status": "requested",
             "requested_at": requested_at.isoformat(),
             "updated_at": requested_at.isoformat(),
@@ -431,6 +433,7 @@ class Repository:
                 **raw_request,
                 "session_id": session_id,
                 "symbol": str(raw_request.get("symbol") or "").strip().upper(),
+                "request_type": str(raw_request.get("request_type") or "stop"),
                 "status": status or "requested",
             }
         return requests

@@ -261,6 +261,49 @@ def test_console_session_stop_records_request_and_snapshot(tmp_path) -> None:
     assert session["stop_request_status"] == "requested"
 
 
+def test_console_session_manual_close_records_request_and_snapshot(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "BTCUSDT", "RUNNING", 200, 10, now)
+    repo.upsert_order(
+        session_id,
+        GridOrder(
+            symbol="BTCUSDT",
+            order_id="order-1",
+            client_id="cid-1",
+            grid_index=1,
+            side=OrderSide.BUY,
+            price=100,
+            qty=0.5,
+            status=OrderStatus.OPEN,
+            created_at=now,
+        ),
+    )
+    client = TestClient(create_app(_test_config(db_path)))
+
+    response = client.post(
+        f"/api/actions/sessions/{session_id}/manual-close",
+        json={"confirm": True, "reason": "网页手动平仓", "request_id": "close-1"},
+    )
+    session = client.get("/api/sessions/active").json()["items"][0]
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"] == "session_manual_close"
+    assert body["label"] == "手动平仓"
+    assert body["result"]["before"]["open_orders"] == 1
+    assert body["result"]["position_confirmation"]["status"] == "queued"
+    pending = Repository(db_path).pending_session_stop_requests()[session_id]
+    assert pending["request_id"] == "close-1"
+    assert pending["request_type"] == "manual_close"
+    assert session["stop_requested"] is True
+    assert session["stop_request_status"] == "requested"
+    assert session["stop_request_type"] == "manual_close"
+
+
 def test_console_stop_all_sessions_records_requests(tmp_path) -> None:
     db_path = tmp_path / "quietgrid.db"
     init_db(db_path)

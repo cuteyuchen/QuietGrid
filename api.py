@@ -188,6 +188,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         _require_confirm(request)
         return _request_session_stop(repo, session_id, request)
 
+    @app.post("/api/actions/sessions/{session_id}/manual-close")
+    def action_manual_close_session(
+        session_id: int,
+        request: ConsoleActionRequest,
+        repo: Repository = Depends(get_repository),
+    ) -> dict[str, Any]:
+        _require_confirm(request)
+        return _request_session_manual_close(repo, session_id, request)
+
     @app.post("/api/actions/sessions/stop-all")
     def action_stop_all_sessions(
         request: ConsoleActionRequest,
@@ -481,24 +490,57 @@ def _set_symbol_next_entry_disabled(
 
 
 def _request_session_stop(repo: Repository, session_id: int, request: ConsoleActionRequest) -> dict[str, Any]:
+    return _request_session_close_control(
+        repo=repo,
+        session_id=session_id,
+        request=request,
+        action="session_stop",
+        label="停止单个网格",
+        request_type="stop",
+        queued_message="交易循环处理该请求时会撤单并尝试同步平仓，完成后会写入会话 close_reason 与审计日志。",
+        result_message_suffix="仓位确认等待交易循环处理。",
+    )
+
+
+def _request_session_manual_close(repo: Repository, session_id: int, request: ConsoleActionRequest) -> dict[str, Any]:
+    return _request_session_close_control(
+        repo=repo,
+        session_id=session_id,
+        request=request,
+        action="session_manual_close",
+        label="手动平仓",
+        request_type="manual_close",
+        queued_message="交易循环处理该请求时会立即撤销该会话挂单并同步平仓，完成后会写入手动平仓审计日志。",
+        result_message_suffix="手动平仓确认等待交易循环处理。",
+    )
+
+
+def _request_session_close_control(
+    repo: Repository,
+    session_id: int,
+    request: ConsoleActionRequest,
+    action: str,
+    label: str,
+    request_type: str,
+    queued_message: str,
+    result_message_suffix: str,
+) -> dict[str, Any]:
     from datetime import datetime, timezone
 
     row = repo.get_session(session_id)
     if row is None:
         raise HTTPException(status_code=404, detail="会话不存在。")
     if row.get("close_time") or str(row.get("state") or "").upper() == "STOPPED":
-        raise HTTPException(status_code=409, detail="会话已经停止，无需重复停止。")
+        raise HTTPException(status_code=409, detail="会话已经停止，无需重复提交控制动作。")
     request_id = request.request_id or str(uuid4())
     now = datetime.now(timezone.utc)
     before = _session_control_snapshot(repo, session_id)
-    action = "session_stop"
-    label = "停止单个网格"
     detail = _action_detail(
         action,
         label,
         request,
         request_id,
-        {"session_id": session_id, "symbol": row.get("symbol")},
+        {"session_id": session_id, "symbol": row.get("symbol"), "request_type": request_type},
     )
     repo.log_system("WARN", "console_action", "Console action requested.", _json_detail(detail), now)
     stop_request = repo.request_session_stop(
@@ -507,6 +549,7 @@ def _request_session_stop(repo: Repository, session_id: int, request: ConsoleAct
         reason=request.reason,
         request_id=request_id,
         requested_at=now,
+        request_type=request_type,
     )
     after = _session_control_snapshot(repo, session_id)
     result = {
@@ -516,7 +559,7 @@ def _request_session_stop(repo: Repository, session_id: int, request: ConsoleAct
         "position_confirmation": {
             "status": "queued",
             "status_label": "等待交易循环确认",
-            "message": "交易循环处理该请求时会撤单并尝试同步平仓，完成后会写入会话 close_reason 与审计日志。",
+            "message": queued_message,
         },
     }
     repo.log_system(
@@ -532,8 +575,8 @@ def _request_session_stop(repo: Repository, session_id: int, request: ConsoleAct
         "label": label,
         "request_id": request_id,
         "message": (
-            f"{row.get('symbol')} 停止请求已记录。"
-            f"开放订单 {before['open_orders']} -> {after['open_orders']}，仓位确认等待交易循环处理。"
+            f"{row.get('symbol')} {label}请求已记录。"
+            f"开放订单 {before['open_orders']} -> {after['open_orders']}，{result_message_suffix}"
         ),
         "control_state": _control_state_payload(repo),
         "result": result,
@@ -674,6 +717,7 @@ def _session_payload(
         "next_entry_disabled": symbol.upper() in (disabled_symbols or set()),
         "stop_requested": stop_request is not None,
         "stop_request_status": stop_request.get("status") if stop_request else "",
+        "stop_request_type": stop_request.get("request_type") if stop_request else "",
     }
 
 

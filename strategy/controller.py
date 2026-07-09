@@ -1277,13 +1277,18 @@ class TradingController:
         request: dict[str, Any],
         at: datetime,
     ) -> str:
-        reason = str(request.get("reason") or "控制台手动停止网格")
+        request_type = str(request.get("request_type") or "stop")
+        is_manual_close = request_type == "manual_close"
+        default_reason = "控制台手动平仓" if is_manual_close else "控制台手动停止网格"
+        action_label = "手动平仓" if is_manual_close else "手动停止网格"
+        reason = str(request.get("reason") or default_reason)
         request_id = str(request.get("request_id") or "")
         detail = json.dumps(
             {
                 "session_id": session.session_id,
                 "symbol": session.symbol,
                 "request_id": request_id,
+                "request_type": request_type,
                 "reason": reason,
             },
             ensure_ascii=False,
@@ -1291,11 +1296,11 @@ class TradingController:
         self.repository.log_system(
             "WARN",
             "console_action",
-            "Session stop request is being applied.",
+            "Session manual close request is being applied." if is_manual_close else "Session stop request is being applied.",
             detail,
             at,
         )
-        closed = await self._close_session(session, f"控制台手动停止网格：{reason}", at)
+        closed = await self._close_session(session, f"控制台{action_label}：{reason}", at)
         if closed:
             self.repository.update_session_stop_request(
                 session.session_id,
@@ -1306,18 +1311,18 @@ class TradingController:
             self.repository.log_system(
                 "INFO",
                 "console_action",
-                "Session stop request completed.",
+                "Session manual close request completed." if is_manual_close else "Session stop request completed.",
                 detail,
                 at,
             )
-            return "manual_stop"
+            return "manual_close" if is_manual_close else "manual_stop"
         self.repository.update_session_stop_request(
             session.session_id,
             "closing",
-            "停止请求已执行但清理未完成，下一轮继续重试。",
+            f"{action_label}请求已执行但清理未完成，下一轮继续重试。",
             at,
         )
-        return "manual_stop_pending"
+        return "manual_close_pending" if is_manual_close else "manual_stop_pending"
 
     async def _apply_risk_decision(self, session: SymbolSession, action: RiskAction, reason: str, at: datetime) -> None:
         if action in {RiskAction.FORCE_CLOSE, RiskAction.CLOSE}:

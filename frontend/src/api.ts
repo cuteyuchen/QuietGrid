@@ -43,6 +43,7 @@ type ApiSession = {
   next_entry_disabled: boolean
   stop_requested: boolean
   stop_request_status: string
+  stop_request_type: string
 }
 
 type ApiVerificationRow = {
@@ -104,6 +105,7 @@ export type ConsoleAction =
   | 'pause-new-entries'
   | 'resume-new-entries'
   | 'session-stop'
+  | 'session-manual-close'
   | 'all-sessions-stop'
   | 'symbol-disable-next-entry'
   | 'symbol-enable-next-entry'
@@ -210,6 +212,12 @@ function actionUrl(action: ConsoleAction, payload: ConsoleActionPayload): string
     }
     return `/api/actions/sessions/${payload.sessionId}/stop`
   }
+  if (action === 'session-manual-close') {
+    if (typeof payload.sessionId !== 'number') {
+      throw new Error('缺少会话编号，无法手动平仓')
+    }
+    return `/api/actions/sessions/${payload.sessionId}/manual-close`
+  }
   if (action === 'all-sessions-stop') {
     return '/api/actions/sessions/stop-all'
   }
@@ -302,6 +310,7 @@ function mapSession(value: ApiSession): GridSession {
     nextEntryDisabled: Boolean(value.next_entry_disabled),
     stopRequested: Boolean(value.stop_requested),
     stopRequestStatus: value.stop_request_status || '',
+    stopRequestType: value.stop_request_type || '',
   }
 }
 

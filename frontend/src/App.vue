@@ -117,11 +117,12 @@ function formatVolatilityMethod(value: string) {
   return volatilityLabels[value] ?? value
 }
 
-function formatStopRequestStatus(value: string) {
+function formatStopRequestStatus(value: string, requestType = '') {
+  const prefix = requestType === 'manual_close' ? '平仓' : '停止'
   const labels: Record<string, string> = {
-    requested: '停止请求已提交',
-    closing: '停止清理中',
-    completed: '停止已完成',
+    requested: `${prefix}请求已提交`,
+    closing: `${prefix}清理中`,
+    completed: `${prefix}已完成`,
   }
   return labels[value] ?? value
 }
@@ -229,6 +230,10 @@ function canStopSession(session: (typeof sessions.value)[number]) {
   return session.state !== 'STOPPED' && !session.stopRequested
 }
 
+function canManualCloseSession(session: (typeof sessions.value)[number]) {
+  return session.state !== 'STOPPED' && !session.stopRequested
+}
+
 function stopSessionAction(session: (typeof sessions.value)[number]): ActionConfig {
   return {
     action: 'session-stop',
@@ -237,6 +242,18 @@ function stopSessionAction(session: (typeof sessions.value)[number]): ActionConf
     title: `停止 ${session.symbol} 网格`,
     description: `将提交停止请求。交易循环下一轮会撤销 ${session.symbol} 挂单并尝试同步平仓，完成后会写入审计日志。`,
     buttonLabel: '确认停止',
+    tone: 'danger',
+  }
+}
+
+function manualCloseSessionAction(session: (typeof sessions.value)[number]): ActionConfig {
+  return {
+    action: 'session-manual-close',
+    sessionId: session.id,
+    symbol: session.symbol,
+    title: `手动平仓 ${session.symbol}`,
+    description: `将提交手动平仓请求。交易循环下一轮会撤销 ${session.symbol} 挂单并同步平仓，完成后会写入手动平仓审计日志。`,
+    buttonLabel: '确认平仓',
     tone: 'danger',
   }
 }
@@ -481,7 +498,16 @@ onMounted(() => {
                   @click="openAction(stopSessionAction(session))"
                 >
                   <Power :size="16" />
-                  {{ session.stopRequested ? formatStopRequestStatus(session.stopRequestStatus) : '停止' }}
+                  {{ session.stopRequested ? formatStopRequestStatus(session.stopRequestStatus, session.stopRequestType) : '停止' }}
+                </button>
+                <button
+                  class="compact-danger"
+                  type="button"
+                  :disabled="Boolean(actionBusy) || !canManualCloseSession(session)"
+                  @click="openAction(manualCloseSessionAction(session))"
+                >
+                  <Trash2 :size="16" />
+                  平仓
                 </button>
                 <button
                   class="compact-secondary"

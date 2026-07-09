@@ -322,6 +322,7 @@ def test_repository_persists_disabled_symbols_and_stop_requests(tmp_path) -> Non
     request = repo.request_session_stop(12, "ethusdt", "手动停止", "req-1", now)
 
     assert request["symbol"] == "ETHUSDT"
+    assert request["request_type"] == "stop"
     assert repo.pending_session_stop_requests()[12]["status"] == "requested"
 
     repo.update_session_stop_request(12, "completed", "已处理", now)
@@ -330,6 +331,10 @@ def test_repository_persists_disabled_symbols_and_stop_requests(tmp_path) -> Non
     stored = repo.session_stop_requests(include_terminal=True)["12"]
     assert stored["status"] == "completed"
     assert stored["detail"] == "已处理"
+
+    close_request = repo.request_session_stop(13, "btcusdt", "手动平仓", "close-1", now, request_type="manual_close")
+    assert close_request["request_type"] == "manual_close"
+    assert repo.pending_session_stop_requests()[13]["request_type"] == "manual_close"
 
 
 def test_repository_persists_strategy_config_draft(tmp_path) -> None:

@@ -562,6 +562,53 @@ def test_controller_poll_applies_session_stop_request(tmp_path) -> None:
     asyncio.run(run())
 
 
+def test_controller_poll_applies_session_manual_close_request(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+        await controller.run_once(now)
+        session = controller.active_sessions["AAPLUSDT"]
+        repo.request_session_stop(
+            session.session_id,
+            "AAPLUSDT",
+            "网页平仓",
+            "close-1",
+            now,
+            request_type="manual_close",
+        )
+
+        actions = await controller.poll_active_sessions_once(now + timedelta(seconds=10))
+
+        assert actions == [("AAPLUSDT", "manual_close")]
+        assert controller.active_sessions == {}
+        close_request = repo.session_stop_requests(include_terminal=True)[str(session.session_id)]
+        assert close_request["status"] == "completed"
+        assert close_request["request_type"] == "manual_close"
+        row = repo.get_session(session.session_id)
+        assert row is not None
+        assert row["state"] == "STOPPED"
+        assert row["close_reason"] == "控制台手动平仓：网页平仓"
+
+    asyncio.run(run())
+
+
 def test_controller_run_once_persists_volatility_snapshot(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"

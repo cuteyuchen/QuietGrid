@@ -445,12 +445,12 @@ button:disabled:hover {
 }
 
 .data-table {
-  min-width: 1080px;
+  min-width: 1260px;
 }
 
 .table-row {
   display: grid;
-  grid-template-columns: 1fr 0.8fr 1.55fr 1fr 1fr 0.9fr 1.65fr;
+  grid-template-columns: 1fr 0.8fr 1.55fr 1fr 1fr 0.9fr 2.45fr;
   gap: 12px;
   align-items: center;
   min-height: 56px;

@@ -150,6 +150,7 @@ const v2Dashboard = ref<V2DashboardData>({
   windowPnl: 0,
   windowLossBudget: 0,
   windowLossBudgetRemaining: 0,
+  windowStopCount: 0,
   activeSessions: 0,
   openOrders: 0,
   globalRiskLevel: 'LOW',
@@ -157,6 +158,16 @@ const v2Dashboard = ref<V2DashboardData>({
   latestRegime: null,
   latestInventory: null,
   latestRisk: null,
+  riskPolicy: {
+    effective_leverage_cap: 1,
+    max_session_loss_pct: 0,
+    max_weekend_loss_pct: 0,
+    max_symbol_inventory_pct: 0,
+    max_group_notional_pct: 0,
+    max_consecutive_session_losses: 0,
+    max_window_stop_count: 0,
+    block_risk_increase_hot_reload: true,
+  },
 })
 
 const activePageMeta = computed(() => pageDescriptions[activePage.value])
@@ -466,6 +477,7 @@ function componentProps() {
       }
     case 'settings':
       return {
+        accountId: selectedAccountId.value,
         config: strategyConfig.value,
         busy: strategyBusy.value,
         error: strategyError.value,

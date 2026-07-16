@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { AlertTriangle, RotateCcw, Save, ShieldCheck } from '@lucide/vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { AlertTriangle, LockKeyhole, RotateCcw, Save, ShieldCheck } from '@lucide/vue'
 import StatusBadge from '../components/StatusBadge.vue'
+import { loadV2ActiveConfig, type V2ActiveConfig } from '../api'
 import type { StrategyConfigData, StrategySettings } from '../mock'
 
 const props = defineProps<{
+  accountId: string
   config: StrategyConfigData
   busy: boolean
   error: string
@@ -15,6 +17,29 @@ const emit = defineEmits<{
 }>()
 
 const draft = ref<StrategySettings>({ ...props.config.draft })
+const activeConfig = ref<V2ActiveConfig | null>(null)
+const activeLoading = ref(false)
+const activeError = ref('')
+
+const sectionLabels: Record<string, string> = {
+  features: '功能开关',
+  risk: '风险预算',
+  regime: 'Regime 市场状态',
+  grid: '自适应网格',
+  inventory: '库存管理',
+  cooldown: '冷却与恢复',
+  costs: '成本模型',
+  timing: '时间窗口',
+  selection: '选币与流动性',
+}
+
+const policySections = computed(() => Object.entries(activeConfig.value?.sections || {})
+  .filter(([key]) => sectionLabels[key])
+  .map(([key, value]) => ({
+    key,
+    label: sectionLabels[key],
+    rows: flattenConfig(value),
+  })))
 
 watch(
   () => props.config.draft,
@@ -23,6 +48,40 @@ watch(
   },
   { deep: true },
 )
+watch(() => props.accountId, () => void loadActiveConfig())
+onMounted(() => void loadActiveConfig())
+
+async function loadActiveConfig() {
+  activeLoading.value = true
+  activeError.value = ''
+  try {
+    activeConfig.value = await loadV2ActiveConfig(props.accountId)
+  } catch (reason) {
+    activeConfig.value = null
+    activeError.value = reason instanceof Error ? reason.message : '无法读取 v2 激活配置'
+  } finally {
+    activeLoading.value = false
+  }
+}
+
+function flattenConfig(
+  value: Record<string, unknown>,
+  prefix = '',
+): Array<{ key: string; value: string }> {
+  const rows: Array<{ key: string; value: string }> = []
+  for (const [key, item] of Object.entries(value)) {
+    const path = prefix ? `${prefix}.${key}` : key
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      rows.push(...flattenConfig(item as Record<string, unknown>, path))
+    } else {
+      rows.push({
+        key: path,
+        value: Array.isArray(item) ? item.join(', ') : String(item ?? '—'),
+      })
+    }
+  }
+  return rows
+}
 
 function reset() {
   draft.value = { ...props.config.current }
@@ -149,6 +208,49 @@ function reset() {
         </label>
       </div>
     </details>
+
+    <section class="panel" aria-labelledby="active-policy-title">
+      <div class="panel__header">
+        <div>
+          <p class="eyebrow">V2 Active Policy</p>
+          <h2 id="active-policy-title">当前激活的完整策略政策</h2>
+          <p>Regime、风险、库存和冷却参数完整可见；控制台不会直接热修改这些高风险政策。</p>
+        </div>
+        <StatusBadge
+          :tone="activeError ? 'danger' : activeLoading ? 'warning' : 'good'"
+          :label="activeError ? '读取失败' : activeLoading ? '正在读取' : activeConfig?.version || '未加载'"
+        />
+      </div>
+      <div v-if="activeError" class="inline-alert inline-alert--danger">
+        <AlertTriangle :size="19" />{{ activeError }}
+      </div>
+      <div v-else class="policy-lock-note">
+        <LockKeyhole :size="20" />
+        <span>
+          <strong>高风险政策由版本化配置管理</strong>
+          修改应先回测、形成验证报告，再在新窗口激活；运行中的风险提高会被后端拒绝或延期。
+        </span>
+      </div>
+    </section>
+
+    <div class="policy-section-grid">
+      <details
+        v-for="(section, index) in policySections"
+        :key="section.key"
+        class="panel disclosure policy-section"
+        :open="index < 2"
+      >
+        <summary>
+          <span><strong>{{ section.label }}</strong><small>{{ section.rows.length }} 项激活参数</small></span>
+        </summary>
+        <dl class="policy-rows disclosure__content">
+          <div v-for="row in section.rows" :key="row.key">
+            <dt>{{ row.key }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+      </details>
+    </div>
 
     <section v-if="config.diff.length" class="panel" aria-labelledby="diff-title">
       <div class="panel__header">

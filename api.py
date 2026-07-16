@@ -455,6 +455,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         equity = float(account.get("balance") or 0.0)
         window_id = runtime.get("current_round_id")
         window_pnl = ctx.repo.window_realized_pnl(int(window_id)) if window_id else 0.0
+        window_stop_count = ctx.repo.window_stop_count(int(window_id)) if window_id else 0
         loss_budget = equity * float(risk_config.get("max_weekend_loss_pct", 0.0))
         return {
             "environment": "testnet" if ctx.config.binance_testnet else "live",
@@ -470,6 +471,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 loss_budget,
                 max(0.0, loss_budget + window_pnl),
             ),
+            "window_stop_count": window_stop_count,
             "active_sessions": int(summary_row.get("active_sessions") or 0),
             "open_orders": int(summary_row.get("open_orders") or 0),
             "global_risk_level": (
@@ -481,6 +483,32 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             "latest_regime": latest_regime,
             "latest_inventory": latest_inventory,
             "latest_risk": latest_risk,
+            "risk_policy": {
+                "effective_leverage_cap": float(
+                    risk_config.get("effective_leverage_cap", 1.0)
+                ),
+                "max_session_loss_pct": float(
+                    risk_config.get("max_session_loss_pct", 0.0)
+                ),
+                "max_weekend_loss_pct": float(
+                    risk_config.get("max_weekend_loss_pct", 0.0)
+                ),
+                "max_symbol_inventory_pct": float(
+                    risk_config.get("max_symbol_inventory_pct", 0.0)
+                ),
+                "max_group_notional_pct": float(
+                    risk_config.get("max_group_notional_pct", 0.0)
+                ),
+                "max_consecutive_session_losses": int(
+                    risk_config.get("max_consecutive_session_losses", 0)
+                ),
+                "max_window_stop_count": int(
+                    risk_config.get("max_window_stop_count", 0)
+                ),
+                "block_risk_increase_hot_reload": bool(
+                    risk_config.get("block_risk_increase_hot_reload", True)
+                ),
+            },
         }
 
     @app.get("/api/v2/regime/{symbol}")
@@ -1406,12 +1434,81 @@ def _v2_backtest_payload(
         report_path = Path(payload["report_path"])
         if report_path.is_file():
             try:
-                payload["report"] = json.loads(report_path.read_text(encoding="utf-8"))
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                payload["report"] = _normalize_backtest_report(
+                    report,
+                    payload["config"],
+                )
+                validation = (
+                    payload["report"].get("validation", {})
+                    if isinstance(payload["report"], dict)
+                    else {}
+                )
+                window_distribution = (
+                    validation.get("window_distribution", {})
+                    if isinstance(validation, dict)
+                    else {}
+                )
+                if isinstance(window_distribution, dict):
+                    payload["metrics"] = dict(payload["metrics"])
+                    payload["metrics"]["window_pnl_p05"] = window_distribution.get(
+                        "p05"
+                    )
+                    payload["metrics"]["window_positive_ratio"] = (
+                        window_distribution.get("positive_ratio")
+                    )
             except (OSError, json.JSONDecodeError):
                 payload["report"] = None
         else:
             payload["report"] = None
     return payload
+
+
+def _normalize_backtest_report(
+    report: Any,
+    run_config: dict[str, Any],
+) -> Any:
+    """Rebuild derived window PnL for reports created before the PnL-baseline fix."""
+    if not isinstance(report, dict):
+        return report
+    equity_curve = report.get("equity_curve")
+    validation = report.get("validation")
+    if (
+        not isinstance(equity_curve, list)
+        or not equity_curve
+        or not isinstance(validation, dict)
+    ):
+        return report
+    previous = validation.get("window_distribution")
+    previous = previous if isinstance(previous, dict) else {}
+    try:
+        window_rows = max(
+            1,
+            int(
+                previous.get("window_rows")
+                or run_config.get("window_distribution_rows")
+                or 60
+            ),
+        )
+        final_equity = float(equity_curve[-1].get("equity") or 0.0)
+        summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+        total_pnl = float(summary.get("total_pnl") or 0.0)
+        capital = float(run_config.get("capital") or 0.0)
+    except (TypeError, ValueError, AttributeError):
+        return report
+    pnl_distance = abs(final_equity - total_pnl)
+    capital_distance = abs(final_equity - (capital + total_pnl))
+    initial_equity = 0.0 if pnl_distance <= capital_distance else capital
+    normalized = _backtest_window_distribution(
+        equity_curve,
+        window_rows,
+        initial_equity,
+    )
+    normalized["normalization_basis"] = (
+        "PNL_BASELINE_ZERO" if initial_equity == 0 else "ACCOUNT_EQUITY"
+    )
+    validation["window_distribution"] = normalized
+    return report
 
 
 def _enqueue_v2_command(

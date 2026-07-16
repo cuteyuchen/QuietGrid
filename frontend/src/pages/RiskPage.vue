@@ -35,6 +35,16 @@ const inventoryPercent = computed(() => Math.max(
   Math.min(100, (props.dashboard.latestInventory?.utilization || 0) * 100),
 ))
 
+const sessionLossBudget = computed(
+  () => props.dashboard.equity * props.dashboard.riskPolicy.max_session_loss_pct,
+)
+const symbolInventoryCap = computed(
+  () => props.dashboard.equity * props.dashboard.riskPolicy.max_symbol_inventory_pct,
+)
+const groupNotionalCap = computed(
+  () => props.dashboard.equity * props.dashboard.riskPolicy.max_group_notional_pct,
+)
+
 const recoveryChecks = computed(() => [
   {
     label: '市场状态重新允许',
@@ -55,8 +65,17 @@ const recoveryChecks = computed(() => [
   },
   {
     label: '库存未达到高风险',
-    ok: inventoryPercent.value < 70,
-    detail: `利用率 ${inventoryPercent.value.toFixed(0)}%`,
+    ok: inventoryPercent.value < 70
+      && !['HIGH', 'CRITICAL'].includes((props.dashboard.latestInventory?.riskLevel || '').toUpperCase()),
+    detail: `利用率 ${inventoryPercent.value.toFixed(0)}% · ${props.dashboard.latestInventory?.riskLevel || '暂无库存'}`,
+  },
+  {
+    label: '窗口止损次数未熔断',
+    ok: props.dashboard.riskPolicy.max_window_stop_count <= 0
+      || props.dashboard.windowStopCount < props.dashboard.riskPolicy.max_window_stop_count,
+    detail: props.dashboard.riskPolicy.max_window_stop_count > 0
+      ? `${props.dashboard.windowStopCount} / ${props.dashboard.riskPolicy.max_window_stop_count}`
+      : '未配置次数上限',
   },
 ])
 
@@ -103,14 +122,27 @@ function money(value: number | null | undefined) {
           </div>
           <div class="budget-children">
             <div class="budget-node budget-node--child">
-              <span>当前会话</span>
-              <strong>{{ dashboard.latestRisk?.sessionId ? `#${dashboard.latestRisk.sessionId}` : '无' }}</strong>
-              <small>盈亏 {{ money(dashboard.latestRisk?.sessionPnl) }}</small>
+              <span>单会话损失预算</span>
+              <strong>{{ money(sessionLossBudget) }}</strong>
+              <small>
+                {{ dashboard.latestRisk?.sessionId ? `#${dashboard.latestRisk.sessionId}` : '暂无会话' }}
+                · 当前 {{ money(dashboard.latestRisk?.sessionPnl) }}
+              </small>
             </div>
             <div class="budget-node budget-node--child">
-              <span>库存占用</span>
-              <strong>{{ inventoryPercent.toFixed(0) }}%</strong>
-              <small>{{ dashboard.latestInventory?.riskLevel || '暂无库存' }}</small>
+              <span>单标的库存名义上限</span>
+              <strong>{{ money(symbolInventoryCap) }}</strong>
+              <small>当前利用率 {{ inventoryPercent.toFixed(0) }}%</small>
+            </div>
+            <div class="budget-node budget-node--child">
+              <span>相关性组名义上限</span>
+              <strong>{{ money(groupNotionalCap) }}</strong>
+              <small>按账户权益统一约束同类风险敞口</small>
+            </div>
+            <div class="budget-node budget-node--child">
+              <span>有效杠杆上限</span>
+              <strong>{{ dashboard.riskPolicy.effective_leverage_cap.toFixed(2) }}×</strong>
+              <small>运行中只允许维持或降低风险</small>
             </div>
           </div>
         </div>
@@ -146,6 +178,25 @@ function money(value: number | null | undefined) {
           <div><dt>本窗口盈亏</dt><dd>{{ money(dashboard.windowPnl) }}</dd></div>
           <div><dt>库存利用率</dt><dd>{{ inventoryPercent.toFixed(1) }}%</dd></div>
           <div><dt>新增风险</dt><dd>{{ control.newEntriesPaused ? '已暂停' : '允许评估' }}</dd></div>
+          <div>
+            <dt>窗口止损次数</dt>
+            <dd>
+              {{ dashboard.windowStopCount }}
+              / {{ dashboard.riskPolicy.max_window_stop_count || '∞' }}
+            </dd>
+          </div>
+          <div>
+            <dt>连续亏损上限</dt>
+            <dd>{{ dashboard.riskPolicy.max_consecutive_session_losses || '未配置' }}</dd>
+          </div>
+          <div>
+            <dt>周末预算比例</dt>
+            <dd>{{ (dashboard.riskPolicy.max_weekend_loss_pct * 100).toFixed(2) }}%</dd>
+          </div>
+          <div>
+            <dt>风险热更新</dt>
+            <dd>{{ dashboard.riskPolicy.block_risk_increase_hot_reload ? '禁止提高' : '允许' }}</dd>
+          </div>
         </dl>
       </section>
     </div>

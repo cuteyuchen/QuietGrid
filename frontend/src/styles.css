@@ -1996,6 +1996,74 @@ pre {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.policy-lock-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  color: var(--text-secondary);
+  background: var(--info-soft);
+  border: 1px solid rgba(97, 181, 244, 0.28);
+  border-radius: var(--radius-md);
+}
+
+.policy-lock-note svg {
+  flex: 0 0 auto;
+  color: var(--info);
+}
+
+.policy-lock-note span,
+.policy-lock-note strong {
+  display: block;
+}
+
+.policy-lock-note strong {
+  margin-bottom: 3px;
+  color: var(--text);
+}
+
+.policy-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.policy-section {
+  align-self: start;
+}
+
+.policy-rows {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.policy-rows > div {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.35fr) minmax(90px, 0.65fr);
+  gap: 14px;
+  padding: 10px 13px;
+  border-top: 1px solid var(--border);
+}
+
+.policy-rows > div:first-child {
+  border-top: 0;
+}
+
+.policy-rows dt {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.policy-rows dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-weight: 650;
+  text-align: right;
+}
+
 .diff-list {
   display: grid;
   gap: 1px;
@@ -2435,6 +2503,7 @@ pre {
   .budget-children,
   .recovery-grid,
   .risk-actions,
+  .policy-section-grid,
   .settings-grid,
   .backtest-form,
   .verification-grid,
@@ -2512,6 +2581,15 @@ pre {
   .diff-list > div {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+
+  .policy-rows > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .policy-rows dd {
+    text-align: left;
   }
 
   .settings-savebar > div:last-child {

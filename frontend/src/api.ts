@@ -124,6 +124,7 @@ type ApiV2Dashboard = {
   window_pnl: number
   window_loss_budget: number
   window_loss_budget_remaining: number
+  window_stop_count: number
   active_sessions: number
   open_orders: number
   global_risk_level: string
@@ -131,6 +132,18 @@ type ApiV2Dashboard = {
   latest_regime: ApiV2RegimeDecision | null
   latest_inventory: ApiV2InventorySnapshot | null
   latest_risk: ApiV2RiskSnapshot | null
+  risk_policy?: V2RiskPolicy
+}
+
+export type V2RiskPolicy = {
+  effective_leverage_cap: number
+  max_session_loss_pct: number
+  max_weekend_loss_pct: number
+  max_symbol_inventory_pct: number
+  max_group_notional_pct: number
+  max_consecutive_session_losses: number
+  max_window_stop_count: number
+  block_risk_increase_hot_reload: boolean
 }
 
 export type V2RegimeDecision = {
@@ -184,6 +197,7 @@ export type V2DashboardData = {
   windowPnl: number
   windowLossBudget: number
   windowLossBudgetRemaining: number
+  windowStopCount: number
   activeSessions: number
   openOrders: number
   globalRiskLevel: string
@@ -191,6 +205,14 @@ export type V2DashboardData = {
   latestRegime: V2RegimeDecision | null
   latestInventory: V2InventorySnapshot | null
   latestRisk: V2RiskSnapshot | null
+  riskPolicy: V2RiskPolicy
+}
+
+export type V2ActiveConfig = {
+  environment: string
+  accountId: string
+  version: string
+  sections: Record<string, Record<string, unknown>>
 }
 
 export type V2CommandType = 'pause' | 'resume' | 'close-session' | 'stop-all' | 'safety-sweep'
@@ -712,6 +734,7 @@ export async function loadV2Dashboard(accountId?: string): Promise<V2DashboardDa
     windowPnl: value.window_pnl,
     windowLossBudget: value.window_loss_budget,
     windowLossBudgetRemaining: value.window_loss_budget_remaining,
+    windowStopCount: value.window_stop_count,
     activeSessions: value.active_sessions,
     openOrders: value.open_orders,
     globalRiskLevel: value.global_risk_level,
@@ -719,6 +742,31 @@ export async function loadV2Dashboard(accountId?: string): Promise<V2DashboardDa
     latestRegime: value.latest_regime ? mapV2Regime(value.latest_regime) : null,
     latestInventory: value.latest_inventory ? mapV2Inventory(value.latest_inventory) : null,
     latestRisk: value.latest_risk ? mapV2Risk(value.latest_risk) : null,
+    riskPolicy: value.risk_policy || {
+      effective_leverage_cap: 1,
+      max_session_loss_pct: 0,
+      max_weekend_loss_pct: 0,
+      max_symbol_inventory_pct: 0,
+      max_group_notional_pct: 0,
+      max_consecutive_session_losses: 0,
+      max_window_stop_count: 0,
+      block_risk_increase_hot_reload: true,
+    },
+  }
+}
+
+export async function loadV2ActiveConfig(accountId?: string): Promise<V2ActiveConfig> {
+  const value = await fetchJson<{
+    environment: string
+    account_id: string
+    version: string
+    sections: Record<string, Record<string, unknown>>
+  }>(accountUrl('/api/v2/config/active', accountId))
+  return {
+    environment: value.environment,
+    accountId: value.account_id,
+    version: value.version,
+    sections: value.sections || {},
   }
 }
 

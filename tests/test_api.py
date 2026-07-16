@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -1218,7 +1219,16 @@ def test_v2_health_dashboard_and_active_config(tmp_path) -> None:
     config.raw.update(
         {
             "features": {"regime_v2": True, "inventory_manager": True},
-            "risk": {"max_weekend_loss_pct": 0.015},
+            "risk": {
+                "effective_leverage_cap": 1.25,
+                "max_session_loss_pct": 0.004,
+                "max_weekend_loss_pct": 0.015,
+                "max_symbol_inventory_pct": 0.30,
+                "max_group_notional_pct": 0.55,
+                "max_consecutive_session_losses": 2,
+                "max_window_stop_count": 3,
+                "block_risk_increase_hot_reload": True,
+            },
             "regime": {"enter_threshold": 75},
             "grid": {"min_grid_num": 6},
         }
@@ -1234,6 +1244,17 @@ def test_v2_health_dashboard_and_active_config(tmp_path) -> None:
     assert dashboard.status_code == 200
     assert dashboard.json()["global_risk_level"] == "LOW"
     assert dashboard.json()["data_health"] == "WAITING"
+    assert dashboard.json()["window_stop_count"] == 0
+    assert dashboard.json()["risk_policy"] == {
+        "effective_leverage_cap": 1.25,
+        "max_session_loss_pct": 0.004,
+        "max_weekend_loss_pct": 0.015,
+        "max_symbol_inventory_pct": 0.30,
+        "max_group_notional_pct": 0.55,
+        "max_consecutive_session_losses": 2,
+        "max_window_stop_count": 3,
+        "block_risk_increase_hot_reload": True,
+    }
     assert active_config.json()["sections"]["features"]["regime_v2"] is True
     assert "database" not in active_config.json()["sections"]
 
@@ -1354,6 +1375,28 @@ def test_v2_backtest_center_lists_datasets_runs_and_reports(tmp_path) -> None:
     assert listed[0]["run_id"] == run_id
     assert detail.status_code == 200
     assert detail.json()["report"]["summary"]["symbol"] == "BTCUSDT"
+
+    report_path = Path(body["report_path"])
+    legacy_report = json.loads(report_path.read_text(encoding="utf-8"))
+    legacy_report["validation"]["window_distribution"].update(
+        {
+            "p05": -200.63,
+            "p50": -200.63,
+            "p95": -200.63,
+            "worst": -200.63,
+            "best": -200.63,
+            "values": [-200.63],
+        }
+    )
+    report_path.write_text(
+        json.dumps(legacy_report, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    normalized = client.get(f"/api/v2/backtests/{run_id}").json()
+    distribution = normalized["report"]["validation"]["window_distribution"]
+    assert abs(distribution["p05"]) < 10
+    assert distribution["normalization_basis"] == "PNL_BASELINE_ZERO"
+    assert normalized["metrics"]["window_pnl_p05"] == distribution["p05"]
 
 
 def test_v2_backtest_rejects_dataset_path_traversal(tmp_path) -> None:

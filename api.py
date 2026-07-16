@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+from math import isfinite
 import platform
 import shlex
 from pathlib import Path
@@ -492,6 +493,17 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="暂无该标的的 Regime 决策。")
         return decision
 
+    @app.get("/api/v2/regime/{symbol}/history")
+    def v2_regime_history(
+        symbol: str,
+        limit: int = Query(1440, ge=1, le=5000),
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        return {
+            "symbol": symbol.strip().upper(),
+            "items": ctx.repo.regime_decision_history(symbol, limit),
+        }
+
     @app.get("/api/v2/sessions/{session_id}/grid")
     def v2_session_grid(
         session_id: int,
@@ -511,6 +523,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         return {
             "snapshot": snapshot,
             "lots": ctx.repo.inventory_lots(session_id),
+            "history": ctx.repo.inventory_snapshot_history(session_id),
         }
 
     @app.get("/api/v2/sessions/{session_id}/risk")
@@ -528,6 +541,60 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         ctx: AccountRequestContext = Depends(get_account_context),
     ) -> dict[str, Any]:
         return {"items": ctx.repo.session_events(session_id, limit=limit)}
+
+    @app.get("/api/v2/sessions/{session_id}/workspace")
+    async def v2_session_workspace(
+        session_id: int,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        session = ctx.repo.get_session(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="会话不存在。")
+        orders = ctx.repo.console_orders(session_id=session_id, limit=500)
+        trades = ctx.repo.console_trades(session_id=session_id, limit=500)
+        return {
+            "session": session,
+            "grid_plan": ctx.repo.latest_grid_plan(session_id),
+            "inventory": ctx.repo.latest_inventory_snapshot(session_id),
+            "inventory_lots": ctx.repo.inventory_lots(session_id),
+            "inventory_history": ctx.repo.inventory_snapshot_history(session_id),
+            "risk": ctx.repo.latest_risk_snapshot(session_id),
+            "events": ctx.repo.session_events(session_id, limit=1000),
+            "orders": [_order_payload(item) for item in orders],
+            "trades": [_trade_payload(item) for item in trades],
+        }
+
+    @app.get("/api/v2/sessions/{session_id}/order-reconciliation")
+    async def v2_session_order_reconciliation(
+        session_id: int,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        session = ctx.repo.get_session(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="会话不存在。")
+        local_orders = ctx.repo.console_orders(session_id=session_id, limit=500)
+        local_open = [
+            item
+            for item in local_orders
+            if str(item.get("status") or "").upper()
+            in {"OPEN", "NEW", "PARTIALLY_FILLED", "PENDING"}
+        ]
+        exchange_result = await _load_exchange_open_orders(
+            ctx.config,
+            str(session.get("symbol") or ""),
+        )
+        exchange_orders = exchange_result["items"]
+        differences = _order_reconciliation_differences(local_open, exchange_orders)
+        return {
+            "status": exchange_result["status"],
+            "error": exchange_result["error"],
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "symbol": str(session.get("symbol") or ""),
+            "local_orders": [_order_payload(item) for item in local_open],
+            "exchange_orders": exchange_orders,
+            "differences": differences,
+            "consistent": exchange_result["status"] == "ok" and not differences,
+        }
 
     @app.get("/api/v2/backtests/datasets")
     def v2_backtest_datasets(
@@ -1300,6 +1367,165 @@ async def _load_session_position(config: AppConfig, row: dict[str, Any]) -> dict
     finally:
         if exchange is not None:
             await exchange.close()
+
+
+async def _load_exchange_open_orders(
+    config: AppConfig,
+    symbol: str,
+) -> dict[str, Any]:
+    if not config.binance_api_key or not config.binance_api_secret:
+        return {
+            "status": "unconfigured",
+            "error": "当前账户未配置 Binance API 密钥。",
+            "items": [],
+        }
+    exchange = None
+    try:
+        exchange = await BinanceFuturesClient.create(
+            api_key=config.binance_api_key,
+            api_secret=config.binance_api_secret,
+            testnet=config.binance_testnet,
+            proxy_config=config.raw.get("proxy"),
+        )
+        rows = await exchange.get_open_orders(symbol)
+        return {
+            "status": "ok",
+            "error": "",
+            "items": [_exchange_order_payload(item) for item in rows],
+        }
+    except Exception as exc:
+        return {"status": "error", "error": str(exc), "items": []}
+    finally:
+        if exchange is not None:
+            await exchange.close()
+
+
+def _exchange_order_payload(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "order_id": str(
+            row.get("orderId")
+            or row.get("order_id")
+            or ""
+        ),
+        "client_id": str(
+            row.get("clientOrderId")
+            or row.get("origClientOrderId")
+            or row.get("client_id")
+            or ""
+        ),
+        "symbol": str(row.get("symbol") or ""),
+        "side": str(row.get("side") or "").upper(),
+        "price": _optional_float(row.get("price")),
+        "qty": _optional_float(
+            row.get("origQty")
+            if row.get("origQty") not in (None, "")
+            else row.get("qty")
+        ),
+        "executed_qty": _optional_float(row.get("executedQty")),
+        "status": str(row.get("status") or "OPEN").upper(),
+        "type": str(row.get("type") or ""),
+        "reduce_only": bool(row.get("reduceOnly", False)),
+        "update_time": row.get("updateTime") or row.get("time"),
+    }
+
+
+def _order_reconciliation_differences(
+    local_orders: list[dict[str, Any]],
+    exchange_orders: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    differences: list[dict[str, Any]] = []
+    unmatched_exchange = set(range(len(exchange_orders)))
+    for local in local_orders:
+        matched_index = next(
+            (
+                index
+                for index in unmatched_exchange
+                if _orders_refer_to_same_order(local, exchange_orders[index])
+            ),
+            None,
+        )
+        if matched_index is None:
+            differences.append(
+                {
+                    "type": "LOCAL_ONLY",
+                    "severity": "HIGH",
+                    "client_id": str(local.get("client_id") or ""),
+                    "order_id": str(local.get("order_id") or ""),
+                    "message": "本地认为订单仍未结束，但交易所开放订单中不存在。",
+                    "local": _order_payload(local),
+                    "exchange": None,
+                }
+            )
+            continue
+        unmatched_exchange.remove(matched_index)
+        exchange = exchange_orders[matched_index]
+        mismatches: list[str] = []
+        if str(local.get("side") or "").upper() != str(exchange.get("side") or "").upper():
+            mismatches.append("方向")
+        if not _numbers_close(local.get("price"), exchange.get("price")):
+            mismatches.append("价格")
+        if not _numbers_close(local.get("qty"), exchange.get("qty")):
+            mismatches.append("数量")
+        if mismatches:
+            differences.append(
+                {
+                    "type": "FIELD_MISMATCH",
+                    "severity": "HIGH",
+                    "client_id": str(local.get("client_id") or ""),
+                    "order_id": str(local.get("order_id") or ""),
+                    "message": f"本地与交易所订单字段不一致：{'、'.join(mismatches)}。",
+                    "local": _order_payload(local),
+                    "exchange": exchange,
+                }
+            )
+    for index in sorted(unmatched_exchange):
+        exchange = exchange_orders[index]
+        differences.append(
+            {
+                "type": "EXCHANGE_ONLY",
+                "severity": "CRITICAL",
+                "client_id": str(exchange.get("client_id") or ""),
+                "order_id": str(exchange.get("order_id") or ""),
+                "message": "交易所存在本地未跟踪的开放订单。",
+                "local": None,
+                "exchange": exchange,
+            }
+        )
+    return differences
+
+
+def _orders_refer_to_same_order(
+    local: dict[str, Any],
+    exchange: dict[str, Any],
+) -> bool:
+    local_client = str(local.get("client_id") or "")
+    exchange_client = str(exchange.get("client_id") or "")
+    if local_client and exchange_client and local_client == exchange_client:
+        return True
+    local_order = str(local.get("order_id") or "")
+    exchange_order = str(exchange.get("order_id") or "")
+    return bool(local_order and exchange_order and local_order == exchange_order)
+
+
+def _numbers_close(left: Any, right: Any) -> bool:
+    left_value = _optional_float(left)
+    right_value = _optional_float(right)
+    if left_value is None or right_value is None:
+        return left_value is right_value
+    return abs(left_value - right_value) <= max(
+        1e-9,
+        1e-8 * max(abs(left_value), abs(right_value)),
+    )
+
+
+def _optional_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if isfinite(number) else None
 
 
 def _readonly_environment_verification_rows(config: AppConfig, repo: Repository) -> list[dict[str, Any]]:

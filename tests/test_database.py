@@ -590,6 +590,7 @@ def test_v2_event_and_regime_snapshots_round_trip(tmp_path) -> None:
     assert regime is not None
     assert regime["allowed"] == 1
     assert regime["reasons"] == ["低波动"]
+    assert repo.regime_decision_history("BTCUSDT")[0]["grid_score"] == 88.0
 
 
 def test_v2_schema_is_idempotent_and_session_grid_metadata_is_persisted(tmp_path) -> None:

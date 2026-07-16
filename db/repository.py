@@ -1581,6 +1581,40 @@ class Repository:
                 "component_scores_json",
             )
 
+    def regime_decision_history(
+        self,
+        symbol: str,
+        limit: int = 1440,
+    ) -> list[dict[str, Any]]:
+        normalized_symbol = str(symbol).strip().upper()
+        if not normalized_symbol:
+            return []
+        capped_limit = max(1, min(int(limit), 5000))
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM (
+                    SELECT * FROM regime_decisions
+                    WHERE symbol = ?
+                    ORDER BY as_of_time DESC, id DESC
+                    LIMIT ?
+                )
+                ORDER BY as_of_time ASC, id ASC
+                """,
+                (normalized_symbol, capped_limit),
+            ).fetchall()
+            return [
+                _decoded_row(
+                    row,
+                    "reasons_json",
+                    "hard_blocks_json",
+                    "component_scores_json",
+                )
+                or {}
+                for row in rows
+            ]
+
     def latest_inventory_snapshot(self, session_id: int | None = None) -> dict[str, Any] | None:
         sql = "SELECT * FROM inventory_snapshots"
         params: tuple[Any, ...] = ()
@@ -1591,6 +1625,28 @@ class Repository:
         with connect(self.db_path) as conn:
             row = conn.execute(sql, params).fetchone()
             return dict(row) if row is not None else None
+
+    def inventory_snapshot_history(
+        self,
+        session_id: int,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        capped_limit = max(1, min(int(limit), 5000))
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM (
+                    SELECT * FROM inventory_snapshots
+                    WHERE session_id = ?
+                    ORDER BY as_of_time DESC, id DESC
+                    LIMIT ?
+                )
+                ORDER BY as_of_time ASC, id ASC
+                """,
+                (session_id, capped_limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def latest_grid_plan(self, session_id: int) -> dict[str, Any] | None:
         with connect(self.db_path) as conn:

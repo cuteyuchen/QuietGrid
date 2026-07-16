@@ -17,6 +17,7 @@ from db.repository import Repository
 class FakeConsoleExchange:
     def __init__(self) -> None:
         self.closed = False
+        self.open_orders: list[dict] = []
 
     async def get_account_summary(self) -> dict:
         return {
@@ -50,6 +51,13 @@ class FakeConsoleExchange:
         }
         bid, ask, qty = books[symbol]
         return {"bids": [[bid, qty]], "asks": [[ask, qty]]}
+
+    async def get_open_orders(self, symbol: str) -> list[dict]:
+        return [
+            item
+            for item in self.open_orders
+            if str(item.get("symbol") or symbol) == symbol
+        ]
 
     async def close(self) -> None:
         self.closed = True
@@ -1368,3 +1376,104 @@ def test_v2_backtest_rejects_dataset_path_traversal(tmp_path) -> None:
     )
 
     assert response.status_code == 400
+
+
+def test_v2_workspace_history_and_order_reconciliation(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "quietgrid-v2-workspace.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime.now(timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "BTCUSDT", "RUNNING", 100, 1, now)
+    feature_id = repo.create_feature_snapshot(
+        session_id=session_id,
+        symbol="BTCUSDT",
+        as_of_time=now,
+        source_time=now,
+        features={"volatility_expansion": 0.8},
+        feature_version="features-v2",
+    )
+    for index, score in enumerate((81.0, 86.0)):
+        repo.create_regime_decision(
+            session_id=session_id,
+            symbol="BTCUSDT",
+            as_of_time=now + timedelta(minutes=index),
+            state="QUIET_RANGE",
+            grid_score=score,
+            allowed=True,
+            reasons=["趋势弱"],
+            hard_blocks=[],
+            component_scores={"trend": score},
+            model_version="regime-v2",
+            feature_snapshot_id=feature_id,
+        )
+    repo.upsert_order(
+        session_id,
+        GridOrder(
+            symbol="BTCUSDT",
+            order_id="exchange-1",
+            client_id="grid-local-1",
+            grid_index=1,
+            side=OrderSide.BUY,
+            price=100,
+            qty=0.1,
+            status=OrderStatus.OPEN,
+            created_at=now,
+        ),
+    )
+    exchange = FakeConsoleExchange()
+    exchange.open_orders = [
+        {
+            "symbol": "BTCUSDT",
+            "orderId": "exchange-1",
+            "clientOrderId": "grid-local-1",
+            "side": "BUY",
+            "price": "100",
+            "origQty": "0.1",
+            "executedQty": "0",
+            "status": "NEW",
+            "type": "LIMIT",
+        },
+        {
+            "symbol": "BTCUSDT",
+            "orderId": "orphan-1",
+            "clientOrderId": "external-order",
+            "side": "SELL",
+            "price": "101",
+            "origQty": "0.2",
+            "executedQty": "0",
+            "status": "NEW",
+            "type": "LIMIT",
+        },
+    ]
+
+    async def fake_create(**kwargs):
+        return exchange
+
+    monkeypatch.setattr(api_module.BinanceFuturesClient, "create", fake_create)
+    client = TestClient(
+        create_app(
+            _test_config(
+                db_path,
+                api_key="key",
+                api_secret="secret",
+            )
+        )
+    )
+
+    history = client.get("/api/v2/regime/BTCUSDT/history")
+    workspace = client.get(f"/api/v2/sessions/{session_id}/workspace")
+    reconciliation = client.get(
+        f"/api/v2/sessions/{session_id}/order-reconciliation"
+    )
+
+    assert history.status_code == 200
+    assert [item["grid_score"] for item in history.json()["items"]] == [81.0, 86.0]
+    assert workspace.status_code == 200
+    assert workspace.json()["orders"][0]["client_id"] == "grid-local-1"
+    assert reconciliation.status_code == 200
+    body = reconciliation.json()
+    assert body["consistent"] is False
+    assert body["differences"][0]["type"] == "EXCHANGE_ONLY"
+    assert body["differences"][0]["client_id"] == "external-order"
+    assert exchange.closed is True

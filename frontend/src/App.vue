@@ -441,9 +441,17 @@ function componentProps() {
         dataError: dataError.value,
       }
     case 'market':
-      return { dashboard: v2Dashboard.value, candidates: liquidityCandidates.value }
+      return {
+        accountId: selectedAccountId.value,
+        dashboard: v2Dashboard.value,
+        candidates: liquidityCandidates.value,
+      }
     case 'sessions':
-      return { sessions: sessions.value, dashboard: v2Dashboard.value }
+      return {
+        accountId: selectedAccountId.value,
+        sessions: sessions.value,
+        dashboard: v2Dashboard.value,
+      }
     case 'risk':
       return { dashboard: v2Dashboard.value, control: controlState.value }
     case 'backtests':
@@ -451,7 +459,11 @@ function componentProps() {
     case 'replay':
       return { accountId: selectedAccountId.value, sessions: sessions.value }
     case 'records':
-      return { sessions: sessions.value, logs: auditLogs.value }
+      return {
+        accountId: selectedAccountId.value,
+        sessions: sessions.value,
+        logs: auditLogs.value,
+      }
     case 'settings':
       return {
         config: strategyConfig.value,

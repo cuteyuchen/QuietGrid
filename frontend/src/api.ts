@@ -210,6 +210,64 @@ export type V2SessionEvent = {
   payload: Record<string, unknown>
 }
 
+export type V2InventoryLot = {
+  id: number
+  side: string
+  entryPrice: number
+  qty: number
+  entryGridIndex: number | null
+  targetExitPrice: number | null
+  openedAt: string
+  status: string
+}
+
+export type V2GridPlan = {
+  symbol: string
+  asOfTime: string
+  center: number
+  lower: number
+  upper: number
+  stepPct: number
+  gridNum: number
+  prices: number[]
+  qtyWeights: number[]
+  costFloorPct: number
+  regimeScore: number | null
+  parameterVersion: string
+}
+
+export type V2SessionWorkspace = {
+  gridPlan: V2GridPlan | null
+  inventory: V2InventorySnapshot | null
+  inventoryLots: V2InventoryLot[]
+  inventoryHistory: V2InventorySnapshot[]
+  risk: V2RiskSnapshot | null
+  events: V2SessionEvent[]
+  orders: GridOrder[]
+  trades: GridTrade[]
+}
+
+export type V2OrderDifference = {
+  type: string
+  severity: string
+  clientId: string
+  orderId: string
+  message: string
+  local: Record<string, unknown> | null
+  exchange: Record<string, unknown> | null
+}
+
+export type V2OrderReconciliation = {
+  status: string
+  error: string
+  checkedAt: string
+  symbol: string
+  localOrders: GridOrder[]
+  exchangeOrders: Array<Record<string, unknown>>
+  differences: V2OrderDifference[]
+  consistent: boolean
+}
+
 export type V2BacktestDataset = {
   name: string
   relativePath: string
@@ -655,6 +713,100 @@ export async function loadV2SessionEvents(sessionId: number, accountId?: string)
   }))
 }
 
+export async function loadV2RegimeHistory(
+  symbol: string,
+  accountId?: string,
+): Promise<V2RegimeDecision[]> {
+  const value = await fetchJson<{ items: ApiV2RegimeDecision[] }>(
+    accountUrl(`/api/v2/regime/${encodeURIComponent(symbol)}/history?limit=1440`, accountId),
+  )
+  return value.items.map(mapV2Regime)
+}
+
+export async function loadV2SessionWorkspace(
+  sessionId: number,
+  accountId?: string,
+): Promise<V2SessionWorkspace> {
+  const value = await fetchJson<{
+    grid_plan: Record<string, unknown> | null
+    inventory: ApiV2InventorySnapshot | null
+    inventory_lots: Array<Record<string, unknown>>
+    inventory_history: ApiV2InventorySnapshot[]
+    risk: ApiV2RiskSnapshot | null
+    events: Array<{
+      id: number
+      event_type: string
+      aggregate_type: string
+      aggregate_id: string
+      event_time: string
+      available_time: string
+      payload: Record<string, unknown>
+    }>
+    orders: ApiOrder[]
+    trades: ApiTrade[]
+  }>(accountUrl(`/api/v2/sessions/${sessionId}/workspace`, accountId))
+  return {
+    gridPlan: value.grid_plan ? mapV2GridPlan(value.grid_plan) : null,
+    inventory: value.inventory ? mapV2Inventory(value.inventory) : null,
+    inventoryLots: value.inventory_lots.map(mapV2InventoryLot),
+    inventoryHistory: value.inventory_history.map(mapV2Inventory),
+    risk: value.risk ? mapV2Risk(value.risk) : null,
+    events: value.events.map((item) => ({
+      eventId: item.id,
+      eventType: item.event_type,
+      aggregateType: item.aggregate_type,
+      aggregateId: item.aggregate_id,
+      eventTime: item.event_time,
+      availableTime: item.available_time,
+      payload: item.payload || {},
+    })),
+    orders: value.orders.map(mapOrder),
+    trades: value.trades.map(mapTrade),
+  }
+}
+
+export async function loadV2OrderReconciliation(
+  sessionId: number,
+  accountId?: string,
+): Promise<V2OrderReconciliation> {
+  const value = await fetchJson<{
+    status: string
+    error: string
+    checked_at: string
+    symbol: string
+    local_orders: ApiOrder[]
+    exchange_orders: Array<Record<string, unknown>>
+    differences: Array<{
+      type: string
+      severity: string
+      client_id: string
+      order_id: string
+      message: string
+      local: Record<string, unknown> | null
+      exchange: Record<string, unknown> | null
+    }>
+    consistent: boolean
+  }>(accountUrl(`/api/v2/sessions/${sessionId}/order-reconciliation`, accountId))
+  return {
+    status: value.status,
+    error: value.error,
+    checkedAt: value.checked_at,
+    symbol: value.symbol,
+    localOrders: value.local_orders.map(mapOrder),
+    exchangeOrders: value.exchange_orders,
+    differences: value.differences.map((item) => ({
+      type: item.type,
+      severity: item.severity,
+      clientId: item.client_id,
+      orderId: item.order_id,
+      message: item.message,
+      local: item.local,
+      exchange: item.exchange,
+    })),
+    consistent: value.consistent,
+  }
+}
+
 export async function loadV2BacktestDatasets(accountId?: string): Promise<V2BacktestDataset[]> {
   const value = await fetchJson<{ items: Array<{
     name: string
@@ -764,6 +916,42 @@ function mapV2Risk(value: ApiV2RiskSnapshot): V2RiskSnapshot {
     inventoryUtilization: value.inventory_utilization,
     limits: value.limits || {},
     asOfTime: value.as_of_time,
+  }
+}
+
+function mapV2GridPlan(value: Record<string, unknown>): V2GridPlan {
+  return {
+    symbol: String(value.symbol || ''),
+    asOfTime: String(value.as_of_time || ''),
+    center: unknownNumber(value.center),
+    lower: unknownNumber(value.lower_price),
+    upper: unknownNumber(value.upper_price),
+    stepPct: unknownNumber(value.step_pct),
+    gridNum: Math.trunc(unknownNumber(value.grid_num)),
+    prices: Array.isArray(value.prices)
+      ? value.prices.map((item) => unknownNumber(item))
+      : [],
+    qtyWeights: Array.isArray(value.qty_weights)
+      ? value.qty_weights.map((item) => unknownNumber(item))
+      : [],
+    costFloorPct: unknownNumber(value.cost_floor_pct),
+    regimeScore: nullableUnknownNumber(value.regime_score),
+    parameterVersion: String(value.parameter_version || ''),
+  }
+}
+
+function mapV2InventoryLot(value: Record<string, unknown>): V2InventoryLot {
+  return {
+    id: Math.trunc(unknownNumber(value.id)),
+    side: String(value.side || ''),
+    entryPrice: unknownNumber(value.entry_price),
+    qty: unknownNumber(value.qty),
+    entryGridIndex: value.entry_grid_index == null
+      ? null
+      : Math.trunc(unknownNumber(value.entry_grid_index)),
+    targetExitPrice: nullableUnknownNumber(value.target_exit_price),
+    openedAt: String(value.opened_at || ''),
+    status: String(value.status || ''),
   }
 }
 
@@ -1360,6 +1548,10 @@ function nullableNumber(value: number | null | undefined): number | null {
 function nullableUnknownNumber(value: unknown): number | null {
   const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : Number.NaN
   return Number.isFinite(number) ? number : null
+}
+
+function unknownNumber(value: unknown): number {
+  return nullableUnknownNumber(value) ?? 0
 }
 
 function compactTime(value: string): string {

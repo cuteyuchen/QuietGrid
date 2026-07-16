@@ -1344,6 +1344,10 @@ def test_v2_backtest_center_lists_datasets_runs_and_reports(tmp_path) -> None:
     assert body["report"]["equity_curve"]
     assert body["report"]["validation"]["walk_forward"]["fold_count"] >= 1
     assert body["report"]["validation"]["monte_carlo"]["simulations"] in {0, 1000}
+    assert body["report"]["validation"]["cost_sensitivity"]["scenario_count"] == 5
+    assert body["report"]["validation"]["window_distribution"]["window_count"] >= 1
+    assert abs(body["report"]["validation"]["window_distribution"]["p05"]) < 10
+    assert body["report"]["metadata"]["sample_label"] == "DEVELOPMENT"
     run_id = body["run_id"]
     listed = client.get("/api/v2/backtests").json()["items"]
     detail = client.get(f"/api/v2/backtests/{run_id}")
@@ -1376,6 +1380,34 @@ def test_v2_backtest_rejects_dataset_path_traversal(tmp_path) -> None:
     )
 
     assert response.status_code == 400
+
+
+def test_v2_backtest_rejects_unfrozen_oos_label(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid-v2-backtest-oos.db"
+    dataset_root = tmp_path / "datasets"
+    dataset_root.mkdir()
+    (dataset_root / "sample.csv").write_text(
+        "timestamp,open,high,low,close\n"
+        "2026-01-01T00:00:00Z,100,101,99,100\n",
+        encoding="utf-8",
+    )
+    config = _test_config(db_path)
+    config.raw["backtest"] = {"dataset_dir": str(dataset_root)}
+    client = TestClient(create_app(config))
+
+    response = client.post(
+        "/api/v2/backtests",
+        json={
+            "dataset": "sample.csv",
+            "symbol": "BTCUSDT",
+            "observe_rows": 30,
+            "sample_label": "OOS_FROZEN",
+            "parameters_frozen": False,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "参数已经冻结" in response.json()["detail"]
 
 
 def test_v2_workspace_history_and_order_reconciliation(monkeypatch, tmp_path) -> None:

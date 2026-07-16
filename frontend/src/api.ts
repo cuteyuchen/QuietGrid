@@ -304,9 +304,12 @@ export type V2BacktestDetail = V2BacktestRun & {
       realized_pnl?: number
       unrealized_pnl?: number
       close?: number
+      gross_inventory_notional?: number
+      inventory_utilization?: number
     }>
     validation?: {
       sample_label?: string
+      parameters_frozen?: boolean
       warning?: string
       walk_forward?: {
         status?: string
@@ -328,6 +331,51 @@ export type V2BacktestDetail = V2BacktestRun & {
         max_drawdown_p99?: number
         loss_probability?: number
       }
+      cost_sensitivity?: {
+        status?: string
+        scenario_count?: number
+        worst_total_pnl?: number
+        error?: string
+        scenarios?: Array<{
+          key?: string
+          label?: string
+          total_pnl?: number
+          max_drawdown?: number
+          fills?: number
+          max_inventory_utilization?: number
+          stopped_reason?: string | null
+          pnl_delta_vs_baseline?: number
+        }>
+      }
+      window_distribution?: {
+        status?: string
+        window_rows?: number
+        window_count?: number
+        positive_ratio?: number
+        p05?: number
+        p50?: number
+        p95?: number
+        worst?: number
+        best?: number
+        values?: number[]
+      }
+      regime_diagnostics?: {
+        status?: string
+        reason?: string
+      }
+    }
+    metadata?: {
+      dataset?: string
+      sample_label?: string
+      parameters_frozen?: boolean
+      data_start?: string | null
+      data_end?: string | null
+      row_count?: number
+      observe_rows?: number
+      execution_rows?: number
+      fill_model?: string
+      code_commit?: string
+      run_config?: Record<string, unknown>
     }
   } | null
 }
@@ -340,6 +388,18 @@ export type V2BacktestRequest = {
   leverage: number
   makerFeeRate: number
   fillModel: string
+  makerFillProbability: number
+  maxFillsPerBar: number
+  takerFeeRate: number
+  stopSlippageBps: number
+  fundingRatePerBar: number
+  walkForwardTestRows: number
+  monteCarloSimulations: number
+  monteCarloMissingFillProbability: number
+  monteCarloLossMultiplier: number
+  distributionWindowRows: number
+  sampleLabel: string
+  parametersFrozen: boolean
 }
 
 type ApiLiquidityCandidate = {
@@ -859,6 +919,18 @@ export async function startV2Backtest(
       leverage: request.leverage,
       maker_fee_rate: request.makerFeeRate,
       fill_model: request.fillModel,
+      maker_fill_probability: request.makerFillProbability,
+      max_fills_per_bar: request.maxFillsPerBar,
+      taker_fee_rate: request.takerFeeRate,
+      stop_slippage_bps: request.stopSlippageBps,
+      funding_rate_per_bar: request.fundingRatePerBar,
+      walk_forward_test_rows: request.walkForwardTestRows,
+      monte_carlo_simulations: request.monteCarloSimulations,
+      monte_carlo_missing_fill_probability: request.monteCarloMissingFillProbability,
+      monte_carlo_loss_multiplier: request.monteCarloLossMultiplier,
+      distribution_window_rows: request.distributionWindowRows,
+      sample_label: request.sampleLabel,
+      parameters_frozen: request.parametersFrozen,
     }),
   })
   const body = await response.json() as Record<string, unknown> & { detail?: string }

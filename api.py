@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import json
 from math import isfinite
@@ -636,6 +636,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         request: V2BacktestRunRequest,
         ctx: AccountRequestContext = Depends(get_account_context),
     ) -> dict[str, Any]:
+        if request.sample_label == "OOS_FROZEN" and not request.parameters_frozen:
+            raise HTTPException(
+                status_code=422,
+                detail="标记为 OOS_FROZEN 前必须确认参数已经冻结。",
+            )
         dataset_path = _resolve_backtest_dataset(ctx.config, request.dataset)
         started_at = datetime.now(timezone.utc)
         run_id = f"bt_{uuid4().hex}"
@@ -796,6 +801,21 @@ class V2BacktestRunRequest(BaseModel):
     leverage: float = Field(default=1.0, ge=1.0, le=2.0)
     maker_fee_rate: float = Field(default=0.0, ge=0.0, le=0.01)
     fill_model: str = Field(default="L0_CONSERVATIVE", pattern=r"^L0_CONSERVATIVE$")
+    maker_fill_probability: float = Field(default=0.65, ge=0.0, le=1.0)
+    max_fills_per_bar: int = Field(default=2, ge=1, le=20)
+    taker_fee_rate: float = Field(default=0.0005, ge=0.0, le=0.02)
+    stop_slippage_bps: float = Field(default=10.0, ge=0.0, le=1000.0)
+    funding_rate_per_bar: float = Field(default=0.0, ge=-0.01, le=0.01)
+    walk_forward_test_rows: int = Field(default=12, ge=5, le=100000)
+    monte_carlo_simulations: int = Field(default=1000, ge=100, le=10000)
+    monte_carlo_missing_fill_probability: float = Field(default=0.10, ge=0.0, le=1.0)
+    monte_carlo_loss_multiplier: float = Field(default=1.25, ge=1.0, le=10.0)
+    distribution_window_rows: int = Field(default=60, ge=5, le=100000)
+    sample_label: str = Field(
+        default="DEVELOPMENT",
+        pattern=r"^(DEVELOPMENT|VALIDATION|OOS_FROZEN)$",
+    )
+    parameters_frozen: bool = False
 
 
 app = create_app()
@@ -883,21 +903,20 @@ def _execute_v2_backtest(
     raw.setdefault("backtest", {}).update(
         {
             "fill_model": request.fill_model,
-            "max_fills_per_bar": int(
-                raw.get("backtest", {}).get("max_fills_per_bar", 2)
-            ),
-            "maker_fill_probability": float(
-                raw.get("backtest", {}).get("maker_fill_probability", 0.65)
-            ),
+            "max_fills_per_bar": request.max_fills_per_bar,
+            "maker_fill_probability": request.maker_fill_probability,
             "fill_probability_seed": int(
                 raw.get("backtest", {}).get("fill_probability_seed", 17)
             ),
-            "taker_fee_rate": float(
-                raw.get("backtest", {}).get("taker_fee_rate", 0.0005)
+            "taker_fee_rate": request.taker_fee_rate,
+            "stop_slippage_bps": request.stop_slippage_bps,
+            "funding_rate_per_bar": request.funding_rate_per_bar,
+            "walk_forward_test_rows": request.walk_forward_test_rows,
+            "monte_carlo_simulations": request.monte_carlo_simulations,
+            "monte_carlo_missing_fill_probability": (
+                request.monte_carlo_missing_fill_probability
             ),
-            "stop_slippage_bps": float(
-                raw.get("backtest", {}).get("stop_slippage_bps", 10.0)
-            ),
+            "monte_carlo_loss_multiplier": request.monte_carlo_loss_multiplier,
         }
     )
     runtime_config = SimpleNamespace(raw=raw)
@@ -940,9 +959,7 @@ def _append_v2_backtest_validation(
 
     raw_backtest = runtime_config.raw.get("backtest", {})
     remaining = len(rows) - request.observe_rows
-    requested_test_rows = int(
-        raw_backtest.get("walk_forward_test_rows", 12)
-    )
+    requested_test_rows = request.walk_forward_test_rows
     test_rows = min(requested_test_rows, max(1, remaining // 2))
     walk_config = WalkForwardConfig(
         train_rows=request.observe_rows,
@@ -999,29 +1016,220 @@ def _append_v2_backtest_validation(
     monte_carlo = monte_carlo_resample(
         event_returns,
         MonteCarloConfig(
-            simulations=int(raw_backtest.get("monte_carlo_simulations", 1000)),
+            simulations=request.monte_carlo_simulations,
             seed=int(raw_backtest.get("monte_carlo_seed", 17)),
-            missing_positive_fill_probability=float(
-                raw_backtest.get("monte_carlo_missing_fill_probability", 0.10)
+            missing_positive_fill_probability=(
+                request.monte_carlo_missing_fill_probability
             ),
-            loss_multiplier=float(
-                raw_backtest.get("monte_carlo_loss_multiplier", 1.25)
-            ),
+            loss_multiplier=request.monte_carlo_loss_multiplier,
             cost_per_event=float(
                 raw_backtest.get("monte_carlo_cost_per_event", 0.0)
             ),
         ),
     )
+    cost_sensitivity = _backtest_cost_sensitivity(
+        rows,
+        request,
+        grid_config,
+        run_config,
+    )
+    window_distribution = _backtest_window_distribution(
+        report.get("equity_curve", []),
+        request.distribution_window_rows,
+        0.0,
+    )
     report["validation"] = {
         "walk_forward": walk_forward,
         "monte_carlo": monte_carlo,
-        "sample_label": "UNLABELED",
-        "warning": "只有冻结参数后从未参与调参的数据区间才可标记为样本外。",
+        "cost_sensitivity": cost_sensitivity,
+        "window_distribution": window_distribution,
+        "regime_diagnostics": {
+            "status": "NOT_AVAILABLE",
+            "reason": "当前 CSV 未包含历史盘口深度与点差，未伪造 Regime 过滤结果。",
+        },
+        "sample_label": request.sample_label,
+        "parameters_frozen": request.parameters_frozen,
+        "warning": (
+            "该报告已标记为冻结参数样本外结果；仍需确认数据此前未参与调参。"
+            if request.sample_label == "OOS_FROZEN"
+            else "当前结果不是冻结参数样本外证明；只有从未参与调参的数据区间才可标记为样本外。"
+        ),
+    }
+    report["metadata"] = {
+        "dataset": request.dataset,
+        "sample_label": request.sample_label,
+        "parameters_frozen": request.parameters_frozen,
+        "data_start": _backtest_row_time(rows[0]) if rows else None,
+        "data_end": _backtest_row_time(rows[-1]) if rows else None,
+        "row_count": len(rows),
+        "observe_rows": request.observe_rows,
+        "execution_rows": max(0, len(rows) - request.observe_rows),
+        "fill_model": request.fill_model,
+        "code_commit": _current_git_commit(),
+        "run_config": request.model_dump(),
     }
     report_path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
+
+
+def _backtest_cost_sensitivity(
+    rows: list[dict[str, Any]],
+    request: "V2BacktestRunRequest",
+    grid_config: Any,
+    base_config: Any,
+) -> dict[str, Any]:
+    from strategy.backtest import run_grid_backtest
+    from strategy.grid_calculator import calculate_grid_params
+
+    if len(rows) <= request.observe_rows:
+        return {"status": "FAILED", "error": "成本敏感性分析样本不足。", "scenarios": []}
+    train = rows[: request.observe_rows]
+    test = rows[request.observe_rows :]
+    try:
+        current_price = float(train[-1]["close"])
+        params = calculate_grid_params(
+            symbol=request.symbol.upper(),
+            klines=train,
+            current_price=current_price,
+            funding_rate=0.0,
+            config=grid_config,
+        )
+        scenarios = (
+            ("BASELINE", "基准", base_config),
+            (
+                "HIGHER_MAKER_FEE",
+                "Maker 费率 +2bp",
+                replace(
+                    base_config,
+                    maker_fee_rate=min(0.02, base_config.maker_fee_rate + 0.0002),
+                ),
+            ),
+            (
+                "LOWER_FILL_RATE",
+                "成交概率下降 20%",
+                replace(
+                    base_config,
+                    maker_fill_probability=max(
+                        0.0,
+                        base_config.maker_fill_probability * 0.8,
+                    ),
+                ),
+            ),
+            (
+                "DOUBLE_STOP_SLIPPAGE",
+                "止损滑点翻倍",
+                replace(
+                    base_config,
+                    stop_slippage_bps=max(
+                        base_config.stop_slippage_bps * 2,
+                        base_config.stop_slippage_bps + 5,
+                    ),
+                ),
+            ),
+            (
+                "COMBINED_ADVERSE",
+                "费用、漏单与滑点联合恶化",
+                replace(
+                    base_config,
+                    maker_fee_rate=min(0.02, base_config.maker_fee_rate + 0.0002),
+                    maker_fill_probability=max(
+                        0.0,
+                        base_config.maker_fill_probability * 0.75,
+                    ),
+                    stop_slippage_bps=max(
+                        base_config.stop_slippage_bps * 2,
+                        base_config.stop_slippage_bps + 5,
+                    ),
+                    funding_rate_per_bar=(
+                        base_config.funding_rate_per_bar * 2
+                        if base_config.funding_rate_per_bar
+                        else 0.000001
+                    ),
+                ),
+            ),
+        )
+        results = []
+        for key, label, scenario_config in scenarios:
+            result = run_grid_backtest(
+                params,
+                test,
+                current_price=current_price,
+                config=scenario_config,
+            )
+            results.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "total_pnl": result.total_pnl,
+                    "max_drawdown": result.max_drawdown,
+                    "fills": len(result.fills),
+                    "max_inventory_utilization": result.max_inventory_utilization,
+                    "stopped_reason": result.stopped_reason,
+                }
+            )
+        baseline_pnl = float(results[0]["total_pnl"])
+        for item in results:
+            item["pnl_delta_vs_baseline"] = float(item["total_pnl"]) - baseline_pnl
+        return {
+            "status": "COMPLETED",
+            "scenario_count": len(results),
+            "worst_total_pnl": min(float(item["total_pnl"]) for item in results),
+            "scenarios": results,
+        }
+    except Exception as exc:
+        return {"status": "FAILED", "error": str(exc), "scenarios": []}
+
+
+def _backtest_window_distribution(
+    equity_curve: Any,
+    window_rows: int,
+    initial_equity: float,
+) -> dict[str, Any]:
+    if not isinstance(equity_curve, list) or not equity_curve:
+        return {
+            "status": "EMPTY",
+            "window_rows": window_rows,
+            "window_count": 0,
+            "values": [],
+        }
+    values: list[float] = []
+    previous_equity = float(initial_equity)
+    for start in range(0, len(equity_curve), window_rows):
+        window = equity_curve[start : start + window_rows]
+        if not window:
+            continue
+        end_equity = float(window[-1].get("equity") or previous_equity)
+        values.append(end_equity - previous_equity)
+        previous_equity = end_equity
+    return {
+        "status": "COMPLETED",
+        "window_rows": window_rows,
+        "window_count": len(values),
+        "positive_ratio": (
+            sum(1 for value in values if value > 0) / len(values)
+            if values
+            else 0.0
+        ),
+        "p05": _numeric_quantile(values, 0.05),
+        "p50": _numeric_quantile(values, 0.50),
+        "p95": _numeric_quantile(values, 0.95),
+        "worst": min(values, default=0.0),
+        "best": max(values, default=0.0),
+        "values": values,
+    }
+
+
+def _numeric_quantile(values: list[float], probability: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * probability
+    lower = int(position)
+    upper = min(len(ordered) - 1, lower + 1)
+    fraction = position - lower
+    return ordered[lower] * (1 - fraction) + ordered[upper] * fraction
 
 
 def _v2_backtest_metrics(
@@ -1094,6 +1302,16 @@ def _v2_backtest_metrics(
         if isinstance(validation, dict)
         else {}
     )
+    sensitivity = (
+        validation.get("cost_sensitivity", {})
+        if isinstance(validation, dict)
+        else {}
+    )
+    window_distribution = (
+        validation.get("window_distribution", {})
+        if isinstance(validation, dict)
+        else {}
+    )
     if isinstance(walk_forward, dict):
         metrics.update(
             {
@@ -1115,6 +1333,19 @@ def _v2_backtest_metrics(
                 ),
                 "monte_carlo_drawdown_p99": monte_carlo.get(
                     "max_drawdown_p99"
+                ),
+            }
+        )
+    if isinstance(sensitivity, dict):
+        metrics["sensitivity_worst_total_pnl"] = sensitivity.get(
+            "worst_total_pnl"
+        )
+    if isinstance(window_distribution, dict):
+        metrics.update(
+            {
+                "window_pnl_p05": window_distribution.get("p05"),
+                "window_positive_ratio": window_distribution.get(
+                    "positive_ratio"
                 ),
             }
         )

@@ -5086,6 +5086,94 @@ def test_controller_poll_applies_runtime_maker_fee_limit_draft(tmp_path) -> None
     asyncio.run(run())
 
 
+def test_controller_runtime_draft_defers_risk_increases(tmp_path) -> None:
+    db_path = tmp_path / "controller.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    controller = TradingController(
+        exchange=MockExchangeClient(),
+        scheduler=FakeScheduler(),  # type: ignore[arg-type]
+        repository=repo,
+        selector_config=SelectionConfig(max_concurrent=1),
+        observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+        grid_config=GridConfig(),
+        controller_config=ControllerConfig(
+            capital_per_symbol=200,
+            leverage=1,
+            max_concurrent=1,
+            take_profit_usdt=10,
+            total_capital_limit=1000,
+            max_maker_fee_rate=0,
+        ),
+    )
+    at = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+    repo.set_strategy_config_draft(
+        {
+            "capital_per_symbol": 400,
+            "leverage": 2,
+            "max_concurrent": 3,
+            "take_profit_usdt": 20,
+            "total_capital_limit": 2000,
+            "max_maker_fee_rate": 0.001,
+        },
+        at,
+    )
+
+    controller._apply_runtime_config_draft(at)
+
+    assert controller.config.capital_per_symbol == 200
+    assert controller.config.leverage == 1
+    assert controller.config.max_concurrent == 1
+    assert controller.config.take_profit_usdt == 10
+    assert controller.config.total_capital_limit == 1000
+    assert controller.config.max_maker_fee_rate == 0
+    log = repo.recent_rows("system_logs", limit=1)[0]
+    assert log["message"] == "Risk-increasing runtime config changes were deferred."
+
+
+def test_controller_runtime_draft_applies_risk_reductions(tmp_path) -> None:
+    db_path = tmp_path / "controller.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    controller = TradingController(
+        exchange=MockExchangeClient(),
+        scheduler=FakeScheduler(),  # type: ignore[arg-type]
+        repository=repo,
+        selector_config=SelectionConfig(max_concurrent=3),
+        observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+        grid_config=GridConfig(),
+        controller_config=ControllerConfig(
+            capital_per_symbol=300,
+            leverage=3,
+            max_concurrent=3,
+            take_profit_usdt=20,
+            total_capital_limit=2000,
+            max_maker_fee_rate=0.001,
+        ),
+    )
+    at = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+    repo.set_strategy_config_draft(
+        {
+            "capital_per_symbol": 200,
+            "leverage": 1,
+            "max_concurrent": 1,
+            "take_profit_usdt": 10,
+            "total_capital_limit": 1000,
+            "max_maker_fee_rate": 0,
+        },
+        at,
+    )
+
+    controller._apply_runtime_config_draft(at)
+
+    assert controller.config.capital_per_symbol == 200
+    assert controller.config.leverage == 1
+    assert controller.config.max_concurrent == 1
+    assert controller.config.take_profit_usdt == 10
+    assert controller.config.total_capital_limit == 1000
+    assert controller.config.max_maker_fee_rate == 0
+
+
 def test_controller_marks_session_closing_before_force_close_io(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller-closing-before-io.db"

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from core.models import GridParams
-from strategy.backtest import BacktestConfig, run_grid_backtest
+from strategy.backtest import BacktestConfig, LookAheadViolation, run_grid_backtest
 
 
 def _params() -> GridParams:
@@ -142,3 +142,115 @@ def test_backtest_rejects_invalid_inputs() -> None:
             assert expected in str(exc)
         else:
             raise AssertionError("invalid backtest input should be rejected")
+
+
+def test_conservative_fill_requires_price_to_cross_one_tick() -> None:
+    exact_touch = run_grid_backtest(
+        _params(),
+        [{"high": 101.0, "low": 99.0, "close": 100.0}],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            maker_fill_probability=1,
+        ),
+    )
+    crossed = run_grid_backtest(
+        _params(),
+        [{"high": 100.0, "low": 98.98, "close": 99.5}],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            maker_fill_probability=1,
+            stop_on_range_break=False,
+        ),
+    )
+
+    assert exact_touch.fills == []
+    assert [fill.side for fill in crossed.fills] == ["BUY"]
+
+
+def test_conservative_fill_model_caps_fills_and_reports_rejections() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [{"high": 102.0, "low": 98.0, "close": 100.0}],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=200,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            max_fills_per_bar=1,
+            maker_fill_probability=1,
+            stop_on_range_break=False,
+            stop_on_stop_loss=False,
+        ),
+    )
+
+    assert result.attempted_fill_count == 2
+    assert len(result.fills) == 1
+    assert result.rejected_fill_count == 1
+    assert result.max_inventory_utilization > 0
+
+
+def test_conservative_stop_liquidates_inventory_with_slippage_and_taker_fee() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 100.2, "low": 98.98, "close": 99.5},
+            {"high": 99.0, "low": 97.5, "close": 98.0},
+        ],
+        current_price=101.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            maker_fill_probability=1,
+            max_fills_per_bar=1,
+            taker_fee_rate=0.001,
+            stop_slippage_bps=10,
+            stop_on_range_break=False,
+        ),
+    )
+
+    assert len(result.fills) == 1
+    assert result.stopped_reason == "stop_loss"
+    assert result.stopped_at_price is not None
+    assert result.stopped_at_price < 98.0
+    assert result.stop_exit_pnl < 0
+    assert result.stop_exit_cost > 0
+    assert result.net_position_qty == 0
+    assert result.unrealized_pnl == 0
+
+
+def test_backtest_rejects_future_available_data_and_reverse_time() -> None:
+    future_row = {
+        "high": 100.0,
+        "low": 99.0,
+        "close": 99.5,
+        "event_time": "2026-07-01T00:00:00Z",
+        "available_time": "2026-07-01T00:01:00Z",
+    }
+    try:
+        run_grid_backtest(_params(), [future_row], 101.0)
+    except LookAheadViolation as exc:
+        assert "之后才可获得" in str(exc)
+    else:
+        raise AssertionError("future data must invalidate the backtest")
+
+    reverse_rows = [
+        {"high": 100.0, "low": 99.0, "close": 99.5, "timestamp": "2026-07-01T00:02:00Z"},
+        {"high": 100.0, "low": 99.0, "close": 99.5, "timestamp": "2026-07-01T00:01:00Z"},
+    ]
+    try:
+        run_grid_backtest(_params(), reverse_rows, 101.0)
+    except LookAheadViolation as exc:
+        assert "倒序" in str(exc)
+    else:
+        raise AssertionError("reverse event time must invalidate the backtest")

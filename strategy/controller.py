@@ -49,6 +49,7 @@ class ControllerConfig:
     max_symbol_inventory_pct: float = 0.10
     max_consecutive_session_losses: int = 0
     max_window_stop_count: int = 0
+    block_risk_increase_hot_reload: bool = True
 
 
 @dataclass(frozen=True)
@@ -155,6 +156,7 @@ class TradingController:
         self._maker_fee_checked_at: datetime | None = None
         self._runtime_config_signature = self._runtime_config_signature_from_config(controller_config)
         self._runtime_config_error_signature: str | None = None
+        self._runtime_config_deferred_signature: str | None = None
 
     async def validate_startup(self, at: datetime | None = None) -> StartupCheck:
         current_time = at or datetime.now(timezone.utc)
@@ -1060,6 +1062,22 @@ class TradingController:
                 at,
             )
             return self.observer.observer_config, self.grid_config, self.config.max_concurrent
+        if self.config.block_risk_increase_hot_reload:
+            max_concurrent = min(max_concurrent, self.config.max_concurrent)
+            min_step_pct = max(min_step_pct, self.grid_config.min_step_pct)
+            min_tradable_range_pct = max(
+                min_tradable_range_pct,
+                self.grid_config.min_tradable_range_pct,
+            )
+            max_grid_num = min(max_grid_num, self.grid_config.max_grid_num)
+            stop_buffer_pct = min(
+                stop_buffer_pct,
+                self.grid_config.stop_buffer_pct,
+            )
+            safety_multiplier = min(
+                safety_multiplier,
+                self.grid_config.safety_multiplier,
+            )
         return (
             replace(self.observer.observer_config, observe_hours=observe_hours, kline_interval=kline_interval),
             replace(
@@ -1130,6 +1148,70 @@ class TradingController:
                     at,
                 )
             return
+
+        requested = {
+            "capital_per_symbol": capital_per_symbol,
+            "leverage": leverage,
+            "max_concurrent": max_concurrent,
+            "take_profit_usdt": take_profit_usdt,
+            "total_capital_limit": total_capital_limit,
+            "max_maker_fee_rate": max_maker_fee_rate,
+        }
+        deferred: dict[str, dict[str, float | int]] = {}
+        if self.config.block_risk_increase_hot_reload:
+            safe_values = {
+                "capital_per_symbol": min(
+                    capital_per_symbol,
+                    self.config.capital_per_symbol,
+                ),
+                "leverage": min(leverage, self.config.leverage),
+                "max_concurrent": min(
+                    max_concurrent,
+                    self.config.max_concurrent,
+                ),
+                "take_profit_usdt": min(
+                    take_profit_usdt,
+                    self.config.take_profit_usdt,
+                ),
+                "total_capital_limit": min(
+                    total_capital_limit,
+                    self.config.total_capital_limit,
+                ),
+                "max_maker_fee_rate": min(
+                    max_maker_fee_rate,
+                    self.config.max_maker_fee_rate,
+                ),
+            }
+            for key, requested_value in requested.items():
+                safe_value = safe_values[key]
+                if requested_value > safe_value:
+                    deferred[key] = {
+                        "requested": requested_value,
+                        "active": safe_value,
+                    }
+            capital_per_symbol = float(safe_values["capital_per_symbol"])
+            leverage = int(safe_values["leverage"])
+            max_concurrent = int(safe_values["max_concurrent"])
+            take_profit_usdt = float(safe_values["take_profit_usdt"])
+            total_capital_limit = float(safe_values["total_capital_limit"])
+            max_maker_fee_rate = float(safe_values["max_maker_fee_rate"])
+        if deferred:
+            deferred_signature = json.dumps(
+                deferred,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            if deferred_signature != self._runtime_config_deferred_signature:
+                self._runtime_config_deferred_signature = deferred_signature
+                self.repository.log_system(
+                    "WARN",
+                    "controller",
+                    "Risk-increasing runtime config changes were deferred.",
+                    deferred_signature,
+                    at,
+                )
+        else:
+            self._runtime_config_deferred_signature = None
 
         next_config = replace(
             self.config,
@@ -2650,11 +2732,18 @@ class TradingController:
     async def _try_recover_from_cooldown(self, session: SymbolSession, at: datetime) -> bool:
         if session.params is None or session.state_entered_at is None:
             return False
+        recovery_kline_limit = max(
+            self.cooldown.config.calm_window_minutes,
+            self.regime.config.long_window + 2
+            if (self.feature_flags.regime_v2 or self.feature_flags.adaptive_grid_v2)
+            else 0,
+        )
         klines = await self.exchange.get_klines(
             session.symbol,
             self.observer.observer_config.kline_interval,
-            self.cooldown.config.calm_window_minutes,
+            recovery_kline_limit,
         )
+        klines = _closed_klines_as_of(klines, at)
         decision = self.cooldown.evaluate(
             klines,
             baseline_atr=session.params.baseline_atr,
@@ -2663,6 +2752,159 @@ class TradingController:
             now=at,
         )
         if not decision.can_reobserve:
+            return False
+
+        try:
+            position, open_orders = await asyncio.gather(
+                self.exchange.get_position(session.symbol),
+                self.exchange.get_open_orders(session.symbol),
+            )
+            tolerance = await self._position_tolerance(session.symbol)
+            if _position_exposure(position) > tolerance:
+                self.repository.log_system(
+                    "WARN",
+                    "cooldown",
+                    "Cooldown recovery blocked because exchange position is not flat.",
+                    json.dumps(
+                        {
+                            "session_id": session.session_id,
+                            "symbol": session.symbol,
+                            "position": _position_log_fields(position),
+                            "tolerance": tolerance,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    at,
+                )
+                return False
+            if open_orders:
+                self.repository.log_system(
+                    "WARN",
+                    "cooldown",
+                    "Cooldown recovery blocked because exchange orders remain open.",
+                    json.dumps(
+                        {
+                            "session_id": session.session_id,
+                            "symbol": session.symbol,
+                            "open_order_count": len(open_orders),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    at,
+                )
+                return False
+        except Exception as exc:
+            self.repository.log_system(
+                "WARN",
+                "cooldown",
+                "Cooldown recovery preflight failed; recovery remains blocked.",
+                f"session_id={session.session_id}, symbol={session.symbol}, error={exc}",
+                at,
+            )
+            return False
+
+        regime_decision: RegimeDecision | None = None
+        funding_rate = 0.0
+        if self.feature_flags.regime_v2 or self.feature_flags.adaptive_grid_v2:
+            try:
+                orderbook, funding_rate = await asyncio.gather(
+                    self.exchange.get_orderbook_depth(
+                        session.symbol,
+                        self.selector.config.depth_levels,
+                    ),
+                    self.exchange.get_funding_rate(session.symbol),
+                )
+                spread_pct, depth_usdt = _orderbook_liquidity(
+                    orderbook,
+                    self.selector.config.depth_levels,
+                )
+                if self.feature_flags.regime_v2:
+                    maker_fee_rate = self._last_maker_fee_by_symbol.get(
+                        session.symbol,
+                        self.config.max_maker_fee_rate,
+                    )
+                    cost_floor_pct = (
+                        max(0.0, maker_fee_rate) * 2
+                        + abs(float(funding_rate))
+                        + self.adaptive_grid.config.adverse_selection_buffer_pct
+                        + self.adaptive_grid.config.slippage_buffer_pct
+                        + self.adaptive_grid.config.safety_margin_pct
+                    )
+                    regime_decision = self.regime.evaluate(
+                        session.symbol,
+                        klines,
+                        spread_pct=spread_pct,
+                        depth_usdt=depth_usdt,
+                        funding_rate=float(funding_rate),
+                        data_age_seconds=_kline_data_age_seconds(klines, at),
+                        expected_step_pct=max(self.grid_config.min_step_pct, cost_floor_pct),
+                        cost_floor_pct=cost_floor_pct,
+                        running=False,
+                        as_of=at,
+                    )
+                    self._regime_by_symbol[session.symbol] = regime_decision
+                    feature_snapshot_id = self.repository.create_feature_snapshot(
+                        session_id=session.session_id,
+                        symbol=session.symbol,
+                        as_of_time=regime_decision.as_of,
+                        source_time=at,
+                        features=asdict(regime_decision.features),
+                        feature_version=REGIME_MODEL_VERSION,
+                    )
+                    self.repository.create_regime_decision(
+                        session_id=session.session_id,
+                        symbol=session.symbol,
+                        as_of_time=regime_decision.as_of,
+                        state=regime_decision.state,
+                        grid_score=regime_decision.grid_score,
+                        allowed=regime_decision.allowed,
+                        reasons=regime_decision.reasons,
+                        hard_blocks=regime_decision.hard_blocks,
+                        component_scores=regime_decision.component_scores,
+                        model_version=regime_decision.model_version,
+                        feature_snapshot_id=feature_snapshot_id,
+                    )
+            except Exception as exc:
+                self.repository.log_system(
+                    "WARN",
+                    "cooldown",
+                    "Cooldown recovery market preflight failed; recovery remains blocked.",
+                    f"session_id={session.session_id}, symbol={session.symbol}, error={exc}",
+                    at,
+                )
+                return False
+
+        window_pnl = self.repository.window_realized_pnl(self.current_window_id)
+        window_stop_count = self.repository.window_stop_count(self.current_window_id)
+        other_sessions = [
+            item
+            for item in self.active_sessions.values()
+            if item.session_id != session.session_id
+        ]
+        entry_risk = self.risk.can_open_new_symbol(
+            other_sessions,
+            session.capital,
+            regime_allowed=regime_decision.allowed if regime_decision is not None else True,
+            account_equity=self._account_equity or self.config.total_capital_limit,
+            window_pnl=window_pnl,
+            window_stop_count=window_stop_count,
+        )
+        if entry_risk.action != RiskAction.NONE:
+            self.repository.create_risk_snapshot(
+                as_of_time=at,
+                scope="SESSION",
+                scope_id=str(session.session_id),
+                action=entry_risk.action.value,
+                reason=entry_risk.reason,
+                priority=entry_risk.priority,
+                metrics={
+                    "phase": "cooldown_recovery",
+                    "window_pnl": window_pnl,
+                    "window_stop_count": window_stop_count,
+                },
+                session_id=session.session_id,
+                symbol=session.symbol,
+            )
             return False
 
         old_state = session.state
@@ -2682,7 +2924,24 @@ class TradingController:
 
         current_price = await self._current_price(session.symbol)
         try:
-            params = await self.observer.collect_and_calculate(session.symbol, current_price)
+            if self.feature_flags.adaptive_grid_v2:
+                params = self.adaptive_grid.generate(
+                    session.symbol,
+                    klines,
+                    current_price=current_price,
+                    funding_rate=float(funding_rate),
+                    maker_fee_rate=self._last_maker_fee_by_symbol.get(
+                        session.symbol,
+                        self.config.max_maker_fee_rate,
+                    ),
+                    regime_score=regime_decision.grid_score if regime_decision else 100.0,
+                    calculated_at=at,
+                )
+            else:
+                params = await self.observer.collect_and_calculate(
+                    session.symbol,
+                    current_price,
+                )
             session.params = params
             session.orders.clear()
             self._persist_session_grid(session.session_id, params)
@@ -3283,6 +3542,74 @@ def _position_hedge_qty(position: dict[str, Any]) -> tuple[float, float]:
     long_qty = _non_negative_float(position.get("long_qty", 0.0), "long_qty")
     short_qty = _non_negative_float(position.get("short_qty", 0.0), "short_qty")
     return long_qty, short_qty
+
+
+def _position_exposure(position: dict[str, Any]) -> float:
+    if _has_hedge_position_fields(position):
+        long_qty, short_qty = _position_hedge_qty(position)
+        return long_qty + short_qty
+    return abs(_position_qty(position))
+
+
+def _closed_klines_as_of(
+    klines: list[dict[str, Any]],
+    at: datetime,
+) -> list[dict[str, Any]]:
+    cutoff_ms = at.timestamp() * 1000
+    closed: list[dict[str, Any]] = []
+    for row in klines:
+        close_time = row.get("close_time")
+        if close_time in (None, ""):
+            closed.append(row)
+            continue
+        try:
+            timestamp_ms = float(close_time)
+        except (TypeError, ValueError):
+            continue
+        if isfinite(timestamp_ms) and timestamp_ms <= cutoff_ms:
+            closed.append(row)
+    return closed
+
+
+def _kline_data_age_seconds(
+    klines: list[dict[str, Any]],
+    at: datetime,
+) -> float:
+    if not klines:
+        return float("inf")
+    close_time = klines[-1].get("close_time")
+    if close_time in (None, ""):
+        return 0.0
+    try:
+        timestamp_ms = float(close_time)
+    except (TypeError, ValueError):
+        return float("inf")
+    if not isfinite(timestamp_ms):
+        return float("inf")
+    return max(0.0, at.timestamp() - timestamp_ms / 1000)
+
+
+def _orderbook_liquidity(
+    orderbook: dict[str, Any],
+    levels: int,
+) -> tuple[float, float]:
+    bids = list(orderbook.get("bids") or [])[:levels]
+    asks = list(orderbook.get("asks") or [])[:levels]
+    if not bids or not asks:
+        raise ValueError("订单簿缺少买一或卖一。")
+    best_bid = _positive_price(bids[0][0], "best bid")
+    best_ask = _positive_price(asks[0][0], "best ask")
+    if best_ask <= best_bid:
+        raise ValueError("订单簿买卖价差异常。")
+    center = (best_bid + best_ask) / 2
+    depth_usdt = 0.0
+    for row in (*bids, *asks):
+        if len(row) < 2:
+            raise ValueError("订单簿档位数据不完整。")
+        price = _positive_price(row[0], "orderbook price")
+        qty = _non_negative_float(row[1], "orderbook qty")
+        depth_usdt += price * qty
+    return (best_ask - best_bid) / center, depth_usdt
 
 
 def _position_close_specs(position: dict[str, Any]) -> list[tuple[str, float, str | None]]:

@@ -157,7 +157,19 @@ backtest:
   # 控制台仅枚举此目录内的 CSV；API 会拒绝路径穿越。
   dataset_dir: "data"
   report_dir: "reports/backtests"
-  default_fill_model: "L0_CONSERVATIVE"
+  fill_model: "L0_CONSERVATIVE"
+  max_fills_per_bar: 2
+  maker_fill_probability: 0.65
+  fill_probability_seed: 17
+  taker_fee_rate: 0.0005
+  stop_slippage_bps: 10.0
+  funding_rate_per_bar: 0.0
+  walk_forward_test_rows: 12
+  monte_carlo_simulations: 1000
+  monte_carlo_seed: 17
+  monte_carlo_missing_fill_probability: 0.10
+  monte_carlo_loss_multiplier: 1.25
+  monte_carlo_cost_per_event: 0.0
 
 # 可选多账户配置。未配置 accounts 时继续使用 .env 中的 BINANCE_API_KEY / BINANCE_API_SECRET。
 # default_account_id: main

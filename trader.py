@@ -24,7 +24,7 @@ from db.database import init_db
 from db.repository import Repository
 from exchange.binance import BinanceFuturesClient
 from exchange.mock import MockExchangeClient
-from strategy.backtest import BacktestConfig, BacktestResult, run_grid_backtest
+from strategy.backtest import BacktestResult, backtest_config_from_mapping, run_grid_backtest
 from strategy.cooldown import CooldownConfig
 from strategy.adaptive_grid import AdaptiveGridConfig
 from strategy.controller import ControllerConfig, TradingController, V2FeatureFlags, _position_close_specs
@@ -355,16 +355,11 @@ def _run_backtest_csv(
         funding_rate=funding_rate,
         config=_grid_config_from_raw(config.raw),
     )
-    trading = config.raw.get("trading", {})
     result = run_grid_backtest(
         params,
         backtest_klines,
         current_price=current_price,
-        config=BacktestConfig(
-            capital=float(trading.get("capital_per_symbol", 200)),
-            leverage=float(trading.get("leverage", 10)),
-            maker_fee_rate=float(trading.get("max_maker_fee_rate", 0.0)),
-        ),
+        config=backtest_config_from_mapping(config.raw),
     )
     summary = _backtest_summary(result, observe_rows, len(backtest_klines))
     if output_path is not None:
@@ -502,6 +497,10 @@ def _grid_config_from_raw(raw: dict[str, Any]) -> GridConfig:
 
 def _backtest_summary(result: BacktestResult, observe_rows: int, backtest_rows: int) -> dict[str, Any]:
     grid_stats = _backtest_grid_trade_stats(result)
+    inventory_values = [
+        point.inventory_utilization
+        for point in result.equity_curve
+    ]
     return {
         "symbol": result.symbol,
         "observe_rows": observe_rows,
@@ -517,6 +516,33 @@ def _backtest_summary(result: BacktestResult, observe_rows: int, backtest_rows: 
         "max_equity": result.max_equity,
         "max_drawdown": result.max_drawdown,
         "equity_sharpe": _simple_equity_sharpe(result),
+        "sortino": _simple_equity_sortino(result),
+        "calmar": (
+            result.total_pnl / result.max_drawdown
+            if result.max_drawdown > 0
+            else 0.0
+        ),
+        "cvar_95": _equity_change_cvar(result, 0.95),
+        "profit_factor": _profit_factor(result),
+        "grid_fill_ratio": (
+            len(result.fills) / result.attempted_fill_count
+            if result.attempted_fill_count
+            else 0.0
+        ),
+        "pair_completion_ratio": (
+            result.pair_completion_count / len(result.fills)
+            if result.fills
+            else 0.0
+        ),
+        "inventory_p50": _quantile(inventory_values, 0.50),
+        "inventory_p95": _quantile(inventory_values, 0.95),
+        "inventory_p99": _quantile(inventory_values, 0.99),
+        "max_inventory_utilization": result.max_inventory_utilization,
+        "attempted_fill_count": result.attempted_fill_count,
+        "rejected_fill_count": result.rejected_fill_count,
+        "funding_paid": result.funding_paid,
+        "stop_exit_cost": result.stop_exit_cost,
+        "stop_exit_pnl": result.stop_exit_pnl,
         "net_position_qty": result.net_position_qty,
         "open_order_count": result.open_order_count,
         "stopped_reason": result.stopped_reason,
@@ -554,6 +580,58 @@ def _simple_equity_sharpe(result: BacktestResult) -> float:
     if variance <= 0:
         return 0.0
     return mean_change / sqrt(variance) * sqrt(len(equity_changes))
+
+
+def _simple_equity_sortino(result: BacktestResult) -> float:
+    changes = _equity_changes(result)
+    if len(changes) < 2:
+        return 0.0
+    downside = [min(0.0, value) for value in changes]
+    downside_variance = sum(value * value for value in downside) / len(downside)
+    if downside_variance <= 0:
+        return 0.0
+    return (sum(changes) / len(changes)) / sqrt(downside_variance) * sqrt(len(changes))
+
+
+def _equity_change_cvar(result: BacktestResult, confidence: float) -> float:
+    losses = sorted(-value for value in _equity_changes(result) if value < 0)
+    if not losses:
+        return 0.0
+    tail_start = max(0, int(len(losses) * confidence) - 1)
+    tail = losses[tail_start:]
+    return sum(tail) / len(tail)
+
+
+def _profit_factor(result: BacktestResult) -> float:
+    closed = [
+        float(fill.grid_pnl)
+        for fill in result.fills
+        if fill.grid_pnl is not None
+    ]
+    profit = sum(value for value in closed if value > 0)
+    loss = abs(sum(value for value in closed if value < 0))
+    if loss > 0:
+        return profit / loss
+    return profit if profit > 0 else 0.0
+
+
+def _quantile(values: list[float], probability: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * probability
+    lower = int(position)
+    upper = min(len(ordered) - 1, lower + 1)
+    fraction = position - lower
+    return ordered[lower] * (1 - fraction) + ordered[upper] * fraction
+
+
+def _equity_changes(result: BacktestResult) -> list[float]:
+    return [
+        result.equity_curve[index].equity
+        - result.equity_curve[index - 1].equity
+        for index in range(1, len(result.equity_curve))
+    ]
 
 
 def _backtest_report(result: BacktestResult, params, summary: dict[str, Any]) -> dict[str, Any]:
@@ -598,6 +676,8 @@ def _backtest_report(result: BacktestResult, params, summary: dict[str, Any]) ->
                 "drawdown": point.drawdown,
                 "close": point.close,
                 "timestamp": point.timestamp,
+                "gross_inventory_notional": point.gross_inventory_notional,
+                "inventory_utilization": point.inventory_utilization,
             }
             for point in result.equity_curve
         ],
@@ -2311,6 +2391,9 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             max_symbol_inventory_pct=float(risk.get("max_symbol_inventory_pct", 0.10)),
             max_consecutive_session_losses=int(risk.get("max_consecutive_session_losses", 0)),
             max_window_stop_count=int(risk.get("max_window_stop_count", 0)),
+            block_risk_increase_hot_reload=bool(
+                risk.get("block_risk_increase_hot_reload", True)
+            ),
         ),
         cooldown_config=CooldownConfig(
             atr_period=int(cooldown["atr_period"]),

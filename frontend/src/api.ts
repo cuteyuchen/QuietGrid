@@ -247,6 +247,30 @@ export type V2BacktestDetail = V2BacktestRun & {
       unrealized_pnl?: number
       close?: number
     }>
+    validation?: {
+      sample_label?: string
+      warning?: string
+      walk_forward?: {
+        status?: string
+        fold_count?: number
+        profitable_fold_ratio?: number
+        aggregate_pnl?: number
+        average_pnl?: number
+        worst_fold_pnl?: number
+        worst_fold_drawdown?: number
+        folds?: Array<Record<string, unknown>>
+      }
+      monte_carlo?: {
+        status?: string
+        simulations?: number
+        total_pnl_p05?: number
+        total_pnl_p50?: number
+        total_pnl_p95?: number
+        max_drawdown_p95?: number
+        max_drawdown_p99?: number
+        loss_probability?: number
+      }
+    }
   } | null
 }
 

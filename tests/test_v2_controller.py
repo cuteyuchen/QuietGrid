@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from db.database import init_db
 from db.repository import Repository
@@ -14,6 +14,7 @@ from strategy.inventory import InventoryConfig
 from strategy.observer import ObserverConfig
 from strategy.regime import RegimeConfig
 from strategy.selector import SelectionConfig, SelectionScore
+from core.models import GridParams, GridState, SymbolSession
 
 
 class OpenScheduler:
@@ -155,5 +156,53 @@ def test_v2_control_command_rejects_unknown_action(tmp_path) -> None:
         stored = controller.repository.get_control_command(command["command_id"])
         assert stored is not None
         assert stored["status"] == "REJECTED"
+
+    asyncio.run(run())
+
+
+def test_v2_cooldown_recovery_requires_flat_exchange_position(tmp_path) -> None:
+    async def run() -> None:
+        controller = _controller(tmp_path)
+        now = datetime.now(timezone.utc)
+        controller.grid_config = GridConfig(min_step_pct=0.01)
+        session = SymbolSession(
+            session_id=controller.repository.create_session(
+                window_id=controller.repository.create_window(now),
+                symbol="AAPLUSDT",
+                state=GridState.COOLDOWN.value,
+                capital=200,
+                leverage=1,
+                open_time=now,
+            ),
+            symbol="AAPLUSDT",
+            state=GridState.COOLDOWN,
+            params=GridParams(
+                symbol="AAPLUSDT",
+                upper=101,
+                lower=99,
+                center=100,
+                grid_num=8,
+                step_pct=0.0025,
+                grid_prices=[99 + index * 0.25 for index in range(9)],
+                baseline_atr=1,
+                stop_loss_price=98,
+                calculated_at=now,
+            ),
+            orders=[],
+            realized_pnl=0,
+            capital=200,
+            leverage=1,
+            open_time=now,
+            state_entered_at=now - timedelta(minutes=20),
+        )
+        controller.active_sessions[session.symbol] = session
+        controller.exchange.positions[session.symbol] = 0.5  # type: ignore[attr-defined]
+
+        recovered = await controller._try_recover_from_cooldown(session, now)
+
+        assert recovered is False
+        assert session.state == GridState.COOLDOWN
+        log = controller.repository.recent_rows("system_logs", limit=1)[0]
+        assert "not flat" in log["message"]
 
     asyncio.run(run())

@@ -48,6 +48,9 @@ const equityValues = computed(() => selected.value?.report?.equity_curve
 const drawdownValues = computed(() => selected.value?.report?.equity_curve
   ?.map((point) => Number(point.drawdown || 0)) || [])
 const fills = computed(() => selected.value?.report?.fills || [])
+const validation = computed(() => selected.value?.report?.validation)
+const walkForward = computed(() => validation.value?.walk_forward)
+const monteCarlo = computed(() => validation.value?.monte_carlo)
 
 onMounted(refresh)
 watch(() => props.accountId, refresh)
@@ -275,6 +278,51 @@ function time(value: string) {
               <div><h3>回撤曲线</h3><p>越高代表离历史峰值越远</p></div>
             </div>
             <MiniLineChart :values="drawdownValues" label="回测回撤曲线" tone="danger" />
+          </div>
+
+          <div class="validation-grid">
+            <section class="validation-card">
+              <div class="panel__header">
+                <div>
+                  <p class="eyebrow">Walk-Forward</p>
+                  <h3>滚动样本外折</h3>
+                </div>
+                <StatusBadge
+                  :tone="walkForward?.status === 'COMPLETED' ? 'good' : 'warning'"
+                  :label="walkForward?.status || '未运行'"
+                />
+              </div>
+              <dl class="metadata-grid">
+                <div><dt>折数</dt><dd>{{ walkForward?.fold_count || 0 }}</dd></div>
+                <div><dt>盈利折比例</dt><dd>{{ pct(Number(walkForward?.profitable_fold_ratio || 0)) }}</dd></div>
+                <div><dt>最差折盈亏</dt><dd>{{ money(Number(walkForward?.worst_fold_pnl || 0)) }}</dd></div>
+                <div><dt>最差折回撤</dt><dd>{{ money(Number(walkForward?.worst_fold_drawdown || 0)) }}</dd></div>
+              </dl>
+            </section>
+
+            <section class="validation-card">
+              <div class="panel__header">
+                <div>
+                  <p class="eyebrow">Monte Carlo</p>
+                  <h3>尾部结果分布</h3>
+                </div>
+                <StatusBadge
+                  :tone="monteCarlo?.status === 'COMPLETED' ? 'good' : 'warning'"
+                  :label="`${monteCarlo?.simulations || 0} 次`"
+                />
+              </div>
+              <dl class="metadata-grid">
+                <div><dt>P05 总盈亏</dt><dd>{{ money(Number(monteCarlo?.total_pnl_p05 || 0)) }}</dd></div>
+                <div><dt>P50 总盈亏</dt><dd>{{ money(Number(monteCarlo?.total_pnl_p50 || 0)) }}</dd></div>
+                <div><dt>亏损概率</dt><dd>{{ pct(Number(monteCarlo?.loss_probability || 0)) }}</dd></div>
+                <div><dt>P99 最大回撤</dt><dd>{{ money(Number(monteCarlo?.max_drawdown_p99 || 0)) }}</dd></div>
+              </dl>
+            </section>
+          </div>
+
+          <div v-if="validation?.warning" class="inline-alert">
+            <AlertTriangle :size="19" />
+            {{ validation.warning }}
           </div>
 
           <details class="disclosure">

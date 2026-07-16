@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from hashlib import blake2b
 from math import isfinite
 from typing import Any
 
 from core.models import GridParams, OrderSide
+
+
+class LookAheadViolation(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -14,6 +20,14 @@ class BacktestConfig:
     maker_fee_rate: float = 0.0
     stop_on_range_break: bool = True
     stop_on_stop_loss: bool = True
+    fill_model: str = "LEGACY"
+    min_tick_size: float = 0.0
+    max_fills_per_bar: int = 0
+    maker_fill_probability: float = 1.0
+    fill_probability_seed: int = 17
+    taker_fee_rate: float = 0.0
+    stop_slippage_bps: float = 0.0
+    funding_rate_per_bar: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -39,6 +53,8 @@ class BacktestEquityPoint:
     drawdown: float
     close: float
     timestamp: Any = None
+    gross_inventory_notional: float = 0.0
+    inventory_utilization: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -59,6 +75,13 @@ class BacktestResult:
     stopped_at_index: int | None
     stopped_at_price: float | None
     last_price: float
+    funding_paid: float = 0.0
+    stop_exit_cost: float = 0.0
+    stop_exit_pnl: float = 0.0
+    attempted_fill_count: int = 0
+    rejected_fill_count: int = 0
+    pair_completion_count: int = 0
+    max_inventory_utilization: float = 0.0
 
 
 @dataclass
@@ -74,6 +97,26 @@ class _BacktestOrder:
 class _PositionLot:
     entry_price: float
     qty: float
+
+
+def backtest_config_from_mapping(raw: dict[str, Any]) -> BacktestConfig:
+    trading = raw.get("trading", {})
+    backtest = raw.get("backtest", {})
+    return BacktestConfig(
+        capital=float(trading.get("capital_per_symbol", 200)),
+        leverage=float(trading.get("leverage", 1)),
+        maker_fee_rate=float(trading.get("max_maker_fee_rate", 0.0)),
+        stop_on_range_break=bool(backtest.get("stop_on_range_break", True)),
+        stop_on_stop_loss=bool(backtest.get("stop_on_stop_loss", True)),
+        fill_model=str(backtest.get("fill_model", "L0_CONSERVATIVE")),
+        min_tick_size=float(backtest.get("min_tick_size", 0.0)),
+        max_fills_per_bar=int(backtest.get("max_fills_per_bar", 2)),
+        maker_fill_probability=float(backtest.get("maker_fill_probability", 0.65)),
+        fill_probability_seed=int(backtest.get("fill_probability_seed", 17)),
+        taker_fee_rate=float(backtest.get("taker_fee_rate", 0.0005)),
+        stop_slippage_bps=float(backtest.get("stop_slippage_bps", 10.0)),
+        funding_rate_per_bar=float(backtest.get("funding_rate_per_bar", 0.0)),
+    )
 
 
 def run_grid_backtest(
@@ -103,35 +146,98 @@ def run_grid_backtest(
     equity_curve: list[BacktestEquityPoint] = []
     max_equity = 0.0
     max_drawdown = 0.0
+    max_inventory_utilization = 0.0
+    funding_paid = 0.0
+    stop_exit_cost = 0.0
+    stop_exit_pnl = 0.0
+    attempted_fill_count = 0
+    pair_completion_count = 0
     stopped_reason: str | None = None
     stopped_at_index: int | None = None
     stopped_at_price: float | None = None
     last_price = current_price
+    previous_event_time: datetime | None = None
+    conservative = config.fill_model.upper() == "L0_CONSERVATIVE"
+    min_tick_size = (
+        config.min_tick_size
+        if config.min_tick_size > 0
+        else max(min(params.grid_prices) * 1e-8, 1e-12)
+    )
 
     for bar_index, row in enumerate(klines):
+        previous_event_time = _validate_bar_time(row, previous_event_time)
         high, low, close = _bar_prices(row)
         last_price = close
 
         risk_reason, risk_price = _risk_stop(params, high, low, config)
         if risk_reason is not None:
+            exit_price = float(risk_price)
+            if conservative and config.stop_slippage_bps > 0:
+                slippage = config.stop_slippage_bps / 10_000
+                exit_price *= (
+                    1 - slippage
+                    if exit_price <= params.center
+                    else 1 + slippage
+                )
+            if conservative:
+                stop_exit_pnl, stop_exit_cost = _close_all_lots(
+                    long_lots,
+                    short_lots,
+                    exit_price,
+                    config.taker_fee_rate,
+                )
+                gross_grid_pnl += stop_exit_pnl
+                fees_paid += stop_exit_cost
             stopped_reason = risk_reason
             stopped_at_index = bar_index
-            stopped_at_price = risk_price
-            last_price = risk_price
-            equity, max_equity, max_drawdown = _append_equity_point(
+            stopped_at_price = exit_price
+            last_price = exit_price
+            (
+                _equity,
+                max_equity,
+                max_drawdown,
+                max_inventory_utilization,
+            ) = _append_equity_point(
                 equity_curve,
                 bar_index,
                 _bar_timestamp(row),
                 last_price,
-                gross_grid_pnl - fees_paid,
+                gross_grid_pnl - fees_paid - funding_paid,
                 long_lots,
                 short_lots,
                 max_equity,
                 max_drawdown,
+                config.capital * config.leverage,
+                max_inventory_utilization,
             )
             break
 
-        touched = [order for order in list(open_orders) if _order_touched(order, high, low)]
+        touched = [
+            order
+            for order in list(open_orders)
+            if _order_touched(
+                order,
+                high,
+                low,
+                min_tick_size if conservative else 0.0,
+            )
+        ]
+        attempted_fill_count += len(touched)
+        if conservative:
+            touched = [
+                order
+                for order in touched
+                if _deterministic_fill_allowed(
+                    params.symbol,
+                    bar_index,
+                    order,
+                    config.maker_fill_probability,
+                    config.fill_probability_seed,
+                )
+            ]
+            touched.sort(key=_worst_case_order_key)
+            if config.max_fills_per_bar > 0:
+                touched = touched[: config.max_fills_per_bar]
         for order in touched:
             if order not in open_orders:
                 continue
@@ -141,6 +247,7 @@ def run_grid_backtest(
             grid_pnl = _grid_pnl(order)
             if grid_pnl is not None:
                 gross_grid_pnl += grid_pnl
+                pair_completion_count += 1
             _apply_position_fill(order, long_lots, short_lots)
             realized_pnl = gross_grid_pnl - fees_paid
             fills.append(
@@ -160,20 +267,34 @@ def run_grid_backtest(
             next_order = _next_order(params, order)
             if next_order is not None:
                 open_orders.append(next_order)
-        _equity, max_equity, max_drawdown = _append_equity_point(
+        if conservative and config.funding_rate_per_bar != 0:
+            funding_paid += _funding_cost(
+                long_lots,
+                short_lots,
+                close,
+                config.funding_rate_per_bar,
+            )
+        (
+            _equity,
+            max_equity,
+            max_drawdown,
+            max_inventory_utilization,
+        ) = _append_equity_point(
             equity_curve,
             bar_index,
             _bar_timestamp(row),
             close,
-            gross_grid_pnl - fees_paid,
+            gross_grid_pnl - fees_paid - funding_paid,
             long_lots,
             short_lots,
             max_equity,
             max_drawdown,
+            config.capital * config.leverage,
+            max_inventory_utilization,
         )
 
     unrealized_pnl = _unrealized_pnl(long_lots, short_lots, last_price)
-    realized_pnl = gross_grid_pnl - fees_paid
+    realized_pnl = gross_grid_pnl - fees_paid - funding_paid
     return BacktestResult(
         symbol=params.symbol,
         fills=fills,
@@ -191,6 +312,13 @@ def run_grid_backtest(
         stopped_at_index=stopped_at_index,
         stopped_at_price=stopped_at_price,
         last_price=last_price,
+        funding_paid=funding_paid,
+        stop_exit_cost=stop_exit_cost,
+        stop_exit_pnl=stop_exit_pnl,
+        attempted_fill_count=attempted_fill_count,
+        rejected_fill_count=max(0, attempted_fill_count - len(fills)),
+        pair_completion_count=pair_completion_count,
+        max_inventory_utilization=max_inventory_utilization,
     )
 
 
@@ -200,6 +328,20 @@ def _validate_backtest_config(config: BacktestConfig) -> None:
     maker_fee_rate = _finite_float(config.maker_fee_rate, "maker_fee_rate")
     if maker_fee_rate < 0:
         raise ValueError("maker_fee_rate不能为负。")
+    fill_model = config.fill_model.strip().upper()
+    if fill_model not in {"LEGACY", "L0_CONSERVATIVE"}:
+        raise ValueError(f"不支持的fill_model: {config.fill_model}")
+    if config.min_tick_size < 0:
+        raise ValueError("min_tick_size不能为负。")
+    if config.max_fills_per_bar < 0:
+        raise ValueError("max_fills_per_bar不能为负。")
+    if not 0 <= config.maker_fill_probability <= 1:
+        raise ValueError("maker_fill_probability必须在0到1之间。")
+    if config.taker_fee_rate < 0:
+        raise ValueError("taker_fee_rate不能为负。")
+    if config.stop_slippage_bps < 0:
+        raise ValueError("stop_slippage_bps不能为负。")
+    _finite_float(config.funding_rate_per_bar, "funding_rate_per_bar")
 
 
 def _validate_grid_params(params: GridParams) -> None:
@@ -258,8 +400,42 @@ def _risk_stop(
     return None, None
 
 
-def _order_touched(order: _BacktestOrder, high: float, low: float) -> bool:
-    return low <= order.price <= high
+def _order_touched(
+    order: _BacktestOrder,
+    high: float,
+    low: float,
+    min_tick_size: float = 0.0,
+) -> bool:
+    if min_tick_size <= 0:
+        return low <= order.price <= high
+    if order.side == OrderSide.BUY:
+        return low <= order.price - min_tick_size
+    return high >= order.price + min_tick_size
+
+
+def _deterministic_fill_allowed(
+    symbol: str,
+    bar_index: int,
+    order: _BacktestOrder,
+    probability: float,
+    seed: int,
+) -> bool:
+    if probability >= 1:
+        return True
+    if probability <= 0:
+        return False
+    digest = blake2b(
+        f"{seed}|{symbol}|{bar_index}|{order.grid_index}|{order.side.value}".encode(),
+        digest_size=8,
+    ).digest()
+    sample = int.from_bytes(digest, "big") / float(2**64 - 1)
+    return sample < probability
+
+
+def _worst_case_order_key(order: _BacktestOrder) -> tuple[int, float]:
+    opening_rank = 0 if order.entry_price is None else 1
+    price_rank = -order.price if order.side == OrderSide.BUY else order.price
+    return opening_rank, price_rank
 
 
 def _grid_pnl(order: _BacktestOrder) -> float | None:
@@ -328,6 +504,89 @@ def _unrealized_pnl(
     return long_pnl + short_pnl
 
 
+def _close_all_lots(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    exit_price: float,
+    taker_fee_rate: float,
+) -> tuple[float, float]:
+    pnl = sum((exit_price - lot.entry_price) * lot.qty for lot in long_lots)
+    pnl += sum((lot.entry_price - exit_price) * lot.qty for lot in short_lots)
+    closed_qty = sum(lot.qty for lot in long_lots) + sum(lot.qty for lot in short_lots)
+    fee = exit_price * closed_qty * taker_fee_rate
+    long_lots.clear()
+    short_lots.clear()
+    return pnl, fee
+
+
+def _funding_cost(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    mark_price: float,
+    funding_rate: float,
+) -> float:
+    long_notional = sum(lot.qty for lot in long_lots) * mark_price
+    short_notional = sum(lot.qty for lot in short_lots) * mark_price
+    return (long_notional - short_notional) * funding_rate
+
+
+def _validate_bar_time(
+    row: dict[str, Any],
+    previous_event_time: datetime | None,
+) -> datetime | None:
+    event_time = _first_parsed_time(
+        row,
+        "event_time",
+        "timestamp",
+        "close_time",
+        "open_time",
+        "time",
+    )
+    available_time = _first_parsed_time(row, "available_time", "as_of_time")
+    decision_time = _first_parsed_time(row, "decision_time") or event_time
+    if available_time is not None and decision_time is not None and available_time > decision_time:
+        raise LookAheadViolation(
+            "回测读取了决策时点之后才可获得的数据。"
+        )
+    if (
+        previous_event_time is not None
+        and event_time is not None
+        and event_time < previous_event_time
+    ):
+        raise LookAheadViolation("回测事件时间倒序，无法保证事件驱动语义。")
+    return event_time or previous_event_time
+
+
+def _first_parsed_time(
+    row: dict[str, Any],
+    *keys: str,
+) -> datetime | None:
+    for key in keys:
+        raw = row.get(key)
+        if raw in (None, ""):
+            continue
+        parsed = _parse_time(raw)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _parse_time(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        raw = str(value).strip()
+        if not raw:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _append_equity_point(
     equity_curve: list[BacktestEquityPoint],
     bar_index: int,
@@ -338,12 +597,27 @@ def _append_equity_point(
     short_lots: list[_PositionLot],
     max_equity: float,
     max_drawdown: float,
-) -> tuple[float, float, float]:
+    risk_capacity: float,
+    max_inventory_utilization: float,
+) -> tuple[float, float, float, float]:
     unrealized_pnl = _unrealized_pnl(long_lots, short_lots, close)
     equity = realized_pnl + unrealized_pnl
     max_equity = max(max_equity, equity)
     drawdown = max(0.0, max_equity - equity)
     max_drawdown = max(max_drawdown, drawdown)
+    gross_inventory_notional = (
+        sum(lot.qty for lot in long_lots)
+        + sum(lot.qty for lot in short_lots)
+    ) * close
+    inventory_utilization = (
+        gross_inventory_notional / risk_capacity
+        if risk_capacity > 0
+        else 0.0
+    )
+    max_inventory_utilization = max(
+        max_inventory_utilization,
+        inventory_utilization,
+    )
     equity_curve.append(
         BacktestEquityPoint(
             bar_index=bar_index,
@@ -353,9 +627,11 @@ def _append_equity_point(
             drawdown=drawdown,
             close=close,
             timestamp=timestamp,
+            gross_inventory_notional=gross_inventory_notional,
+            inventory_utilization=inventory_utilization,
         )
     )
-    return equity, max_equity, max_drawdown
+    return equity, max_equity, max_drawdown, max_inventory_utilization
 
 
 def _positive_finite(raw_value: Any, label: str) -> float:

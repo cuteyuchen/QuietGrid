@@ -1332,7 +1332,10 @@ def test_v2_backtest_center_lists_datasets_runs_and_reports(tmp_path) -> None:
     assert body["status"] == "COMPLETED"
     assert body["symbol"] == "BTCUSDT"
     assert body["metrics"]["profit_factor"] >= 0
+    assert body["metrics"]["walk_forward_fold_count"] >= 1
     assert body["report"]["equity_curve"]
+    assert body["report"]["validation"]["walk_forward"]["fold_count"] >= 1
+    assert body["report"]["validation"]["monte_carlo"]["simulations"] in {0, 1000}
     run_id = body["run_id"]
     listed = client.get("/api/v2/backtests").json()["items"]
     detail = client.get(f"/api/v2/backtests/{run_id}")

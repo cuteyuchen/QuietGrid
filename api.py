@@ -813,6 +813,26 @@ def _execute_v2_backtest(
             "max_maker_fee_rate": request.maker_fee_rate,
         }
     )
+    raw.setdefault("backtest", {}).update(
+        {
+            "fill_model": request.fill_model,
+            "max_fills_per_bar": int(
+                raw.get("backtest", {}).get("max_fills_per_bar", 2)
+            ),
+            "maker_fill_probability": float(
+                raw.get("backtest", {}).get("maker_fill_probability", 0.65)
+            ),
+            "fill_probability_seed": int(
+                raw.get("backtest", {}).get("fill_probability_seed", 17)
+            ),
+            "taker_fee_rate": float(
+                raw.get("backtest", {}).get("taker_fee_rate", 0.0005)
+            ),
+            "stop_slippage_bps": float(
+                raw.get("backtest", {}).get("stop_slippage_bps", 10.0)
+            ),
+        }
+    )
     runtime_config = SimpleNamespace(raw=raw)
     rows = _read_backtest_csv(dataset_path)
     summary = _run_backtest_csv(
@@ -823,7 +843,118 @@ def _execute_v2_backtest(
         0.0,
         report_path,
     )
+    _append_v2_backtest_validation(
+        runtime_config,
+        request,
+        rows,
+        report_path,
+    )
     return summary, rows
+
+
+def _append_v2_backtest_validation(
+    runtime_config: SimpleNamespace,
+    request: "V2BacktestRunRequest",
+    rows: list[dict[str, Any]],
+    report_path: Path,
+) -> None:
+    from strategy.backtest import (
+        backtest_config_from_mapping,
+        run_grid_backtest,
+    )
+    from strategy.grid_calculator import calculate_grid_params
+    from strategy.validation import (
+        MonteCarloConfig,
+        WalkForwardConfig,
+        evaluate_walk_forward,
+        monte_carlo_resample,
+    )
+    from trader import _grid_config_from_raw
+
+    raw_backtest = runtime_config.raw.get("backtest", {})
+    remaining = len(rows) - request.observe_rows
+    requested_test_rows = int(
+        raw_backtest.get("walk_forward_test_rows", 12)
+    )
+    test_rows = min(requested_test_rows, max(1, remaining // 2))
+    walk_config = WalkForwardConfig(
+        train_rows=request.observe_rows,
+        test_rows=test_rows,
+        step_rows=test_rows,
+    )
+    grid_config = _grid_config_from_raw(runtime_config.raw)
+    run_config = backtest_config_from_mapping(runtime_config.raw)
+
+    def evaluate_fold(train, test, fold):
+        try:
+            current_price = float(train[-1]["close"])
+            params = calculate_grid_params(
+                symbol=request.symbol.upper(),
+                klines=list(train),
+                current_price=current_price,
+                funding_rate=0.0,
+                config=grid_config,
+            )
+            result = run_grid_backtest(
+                params,
+                list(test),
+                current_price=current_price,
+                config=run_config,
+            )
+            return {
+                "status": "COMPLETED",
+                "total_pnl": result.total_pnl,
+                "max_drawdown": result.max_drawdown,
+                "fills": len(result.fills),
+                "max_inventory_utilization": result.max_inventory_utilization,
+                "stopped_reason": result.stopped_reason,
+            }
+        except Exception as exc:
+            return {
+                "status": "FAILED",
+                "total_pnl": None,
+                "max_drawdown": None,
+                "error": str(exc),
+            }
+
+    walk_forward = evaluate_walk_forward(rows, walk_config, evaluate_fold)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    fills = report.get("fills", []) if isinstance(report, dict) else []
+    event_returns = [
+        float(item["grid_pnl"])
+        for item in fills
+        if isinstance(item, dict) and item.get("grid_pnl") is not None
+    ]
+    summary = report.get("summary", {}) if isinstance(report, dict) else {}
+    stop_exit_pnl = float(summary.get("stop_exit_pnl") or 0.0)
+    if stop_exit_pnl:
+        event_returns.append(stop_exit_pnl)
+    monte_carlo = monte_carlo_resample(
+        event_returns,
+        MonteCarloConfig(
+            simulations=int(raw_backtest.get("monte_carlo_simulations", 1000)),
+            seed=int(raw_backtest.get("monte_carlo_seed", 17)),
+            missing_positive_fill_probability=float(
+                raw_backtest.get("monte_carlo_missing_fill_probability", 0.10)
+            ),
+            loss_multiplier=float(
+                raw_backtest.get("monte_carlo_loss_multiplier", 1.25)
+            ),
+            cost_per_event=float(
+                raw_backtest.get("monte_carlo_cost_per_event", 0.0)
+            ),
+        ),
+    )
+    report["validation"] = {
+        "walk_forward": walk_forward,
+        "monte_carlo": monte_carlo,
+        "sample_label": "UNLABELED",
+        "warning": "只有冻结参数后从未参与调参的数据区间才可标记为样本外。",
+    }
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
 
 
 def _v2_backtest_metrics(
@@ -857,6 +988,21 @@ def _v2_backtest_metrics(
         "realized_pnl",
         "unrealized_pnl",
         "net_position_qty",
+        "sortino",
+        "calmar",
+        "cvar_95",
+        "profit_factor",
+        "grid_fill_ratio",
+        "pair_completion_ratio",
+        "inventory_p50",
+        "inventory_p95",
+        "inventory_p99",
+        "max_inventory_utilization",
+        "attempted_fill_count",
+        "rejected_fill_count",
+        "funding_paid",
+        "stop_exit_cost",
+        "stop_exit_pnl",
     )
     metrics = {
         name: summary.get(name)
@@ -865,11 +1011,46 @@ def _v2_backtest_metrics(
     }
     metrics.update(
         {
-            "profit_factor": profit_factor,
-            "inventory_p99": None,
+            "profit_factor": summary.get("profit_factor", profit_factor),
+            "inventory_p99": summary.get("inventory_p99"),
             "fill_model_level": 0,
         }
     )
+    validation = report.get("validation", {}) if isinstance(report, dict) else {}
+    walk_forward = (
+        validation.get("walk_forward", {})
+        if isinstance(validation, dict)
+        else {}
+    )
+    monte_carlo = (
+        validation.get("monte_carlo", {})
+        if isinstance(validation, dict)
+        else {}
+    )
+    if isinstance(walk_forward, dict):
+        metrics.update(
+            {
+                "walk_forward_fold_count": walk_forward.get("fold_count"),
+                "walk_forward_profitable_fold_ratio": walk_forward.get(
+                    "profitable_fold_ratio"
+                ),
+                "walk_forward_worst_fold_pnl": walk_forward.get(
+                    "worst_fold_pnl"
+                ),
+            }
+        )
+    if isinstance(monte_carlo, dict):
+        metrics.update(
+            {
+                "monte_carlo_p05": monte_carlo.get("total_pnl_p05"),
+                "monte_carlo_loss_probability": monte_carlo.get(
+                    "loss_probability"
+                ),
+                "monte_carlo_drawdown_p99": monte_carlo.get(
+                    "max_drawdown_p99"
+                ),
+            }
+        )
     return metrics
 
 

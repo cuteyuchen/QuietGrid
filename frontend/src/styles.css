@@ -1620,6 +1620,24 @@ pre {
   border-top: 1px solid var(--border);
 }
 
+.validation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.validation-card {
+  padding: 15px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.validation-card .panel__header {
+  margin-bottom: 12px;
+}
+
 .mini-chart {
   min-height: 180px;
   overflow: hidden;
@@ -2421,6 +2439,10 @@ pre {
   .backtest-form,
   .verification-grid,
   .run-list {
+    grid-template-columns: 1fr;
+  }
+
+  .validation-grid {
     grid-template-columns: 1fr;
   }
 

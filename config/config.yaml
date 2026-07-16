@@ -153,6 +153,12 @@ notifications:
 database:
   path: "data/trading.db"
 
+backtest:
+  # 控制台仅枚举此目录内的 CSV；API 会拒绝路径穿越。
+  dataset_dir: "data"
+  report_dir: "reports/backtests"
+  default_fill_model: "L0_CONSERVATIVE"
+
 # 可选多账户配置。未配置 accounts 时继续使用 .env 中的 BINANCE_API_KEY / BINANCE_API_SECRET。
 # default_account_id: main
 # accounts:

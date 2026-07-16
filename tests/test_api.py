@@ -1202,3 +1202,166 @@ def _test_config(db_path, testnet: bool = True, api_key: str = "", api_secret: s
         binance_testnet=testnet,
         binance_testnet_raw="true" if testnet else None,
     )
+
+
+def test_v2_health_dashboard_and_active_config(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid-v2.db"
+    config = _test_config(db_path)
+    config.raw.update(
+        {
+            "features": {"regime_v2": True, "inventory_manager": True},
+            "risk": {"max_weekend_loss_pct": 0.015},
+            "regime": {"enter_threshold": 75},
+            "grid": {"min_grid_num": 6},
+        }
+    )
+    client = TestClient(create_app(config))
+
+    health = client.get("/api/v2/health")
+    dashboard = client.get("/api/v2/dashboard")
+    active_config = client.get("/api/v2/config/active")
+
+    assert health.status_code == 200
+    assert health.json()["api_version"] == "v2"
+    assert dashboard.status_code == 200
+    assert dashboard.json()["global_risk_level"] == "LOW"
+    assert dashboard.json()["data_health"] == "WAITING"
+    assert active_config.json()["sections"]["features"]["regime_v2"] is True
+    assert "database" not in active_config.json()["sections"]
+
+
+def test_v2_control_command_is_idempotent_and_audited(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid-v2-command.db"
+    client = TestClient(create_app(_test_config(db_path)))
+    payload = {
+        "reason": "暂停新开仓以检查风险",
+        "confirmation": "PAUSE",
+        "idempotency_key": "pause-command-0001",
+        "requested_by": "tester",
+    }
+
+    first = client.post("/api/v2/commands/pause", json=payload)
+    duplicate = client.post("/api/v2/commands/pause", json=payload)
+
+    assert first.status_code == 200
+    assert first.json()["status"] == "PENDING"
+    assert duplicate.json()["command_id"] == first.json()["command_id"]
+    repo = Repository(db_path)
+    assert len(repo.recent_rows("control_commands")) == 1
+    assert len(repo.recent_rows("audit_logs")) == 2
+
+
+def test_v2_close_session_requires_symbol_confirmation(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid-v2-close.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime.now(timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "BTCUSDT", "RUNNING", 100, 1, now)
+    client = TestClient(create_app(_test_config(db_path)))
+
+    rejected = client.post(
+        "/api/v2/commands/close-session",
+        json={
+            "reason": "操作员主动降低风险",
+            "confirmation": "CLOSE-WRONG",
+            "idempotency_key": "close-command-0001",
+            "session_id": session_id,
+        },
+    )
+    accepted = client.post(
+        "/api/v2/commands/close-session",
+        json={
+            "reason": "操作员主动降低风险",
+            "confirmation": "CLOSE-BTCUSDT",
+            "idempotency_key": "close-command-0002",
+            "session_id": session_id,
+        },
+    )
+
+    assert rejected.status_code == 422
+    assert accepted.status_code == 200
+    command = client.get(f"/api/v2/commands/{accepted.json()['command_id']}")
+    assert command.json()["target_id"] == str(session_id)
+
+
+def test_v2_backtest_center_lists_datasets_runs_and_reports(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid-v2-backtest.db"
+    dataset_root = tmp_path / "datasets"
+    report_root = tmp_path / "reports"
+    dataset_root.mkdir()
+    rows = ["timestamp,open,high,low,close"]
+    for index in range(90):
+        close = 100.0 + ((index % 12) - 6) * 0.12
+        rows.append(
+            f"2026-01-01T00:{index:02d}:00Z,{close:.4f},{close + 0.6:.4f},"
+            f"{close - 0.6:.4f},{close:.4f}"
+        )
+    (dataset_root / "btc-1m.csv").write_text("\n".join(rows), encoding="utf-8")
+    config = _test_config(db_path)
+    config.raw["backtest"] = {
+        "dataset_dir": str(dataset_root),
+        "report_dir": str(report_root),
+    }
+    config.raw["trading"] = {
+        "capital_per_symbol": 200,
+        "leverage": 1,
+        "max_maker_fee_rate": 0,
+        "stop_buffer_pct": 0.015,
+    }
+    client = TestClient(create_app(config))
+
+    datasets = client.get("/api/v2/backtests/datasets")
+    created = client.post(
+        "/api/v2/backtests",
+        json={
+            "dataset": "btc-1m.csv",
+            "symbol": "BTCUSDT",
+            "observe_rows": 30,
+            "capital": 200,
+            "leverage": 1,
+            "maker_fee_rate": 0,
+            "fill_model": "L0_CONSERVATIVE",
+        },
+    )
+
+    assert datasets.status_code == 200
+    assert datasets.json()["items"][0]["relative_path"] == "btc-1m.csv"
+    assert created.status_code == 200, created.text
+    body = created.json()
+    assert body["status"] == "COMPLETED"
+    assert body["symbol"] == "BTCUSDT"
+    assert body["metrics"]["profit_factor"] >= 0
+    assert body["report"]["equity_curve"]
+    run_id = body["run_id"]
+    listed = client.get("/api/v2/backtests").json()["items"]
+    detail = client.get(f"/api/v2/backtests/{run_id}")
+    assert listed[0]["run_id"] == run_id
+    assert detail.status_code == 200
+    assert detail.json()["report"]["summary"]["symbol"] == "BTCUSDT"
+
+
+def test_v2_backtest_rejects_dataset_path_traversal(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid-v2-backtest-path.db"
+    dataset_root = tmp_path / "datasets"
+    dataset_root.mkdir()
+    outside = tmp_path / "outside.csv"
+    outside.write_text("high,low,close\n1,1,1\n", encoding="utf-8")
+    config = _test_config(db_path)
+    config.raw["backtest"] = {"dataset_dir": str(dataset_root)}
+    client = TestClient(create_app(config))
+
+    response = client.post(
+        "/api/v2/backtests",
+        json={
+            "dataset": "../outside.csv",
+            "symbol": "BTCUSDT",
+            "observe_rows": 30,
+            "capital": 200,
+            "leverage": 1,
+            "maker_fee_rate": 0,
+            "fill_model": "L0_CONSERVATIVE",
+        },
+    )
+
+    assert response.status_code == 400

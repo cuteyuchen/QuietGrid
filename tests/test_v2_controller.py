@@ -108,3 +108,52 @@ def test_v2_candidate_analysis_persists_regime_and_adaptive_grid(tmp_path) -> No
         assert controller.repository.recent_rows("event_store", 1)[0]["event_type"] == "REGIME_CHANGED"
 
     asyncio.run(run())
+
+
+def test_v2_control_command_is_executed_by_trader_process(tmp_path) -> None:
+    async def run() -> None:
+        controller = _controller(tmp_path)
+        now = datetime.now(timezone.utc)
+        command = controller.repository.enqueue_control_command(
+            command_type="PAUSE_NEW_ENTRIES",
+            target_type="SYSTEM",
+            target_id=None,
+            payload={},
+            reason="测试暂停",
+            idempotency_key="controller-pause-0001",
+            requested_at=now,
+        )
+
+        result = await controller.process_control_commands_once(now)
+
+        assert result == [(command["command_id"], "executed")]
+        assert controller.repository.new_entries_paused() is True
+        stored = controller.repository.get_control_command(command["command_id"])
+        assert stored is not None
+        assert stored["status"] == "EXECUTED"
+
+    asyncio.run(run())
+
+
+def test_v2_control_command_rejects_unknown_action(tmp_path) -> None:
+    async def run() -> None:
+        controller = _controller(tmp_path)
+        now = datetime.now(timezone.utc)
+        command = controller.repository.enqueue_control_command(
+            command_type="RAISE_LEVERAGE",
+            target_type="SYSTEM",
+            target_id=None,
+            payload={"leverage": 5},
+            reason="不允许的风险升级",
+            idempotency_key="controller-risk-0001",
+            requested_at=now,
+        )
+
+        result = await controller.process_control_commands_once(now)
+
+        assert result == [(command["command_id"], "rejected")]
+        stored = controller.repository.get_control_command(command["command_id"])
+        assert stored is not None
+        assert stored["status"] == "REJECTED"
+
+    asyncio.run(run())

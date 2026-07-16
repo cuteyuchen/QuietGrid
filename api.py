@@ -9,6 +9,7 @@ import platform
 import shlex
 from pathlib import Path
 import subprocess
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -59,7 +60,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         init_db(selected_config.database_path)
-        return AccountRequestContext(config=selected_config, repo=Repository(selected_config.database_path))
+        return AccountRequestContext(
+            config=selected_config,
+            repo=Repository(selected_config.database_path, account_id=selected_config.account_id),
+        )
 
     @app.get("/api/health")
     def health(ctx: AccountRequestContext = Depends(get_account_context)) -> dict[str, Any]:
@@ -425,6 +429,262 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         _require_confirm(request)
         return _set_symbol_next_entry_disabled(ctx.config, ctx.repo, symbol, request, disabled=False)
 
+    @app.get("/api/v2/health")
+    def v2_health(ctx: AccountRequestContext = Depends(get_account_context)) -> dict[str, Any]:
+        latest_event = ctx.repo.recent_rows("event_store", limit=1)
+        return {
+            "ok": True,
+            "api_version": "v2",
+            "environment": "testnet" if ctx.config.binance_testnet else "live",
+            "account_id": ctx.config.account_id,
+            "database": str(ctx.config.database_path),
+            "event_store_ready": True,
+            "latest_event_time": latest_event[0]["event_time"] if latest_event else None,
+        }
+
+    @app.get("/api/v2/dashboard")
+    async def v2_dashboard(ctx: AccountRequestContext = Depends(get_account_context)) -> dict[str, Any]:
+        account = await _load_account_summary(ctx.config)
+        summary_row = ctx.repo.dashboard_summary()
+        runtime = ctx.repo.runtime_state()
+        latest_regime = ctx.repo.latest_regime_decision()
+        latest_inventory = ctx.repo.latest_inventory_snapshot()
+        latest_risk = ctx.repo.latest_risk_snapshot()
+        risk_config = ctx.config.raw.get("risk", {})
+        equity = float(account.get("balance") or 0.0)
+        window_id = runtime.get("current_round_id")
+        window_pnl = ctx.repo.window_realized_pnl(int(window_id)) if window_id else 0.0
+        loss_budget = equity * float(risk_config.get("max_weekend_loss_pct", 0.0))
+        return {
+            "environment": "testnet" if ctx.config.binance_testnet else "live",
+            "trader_status": str(runtime.get("round_state") or "IDLE"),
+            "account_id": ctx.config.account_id,
+            "equity": equity,
+            "available_balance": account.get("available_balance"),
+            "current_exposure": account.get("current_exposure"),
+            "window_id": window_id,
+            "window_pnl": window_pnl,
+            "window_loss_budget": loss_budget,
+            "window_loss_budget_remaining": min(
+                loss_budget,
+                max(0.0, loss_budget + window_pnl),
+            ),
+            "active_sessions": int(summary_row.get("active_sessions") or 0),
+            "open_orders": int(summary_row.get("open_orders") or 0),
+            "global_risk_level": (
+                str(latest_risk.get("risk_level"))
+                if latest_risk
+                else "LOW"
+            ),
+            "data_health": "HEALTHY" if latest_regime else "WAITING",
+            "latest_regime": latest_regime,
+            "latest_inventory": latest_inventory,
+            "latest_risk": latest_risk,
+        }
+
+    @app.get("/api/v2/regime/{symbol}")
+    def v2_regime(
+        symbol: str,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        decision = ctx.repo.latest_regime_decision(symbol)
+        if decision is None:
+            raise HTTPException(status_code=404, detail="暂无该标的的 Regime 决策。")
+        return decision
+
+    @app.get("/api/v2/sessions/{session_id}/grid")
+    def v2_session_grid(
+        session_id: int,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        plan = ctx.repo.latest_grid_plan(session_id)
+        if plan is None:
+            raise HTTPException(status_code=404, detail="暂无该会话的 v2 网格计划。")
+        return plan
+
+    @app.get("/api/v2/sessions/{session_id}/inventory")
+    def v2_session_inventory(
+        session_id: int,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        snapshot = ctx.repo.latest_inventory_snapshot(session_id)
+        return {
+            "snapshot": snapshot,
+            "lots": ctx.repo.inventory_lots(session_id),
+        }
+
+    @app.get("/api/v2/sessions/{session_id}/risk")
+    def v2_session_risk(
+        session_id: int,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        snapshot = ctx.repo.latest_risk_snapshot(session_id)
+        return {"snapshot": snapshot}
+
+    @app.get("/api/v2/sessions/{session_id}/events")
+    def v2_session_events(
+        session_id: int,
+        limit: int = Query(500, ge=1, le=5000),
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        return {"items": ctx.repo.session_events(session_id, limit=limit)}
+
+    @app.get("/api/v2/backtests/datasets")
+    def v2_backtest_datasets(
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        root = _backtest_dataset_root(ctx.config)
+        if not root.exists():
+            return {"items": []}
+        items = []
+        for path in sorted(root.rglob("*.csv"), key=lambda item: item.name.lower()):
+            stat = path.stat()
+            items.append(
+                {
+                    "name": path.name,
+                    "relative_path": path.relative_to(root).as_posix(),
+                    "size_bytes": stat.st_size,
+                    "modified_at": datetime.fromtimestamp(
+                        stat.st_mtime,
+                        tz=timezone.utc,
+                    ).isoformat(),
+                }
+            )
+        return {"items": items}
+
+    @app.get("/api/v2/backtests")
+    def v2_backtests(
+        limit: int = Query(100, ge=1, le=500),
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        return {
+            "items": [
+                _v2_backtest_payload(item)
+                for item in ctx.repo.backtest_runs(limit=limit)
+            ]
+        }
+
+    @app.post("/api/v2/backtests")
+    async def v2_start_backtest(
+        request: V2BacktestRunRequest,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        dataset_path = _resolve_backtest_dataset(ctx.config, request.dataset)
+        started_at = datetime.now(timezone.utc)
+        run_id = f"bt_{uuid4().hex}"
+        report_root = _backtest_report_root(ctx.config)
+        report_path = report_root / f"{run_id}.json"
+        run_config = request.model_dump()
+        ctx.repo.create_backtest_run(
+            run_id=run_id,
+            symbol=request.symbol.upper(),
+            started_at=started_at,
+            fill_model=request.fill_model,
+            config=run_config,
+            parameter_version="v2-console",
+            code_commit=_current_git_commit(),
+        )
+        try:
+            summary, rows = await asyncio.to_thread(
+                _execute_v2_backtest,
+                ctx.config,
+                request,
+                dataset_path,
+                report_path,
+            )
+            metrics = _v2_backtest_metrics(summary, report_path)
+            ctx.repo.complete_backtest_run(
+                run_id=run_id,
+                completed_at=datetime.now(timezone.utc),
+                data_start=_backtest_row_time(rows[0]) if rows else None,
+                data_end=_backtest_row_time(rows[-1]) if rows else None,
+                report_path=str(report_path),
+                metrics=metrics,
+            )
+        except Exception as exc:
+            ctx.repo.fail_backtest_run(
+                run_id,
+                datetime.now(timezone.utc),
+                str(exc),
+            )
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        row = ctx.repo.get_backtest_run(run_id)
+        if row is None:
+            raise HTTPException(status_code=500, detail="回测已完成但报告记录不存在。")
+        return _v2_backtest_payload(row, include_report=True)
+
+    @app.get("/api/v2/backtests/{run_id}")
+    def v2_backtest_detail(
+        run_id: str,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        row = ctx.repo.get_backtest_run(run_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="回测记录不存在。")
+        return _v2_backtest_payload(row, include_report=True)
+
+    @app.get("/api/v2/config/active")
+    def v2_active_config(ctx: AccountRequestContext = Depends(get_account_context)) -> dict[str, Any]:
+        return _v2_active_config_payload(ctx.config)
+
+    @app.get("/api/v2/commands/{command_id}")
+    def v2_command_status(
+        command_id: str,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        command = ctx.repo.get_control_command(command_id)
+        if command is None:
+            raise HTTPException(status_code=404, detail="控制命令不存在。")
+        return command
+
+    @app.post("/api/v2/commands/pause")
+    def v2_pause(
+        request: V2CommandRequest,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        return _enqueue_v2_command(ctx, request, "PAUSE_NEW_ENTRIES", "SYSTEM", None, "PAUSE")
+
+    @app.post("/api/v2/commands/resume")
+    def v2_resume(
+        request: V2CommandRequest,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        return _enqueue_v2_command(ctx, request, "RESUME_NEW_ENTRIES", "SYSTEM", None, "RESUME")
+
+    @app.post("/api/v2/commands/close-session")
+    def v2_close_session(
+        request: V2CommandRequest,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        if request.session_id is None:
+            raise HTTPException(status_code=422, detail="session_id 不能为空。")
+        session = ctx.repo.get_session(request.session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="会话不存在。")
+        expected = f"CLOSE-{str(session.get('symbol') or '').upper()}"
+        return _enqueue_v2_command(
+            ctx,
+            request,
+            "CLOSE_SESSION",
+            "SESSION",
+            str(request.session_id),
+            expected,
+        )
+
+    @app.post("/api/v2/commands/stop-all")
+    def v2_stop_all(
+        request: V2CommandRequest,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        return _enqueue_v2_command(ctx, request, "STOP_ALL", "SYSTEM", None, "STOP-ALL")
+
+    @app.post("/api/v2/commands/safety-sweep")
+    def v2_safety_sweep(
+        request: V2CommandRequest,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        return _enqueue_v2_command(ctx, request, "SAFETY_SWEEP", "SYSTEM", None, "SAFETY-SWEEP")
+
     return app
 
 
@@ -453,11 +713,268 @@ class StrategyConfigDraftRequest(BaseModel):
     max_maker_fee_rate: float | None = Field(default=None, ge=0, le=0.01)
 
 
+class V2CommandRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=200)
+    confirmation: str = Field(min_length=3, max_length=80)
+    idempotency_key: str = Field(min_length=8, max_length=120)
+    session_id: int | None = Field(default=None, ge=1)
+    requested_by: str = Field(default="console", min_length=1, max_length=80)
+
+
+class V2BacktestRunRequest(BaseModel):
+    dataset: str = Field(min_length=1, max_length=240)
+    symbol: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
+    observe_rows: int = Field(default=180, ge=30, le=100000)
+    capital: float = Field(default=200.0, gt=0, le=1000000)
+    leverage: float = Field(default=1.0, ge=1.0, le=2.0)
+    maker_fee_rate: float = Field(default=0.0, ge=0.0, le=0.01)
+    fill_model: str = Field(default="L0_CONSERVATIVE", pattern=r"^L0_CONSERVATIVE$")
+
+
 app = create_app()
 
 
 def _mode_label(config: AppConfig) -> str:
     return "测试网" if config.binance_testnet else "真实盘"
+
+
+def _v2_active_config_payload(config: AppConfig) -> dict[str, Any]:
+    raw = config.raw
+    allowed_sections = (
+        "features",
+        "risk",
+        "regime",
+        "grid",
+        "inventory",
+        "cooldown",
+        "costs",
+        "timing",
+        "selection",
+    )
+    return {
+        "environment": "testnet" if config.binance_testnet else "live",
+        "account_id": config.account_id,
+        "version": "v2-active",
+        "sections": {
+            section: deepcopy(raw.get(section, {}))
+            for section in allowed_sections
+        },
+    }
+
+
+def _backtest_dataset_root(config: AppConfig) -> Path:
+    raw_path = str(
+        config.raw.get("backtest", {}).get("dataset_dir", "data/backtests")
+    ).strip()
+    root = Path(raw_path)
+    if not root.is_absolute():
+        root = Path(__file__).resolve().parent / root
+    return root.resolve()
+
+
+def _backtest_report_root(config: AppConfig) -> Path:
+    raw_path = str(
+        config.raw.get("backtest", {}).get(
+            "report_dir",
+            "data/backtests/reports",
+        )
+    ).strip()
+    root = Path(raw_path)
+    if not root.is_absolute():
+        root = Path(__file__).resolve().parent / root
+    root = root.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _resolve_backtest_dataset(config: AppConfig, dataset: str) -> Path:
+    root = _backtest_dataset_root(config)
+    candidate = (root / dataset).resolve()
+    if not candidate.is_relative_to(root):
+        raise HTTPException(status_code=400, detail="回测数据集路径越界。")
+    if not candidate.is_file() or candidate.suffix.lower() != ".csv":
+        raise HTTPException(status_code=404, detail="回测 CSV 数据集不存在。")
+    return candidate
+
+
+def _execute_v2_backtest(
+    config: AppConfig,
+    request: "V2BacktestRunRequest",
+    dataset_path: Path,
+    report_path: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    from trader import _read_backtest_csv, _run_backtest_csv
+
+    raw = deepcopy(config.raw)
+    raw.setdefault("trading", {}).update(
+        {
+            "capital_per_symbol": request.capital,
+            "leverage": request.leverage,
+            "max_maker_fee_rate": request.maker_fee_rate,
+        }
+    )
+    runtime_config = SimpleNamespace(raw=raw)
+    rows = _read_backtest_csv(dataset_path)
+    summary = _run_backtest_csv(
+        runtime_config,
+        dataset_path,
+        request.observe_rows,
+        request.symbol.upper(),
+        0.0,
+        report_path,
+    )
+    return summary, rows
+
+
+def _v2_backtest_metrics(
+    summary: dict[str, Any],
+    report_path: Path,
+) -> dict[str, Any]:
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    fills = report.get("fills", []) if isinstance(report, dict) else []
+    closed_pnls = [
+        float(item["grid_pnl"])
+        for item in fills
+        if isinstance(item, dict) and item.get("grid_pnl") is not None
+    ]
+    gross_profit = sum(value for value in closed_pnls if value > 0)
+    gross_loss = abs(sum(value for value in closed_pnls if value < 0))
+    profit_factor = (
+        gross_profit / gross_loss
+        if gross_loss > 0
+        else (gross_profit if gross_profit > 0 else 0.0)
+    )
+    metric_names = (
+        "total_pnl",
+        "max_drawdown",
+        "equity_sharpe",
+        "win_rate",
+        "fills",
+        "fills_per_bar",
+        "grid_trade_count",
+        "gross_grid_pnl",
+        "fees_paid",
+        "realized_pnl",
+        "unrealized_pnl",
+        "net_position_qty",
+    )
+    metrics = {
+        name: summary.get(name)
+        for name in metric_names
+        if name in summary
+    }
+    metrics.update(
+        {
+            "profit_factor": profit_factor,
+            "inventory_p99": None,
+            "fill_model_level": 0,
+        }
+    )
+    return metrics
+
+
+def _backtest_row_time(row: dict[str, Any]) -> str | None:
+    for key in (
+        "available_time",
+        "event_time",
+        "timestamp",
+        "open_time",
+        "time",
+        "close_time",
+    ):
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
+def _current_git_commit() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).resolve().parent,
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _v2_backtest_payload(
+    row: dict[str, Any],
+    *,
+    include_report: bool = False,
+) -> dict[str, Any]:
+    payload = {
+        "run_id": str(row.get("run_id") or ""),
+        "symbol": str(row.get("symbol") or ""),
+        "status": str(row.get("status") or "UNKNOWN"),
+        "started_at": str(row.get("started_at") or ""),
+        "completed_at": str(row.get("completed_at") or ""),
+        "data_start": str(row.get("data_start") or ""),
+        "data_end": str(row.get("data_end") or ""),
+        "fill_model": str(row.get("fill_model") or ""),
+        "parameter_version": str(row.get("parameter_version") or ""),
+        "code_commit": str(row.get("code_commit") or ""),
+        "report_path": str(row.get("report_path") or ""),
+        "config": row.get("config") if isinstance(row.get("config"), dict) else {},
+        "metrics": row.get("metrics") if isinstance(row.get("metrics"), dict) else {},
+    }
+    if include_report:
+        report_path = Path(payload["report_path"])
+        if report_path.is_file():
+            try:
+                payload["report"] = json.loads(report_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                payload["report"] = None
+        else:
+            payload["report"] = None
+    return payload
+
+
+def _enqueue_v2_command(
+    ctx: AccountRequestContext,
+    request: V2CommandRequest,
+    command_type: str,
+    target_type: str,
+    target_id: str | None,
+    expected_confirmation: str,
+) -> dict[str, Any]:
+    if request.confirmation.strip().upper() != expected_confirmation:
+        raise HTTPException(
+            status_code=422,
+            detail=f"确认文本不匹配，请输入 {expected_confirmation}。",
+        )
+    now = datetime.now(timezone.utc)
+    command = ctx.repo.enqueue_control_command(
+        command_type=command_type,
+        target_type=target_type,
+        target_id=target_id,
+        payload={"session_id": request.session_id} if request.session_id else {},
+        reason=request.reason,
+        idempotency_key=request.idempotency_key,
+        requested_at=now,
+        requested_by=request.requested_by,
+    )
+    ctx.repo.append_audit_log(
+        actor=request.requested_by,
+        action=command_type,
+        resource_type=target_type,
+        resource_id=target_id,
+        detail={
+            "command_id": command.get("command_id"),
+            "reason": request.reason,
+            "status": command.get("status"),
+        },
+        created_at=now,
+    )
+    return {
+        "command_id": command.get("command_id"),
+        "status": command.get("status"),
+    }
 
 
 def _account_payload(account: Any, config: AppConfig) -> dict[str, Any]:

@@ -10,6 +10,7 @@ data/*.db
 data/*.db-*
 logs/*.log
 reports/*.json
+reports/**/*.json
 dist/
 frontend/dist/
 build/

@@ -1592,6 +1592,31 @@ class Repository:
             row = conn.execute(sql, params).fetchone()
             return dict(row) if row is not None else None
 
+    def latest_grid_plan(self, session_id: int) -> dict[str, Any] | None:
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM grid_plans
+                WHERE session_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (session_id,),
+            ).fetchone()
+            return _decoded_row(row, "prices_json", "qty_weights_json")
+
+    def inventory_lots(self, session_id: int) -> list[dict[str, Any]]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM inventory_lots
+                WHERE session_id = ? AND status = 'OPEN'
+                ORDER BY opened_at ASC, id ASC
+                """,
+                (session_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def latest_risk_snapshot(self, session_id: int | None = None) -> dict[str, Any] | None:
         sql = "SELECT * FROM risk_snapshots"
         params: tuple[Any, ...] = ()
@@ -1747,6 +1772,173 @@ class Repository:
                 (command_id,),
             ).fetchone()
             return _decoded_row(row, "payload_json", "result_json")
+
+    def create_backtest_run(
+        self,
+        *,
+        run_id: str,
+        symbol: str,
+        started_at: datetime,
+        fill_model: str,
+        config: dict[str, Any],
+        parameter_version: str | None = None,
+        code_commit: str | None = None,
+    ) -> int:
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO backtest_runs
+                    (run_id, symbol, started_at, fill_model, parameter_version,
+                     code_commit, status, config_json)
+                VALUES (?, ?, ?, ?, ?, ?, 'RUNNING', ?)
+                """,
+                (
+                    run_id,
+                    symbol,
+                    started_at.isoformat(),
+                    fill_model,
+                    parameter_version,
+                    code_commit,
+                    _json(config),
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def complete_backtest_run(
+        self,
+        *,
+        run_id: str,
+        completed_at: datetime,
+        data_start: str | None,
+        data_end: str | None,
+        report_path: str,
+        metrics: dict[str, Any],
+    ) -> None:
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM backtest_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"回测记录不存在: {run_id}")
+            run_pk = int(row["id"])
+            conn.execute(
+                """
+                UPDATE backtest_runs
+                SET completed_at = ?, data_start = ?, data_end = ?,
+                    status = 'COMPLETED', report_path = ?
+                WHERE id = ?
+                """,
+                (
+                    completed_at.isoformat(),
+                    data_start,
+                    data_end,
+                    report_path,
+                    run_pk,
+                ),
+            )
+            for name, value in metrics.items():
+                metric_value = float(value) if isinstance(value, (int, float)) else None
+                metric_json = None if metric_value is not None else _json(value)
+                conn.execute(
+                    """
+                    INSERT INTO backtest_metrics
+                        (backtest_run_id, metric_name, metric_value, metric_json)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(backtest_run_id, metric_name) DO UPDATE SET
+                        metric_value = excluded.metric_value,
+                        metric_json = excluded.metric_json
+                    """,
+                    (run_pk, str(name), metric_value, metric_json),
+                )
+            conn.commit()
+
+    def fail_backtest_run(
+        self,
+        run_id: str,
+        completed_at: datetime,
+        error: str,
+    ) -> None:
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM backtest_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                return
+            run_pk = int(row["id"])
+            conn.execute(
+                """
+                UPDATE backtest_runs
+                SET completed_at = ?, status = 'FAILED'
+                WHERE id = ?
+                """,
+                (completed_at.isoformat(), run_pk),
+            )
+            conn.execute(
+                """
+                INSERT INTO backtest_metrics
+                    (backtest_run_id, metric_name, metric_json)
+                VALUES (?, 'error', ?)
+                ON CONFLICT(backtest_run_id, metric_name) DO UPDATE SET
+                    metric_value = NULL,
+                    metric_json = excluded.metric_json
+                """,
+                (run_pk, _json(error)),
+            )
+            conn.commit()
+
+    def backtest_runs(self, limit: int = 100) -> list[dict[str, Any]]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM backtest_runs
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (max(1, min(int(limit), 500)),),
+            ).fetchall()
+            return [self._backtest_row(conn, row) for row in rows]
+
+    def get_backtest_run(self, run_id: str) -> dict[str, Any] | None:
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM backtest_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            return self._backtest_row(conn, row) if row is not None else None
+
+    def _backtest_row(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> dict[str, Any]:
+        result = _decoded_row(row, "config_json") or {}
+        metric_rows = conn.execute(
+            """
+            SELECT metric_name, metric_value, metric_json
+            FROM backtest_metrics
+            WHERE backtest_run_id = ?
+            ORDER BY id ASC
+            """,
+            (int(row["id"]),),
+        ).fetchall()
+        metrics: dict[str, Any] = {}
+        for metric in metric_rows:
+            if metric["metric_value"] is not None:
+                metrics[str(metric["metric_name"])] = float(metric["metric_value"])
+                continue
+            raw = metric["metric_json"]
+            if raw is None:
+                metrics[str(metric["metric_name"])] = None
+                continue
+            try:
+                metrics[str(metric["metric_name"])] = json.loads(str(raw))
+            except json.JSONDecodeError:
+                metrics[str(metric["metric_name"])] = str(raw)
+        result["metrics"] = metrics
+        return result
 
     def append_audit_log(
         self,

@@ -73,6 +73,193 @@ type ApiAccountSummary = {
   current_exposure: number | null
 }
 
+type ApiV2RegimeDecision = {
+  symbol: string
+  state: string
+  grid_score: number
+  allowed: number | boolean
+  reasons?: string[]
+  hard_blocks?: string[]
+  component_scores?: Record<string, number>
+  model_version?: string
+  as_of_time?: string
+}
+
+type ApiV2InventorySnapshot = {
+  session_id: number
+  symbol: string
+  net_qty: number
+  net_notional: number
+  gross_notional: number
+  avg_entry_price: number | null
+  unrealized_pnl: number
+  utilization: number
+  risk_score: number
+  risk_level: string
+  unpaired_lots: number
+  as_of_time: string
+}
+
+type ApiV2RiskSnapshot = {
+  session_id: number | null
+  symbol: string | null
+  risk_level: string
+  action: string
+  reason: string
+  session_pnl: number | null
+  window_pnl: number | null
+  inventory_utilization: number | null
+  limits?: Record<string, number>
+  as_of_time: string
+}
+
+type ApiV2Dashboard = {
+  environment: string
+  trader_status: string
+  account_id: string
+  equity: number
+  available_balance: number | null
+  current_exposure: number | null
+  window_id: number | null
+  window_pnl: number
+  window_loss_budget: number
+  window_loss_budget_remaining: number
+  active_sessions: number
+  open_orders: number
+  global_risk_level: string
+  data_health: string
+  latest_regime: ApiV2RegimeDecision | null
+  latest_inventory: ApiV2InventorySnapshot | null
+  latest_risk: ApiV2RiskSnapshot | null
+}
+
+export type V2RegimeDecision = {
+  symbol: string
+  state: string
+  gridScore: number
+  allowed: boolean
+  reasons: string[]
+  hardBlocks: string[]
+  componentScores: Record<string, number>
+  modelVersion: string
+  asOfTime: string
+}
+
+export type V2InventorySnapshot = {
+  sessionId: number
+  symbol: string
+  netQty: number
+  netNotional: number
+  grossNotional: number
+  avgEntryPrice: number | null
+  unrealizedPnl: number
+  utilization: number
+  riskScore: number
+  riskLevel: string
+  unpairedLots: number
+  asOfTime: string
+}
+
+export type V2RiskSnapshot = {
+  sessionId: number | null
+  symbol: string
+  riskLevel: string
+  action: string
+  reason: string
+  sessionPnl: number | null
+  windowPnl: number | null
+  inventoryUtilization: number | null
+  limits: Record<string, number>
+  asOfTime: string
+}
+
+export type V2DashboardData = {
+  environment: string
+  traderStatus: string
+  accountId: string
+  equity: number
+  availableBalance: number | null
+  currentExposure: number | null
+  windowId: number | null
+  windowPnl: number
+  windowLossBudget: number
+  windowLossBudgetRemaining: number
+  activeSessions: number
+  openOrders: number
+  globalRiskLevel: string
+  dataHealth: string
+  latestRegime: V2RegimeDecision | null
+  latestInventory: V2InventorySnapshot | null
+  latestRisk: V2RiskSnapshot | null
+}
+
+export type V2CommandType = 'pause' | 'resume' | 'close-session' | 'stop-all' | 'safety-sweep'
+
+export type V2CommandResult = {
+  command_id: string
+  status: string
+}
+
+export type V2SessionEvent = {
+  eventId: number
+  eventType: string
+  aggregateType: string
+  aggregateId: string
+  eventTime: string
+  availableTime: string
+  payload: Record<string, unknown>
+}
+
+export type V2BacktestDataset = {
+  name: string
+  relativePath: string
+  sizeBytes: number
+  modifiedAt: string
+}
+
+export type V2BacktestRun = {
+  runId: string
+  symbol: string
+  status: string
+  startedAt: string
+  completedAt: string
+  dataStart: string
+  dataEnd: string
+  fillModel: string
+  parameterVersion: string
+  codeCommit: string
+  reportPath: string
+  config: Record<string, unknown>
+  metrics: Record<string, number | string | null>
+}
+
+export type V2BacktestDetail = V2BacktestRun & {
+  report: {
+    summary?: Record<string, number | string | null>
+    grid_params?: Record<string, unknown>
+    fills?: Array<Record<string, unknown>>
+    equity_curve?: Array<{
+      bar_index?: number
+      timestamp?: string
+      equity?: number
+      drawdown?: number
+      realized_pnl?: number
+      unrealized_pnl?: number
+      close?: number
+    }>
+  } | null
+}
+
+export type V2BacktestRequest = {
+  dataset: string
+  symbol: string
+  observeRows: number
+  capital: number
+  leverage: number
+  makerFeeRate: number
+  fillModel: string
+}
+
 type ApiLiquidityCandidate = {
   rank: number
   symbol: string
@@ -370,20 +557,246 @@ export async function loadAccounts(): Promise<AccountsData> {
   }
 }
 
+export async function loadV2Dashboard(accountId?: string): Promise<V2DashboardData> {
+  const value = await fetchJson<ApiV2Dashboard>(accountUrl('/api/v2/dashboard', accountId))
+  return {
+    environment: value.environment,
+    traderStatus: value.trader_status,
+    accountId: value.account_id,
+    equity: value.equity,
+    availableBalance: value.available_balance,
+    currentExposure: value.current_exposure,
+    windowId: value.window_id,
+    windowPnl: value.window_pnl,
+    windowLossBudget: value.window_loss_budget,
+    windowLossBudgetRemaining: value.window_loss_budget_remaining,
+    activeSessions: value.active_sessions,
+    openOrders: value.open_orders,
+    globalRiskLevel: value.global_risk_level,
+    dataHealth: value.data_health,
+    latestRegime: value.latest_regime ? mapV2Regime(value.latest_regime) : null,
+    latestInventory: value.latest_inventory ? mapV2Inventory(value.latest_inventory) : null,
+    latestRisk: value.latest_risk ? mapV2Risk(value.latest_risk) : null,
+  }
+}
+
+export async function executeV2Command(
+  command: V2CommandType,
+  payload: {
+    accountId?: string
+    reason: string
+    confirmation: string
+    sessionId?: number
+  },
+): Promise<V2CommandResult> {
+  const response = await fetch(accountUrl(`/api/v2/commands/${command}`, payload.accountId), {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      reason: payload.reason,
+      confirmation: payload.confirmation,
+      idempotency_key: crypto.randomUUID(),
+      session_id: payload.sessionId,
+      requested_by: 'quietgrid-console',
+    }),
+  })
+  const body = (await response.json()) as V2CommandResult | { detail?: string }
+  if (!response.ok) {
+    throw new Error('detail' in body && body.detail ? body.detail : `请求失败：${response.status}`)
+  }
+  return body as V2CommandResult
+}
+
+export async function loadV2SessionEvents(sessionId: number, accountId?: string): Promise<V2SessionEvent[]> {
+  const value = await fetchJson<{ items: Array<{
+    id: number
+    event_type: string
+    aggregate_type: string
+    aggregate_id: string
+    event_time: string
+    available_time: string
+    payload: Record<string, unknown>
+  }> }>(accountUrl(`/api/v2/sessions/${sessionId}/events`, accountId))
+  return value.items.map((item) => ({
+    eventId: item.id,
+    eventType: item.event_type,
+    aggregateType: item.aggregate_type,
+    aggregateId: item.aggregate_id,
+    eventTime: item.event_time,
+    availableTime: item.available_time,
+    payload: item.payload || {},
+  }))
+}
+
+export async function loadV2BacktestDatasets(accountId?: string): Promise<V2BacktestDataset[]> {
+  const value = await fetchJson<{ items: Array<{
+    name: string
+    relative_path: string
+    size_bytes: number
+    modified_at: string
+  }> }>(accountUrl('/api/v2/backtests/datasets', accountId))
+  return value.items.map((item) => ({
+    name: item.name,
+    relativePath: item.relative_path,
+    sizeBytes: item.size_bytes,
+    modifiedAt: item.modified_at,
+  }))
+}
+
+export async function loadV2Backtests(accountId?: string): Promise<V2BacktestRun[]> {
+  const value = await fetchJson<{ items: Array<Record<string, unknown>> }>(
+    accountUrl('/api/v2/backtests', accountId),
+  )
+  return value.items.map(mapV2BacktestRun)
+}
+
+export async function loadV2BacktestDetail(runId: string, accountId?: string): Promise<V2BacktestDetail> {
+  const value = await fetchJson<Record<string, unknown>>(
+    accountUrl(`/api/v2/backtests/${encodeURIComponent(runId)}`, accountId),
+  )
+  return {
+    ...mapV2BacktestRun(value),
+    report: value.report && typeof value.report === 'object'
+      ? value.report as V2BacktestDetail['report']
+      : null,
+  }
+}
+
+export async function startV2Backtest(
+  request: V2BacktestRequest,
+  accountId?: string,
+): Promise<V2BacktestDetail> {
+  const response = await fetch(accountUrl('/api/v2/backtests', accountId), {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      dataset: request.dataset,
+      symbol: request.symbol,
+      observe_rows: request.observeRows,
+      capital: request.capital,
+      leverage: request.leverage,
+      maker_fee_rate: request.makerFeeRate,
+      fill_model: request.fillModel,
+    }),
+  })
+  const body = await response.json() as Record<string, unknown> & { detail?: string }
+  if (!response.ok) {
+    throw new Error(body.detail ? String(body.detail) : `请求失败：${response.status}`)
+  }
+  return {
+    ...mapV2BacktestRun(body),
+    report: body.report && typeof body.report === 'object'
+      ? body.report as V2BacktestDetail['report']
+      : null,
+  }
+}
+
+function mapV2Regime(value: ApiV2RegimeDecision): V2RegimeDecision {
+  return {
+    symbol: value.symbol,
+    state: value.state,
+    gridScore: Number(value.grid_score || 0),
+    allowed: Boolean(value.allowed),
+    reasons: Array.isArray(value.reasons) ? value.reasons : [],
+    hardBlocks: Array.isArray(value.hard_blocks) ? value.hard_blocks : [],
+    componentScores: value.component_scores || {},
+    modelVersion: value.model_version || '',
+    asOfTime: value.as_of_time || '',
+  }
+}
+
+function mapV2Inventory(value: ApiV2InventorySnapshot): V2InventorySnapshot {
+  return {
+    sessionId: value.session_id,
+    symbol: value.symbol,
+    netQty: value.net_qty,
+    netNotional: value.net_notional,
+    grossNotional: value.gross_notional,
+    avgEntryPrice: value.avg_entry_price,
+    unrealizedPnl: value.unrealized_pnl,
+    utilization: value.utilization,
+    riskScore: value.risk_score,
+    riskLevel: value.risk_level,
+    unpairedLots: value.unpaired_lots,
+    asOfTime: value.as_of_time,
+  }
+}
+
+function mapV2Risk(value: ApiV2RiskSnapshot): V2RiskSnapshot {
+  return {
+    sessionId: value.session_id,
+    symbol: value.symbol || '',
+    riskLevel: value.risk_level,
+    action: value.action,
+    reason: value.reason,
+    sessionPnl: value.session_pnl,
+    windowPnl: value.window_pnl,
+    inventoryUtilization: value.inventory_utilization,
+    limits: value.limits || {},
+    asOfTime: value.as_of_time,
+  }
+}
+
+function mapV2BacktestRun(value: Record<string, unknown>): V2BacktestRun {
+  const metrics = value.metrics && typeof value.metrics === 'object'
+    ? value.metrics as Record<string, number | string | null>
+    : {}
+  const config = value.config && typeof value.config === 'object'
+    ? value.config as Record<string, unknown>
+    : {}
+  return {
+    runId: String(value.run_id || ''),
+    symbol: String(value.symbol || ''),
+    status: String(value.status || 'UNKNOWN'),
+    startedAt: String(value.started_at || ''),
+    completedAt: String(value.completed_at || ''),
+    dataStart: String(value.data_start || ''),
+    dataEnd: String(value.data_end || ''),
+    fillModel: String(value.fill_model || ''),
+    parameterVersion: String(value.parameter_version || ''),
+    codeCommit: String(value.code_commit || ''),
+    reportPath: String(value.report_path || ''),
+    config,
+    metrics,
+  }
+}
+
 export function consoleEventsUrl(accountId?: string): string {
   return accountUrl('/api/events', accountId)
 }
 
 export async function loadConsoleData(accountId?: string, gridRoundId?: number): Promise<ConsoleData> {
-  const [summary, controlState, strategyConfig, gridRoundResponse, liquidityCandidates, traderProcessState, verificationRows, auditLogs] = await Promise.all([
+  const [summary, controlState, strategyConfig, gridRoundResponse] = await Promise.all([
     fetchJson<ApiSummary>(accountUrl('/api/summary', accountId)),
     fetchJson<ApiControlState>(accountUrl('/api/control-state', accountId)),
     fetchJson<ApiStrategyConfig>(accountUrl('/api/strategy-config', accountId)),
     fetchJson<ApiList<ApiGridRound>>(accountUrl('/api/grid-rounds', accountId)),
-    fetchJson<ApiList<ApiLiquidityCandidate>>(accountUrl('/api/selection/candidates?limit=20', accountId)),
-    fetchJson<ApiTraderProcessState>(accountUrl('/api/process/trader', accountId)),
-    fetchJson<ApiList<ApiVerificationRow>>(accountUrl('/api/verification/environment', accountId)),
-    fetchJson<ApiList<ApiAuditLog>>(accountUrl('/api/logs/system?limit=20', accountId)),
+  ])
+  const [liquidityCandidates, traderProcessState, verificationRows, auditLogs] = await Promise.all([
+    fetchJson<ApiList<ApiLiquidityCandidate>>(
+      accountUrl('/api/selection/candidates?limit=20', accountId),
+    ).catch(() => ({ items: [] })),
+    fetchJson<ApiTraderProcessState>(
+      accountUrl('/api/process/trader', accountId),
+    ).catch(() => ({
+      available: false,
+      mode: 'unavailable',
+      service: 'quietgrid-trader',
+      state: 'unknown',
+      detail: '交易进程状态暂不可用',
+    })),
+    fetchJson<ApiList<ApiVerificationRow>>(
+      accountUrl('/api/verification/environment', accountId),
+    ).catch(() => ({ items: [] })),
+    fetchJson<ApiList<ApiAuditLog>>(
+      accountUrl('/api/logs/system?limit=20', accountId),
+    ).catch(() => ({ items: [] })),
   ])
   const gridRounds = gridRoundResponse.items.map((round, index, items) => mapGridRound(round, items.length - index))
   const preferredRoundId = controlState.current_round_id
@@ -402,12 +815,26 @@ export async function loadConsoleData(accountId?: string, gridRoundId?: number):
       )
     : { items: [] }
   const sessionDetails = await Promise.all(
-    sessionList.items.map((session) => fetchJson<ApiSessionDetail>(accountUrl(`/api/sessions/${session.id}`, accountId))),
+    sessionList.items.map(async (session) => {
+      try {
+        return await fetchJson<ApiSessionDetail>(
+          accountUrl(`/api/sessions/${session.id}`, accountId),
+        )
+      } catch {
+        return {
+          session,
+          orders: [],
+          trades: [],
+          performance: {} as ApiGridPerformance,
+          position: {},
+        }
+      }
+    }),
   )
   const displayedCandidates: ApiList<ApiLiquidityCandidate> = selectedGridRoundId
     ? await fetchJson<ApiList<ApiLiquidityCandidate>>(
         accountUrl(`/api/grid-rounds/${selectedGridRoundId}/candidates`, accountId),
-      )
+      ).catch(() => liquidityCandidates)
     : liquidityCandidates
 
   return {

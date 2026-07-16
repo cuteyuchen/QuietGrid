@@ -1661,6 +1661,10 @@ class TradingController:
         current_time = now or datetime.now(timezone.utc)
         self._apply_runtime_config_draft(current_time)
         actions: list[tuple[str, str]] = []
+        actions.extend(
+            (f"command:{command_id}", status)
+            for command_id, status in await self.process_control_commands_once(current_time)
+        )
         commission_action = await self._monitor_active_maker_fee_if_due(current_time)
         if commission_action is not None:
             actions.append(("*", commission_action))
@@ -2018,6 +2022,9 @@ class TradingController:
         while max_iterations is None or iteration < max_iterations:
             iteration += 1
             current_time = datetime.now(timezone.utc)
+            command_actions = await self.process_control_commands_once(current_time)
+            if command_actions:
+                statuses.extend(f"command:{command_id}:{status}" for command_id, status in command_actions)
             if self.round_active:
                 stop_request = self.repository.round_stop_request()
                 if stop_request is not None:
@@ -2051,6 +2058,125 @@ class TradingController:
             statuses.append(result.status)
             await sleep_fn(self.config.loop_interval_seconds)
         return statuses
+
+    async def process_control_commands_once(
+        self,
+        now: datetime | None = None,
+    ) -> list[tuple[str, str]]:
+        current_time = now or datetime.now(timezone.utc)
+        results: list[tuple[str, str]] = []
+        for command in self.repository.pending_control_commands():
+            command_id = str(command.get("command_id") or "")
+            command_type = str(command.get("command_type") or "").upper()
+            target_id = command.get("target_id")
+            try:
+                self.repository.update_control_command(
+                    command_id,
+                    "ACCEPTED",
+                    {"accepted_at": current_time.isoformat()},
+                    current_time,
+                )
+                result = await self._execute_control_command(
+                    command_type,
+                    target_id,
+                    command.get("payload") if isinstance(command.get("payload"), dict) else {},
+                    str(command.get("reason") or "控制台命令"),
+                    current_time,
+                )
+            except ValueError as exc:
+                self.repository.update_control_command(
+                    command_id,
+                    "REJECTED",
+                    {"error": str(exc)},
+                    current_time,
+                )
+                results.append((command_id, "rejected"))
+                continue
+            except Exception as exc:
+                self.repository.update_control_command(
+                    command_id,
+                    "FAILED",
+                    {"error": str(exc)},
+                    current_time,
+                )
+                self.repository.log_system(
+                    "ERROR",
+                    "control_command",
+                    "v2 control command failed.",
+                    f"command_id={command_id}, command_type={command_type}, error={exc}",
+                    current_time,
+                )
+                results.append((command_id, "failed"))
+                continue
+            self.repository.update_control_command(
+                command_id,
+                "EXECUTED",
+                result,
+                current_time,
+            )
+            self.repository.append_event(
+                "CONTROL_COMMAND",
+                current_time,
+                {
+                    "command_id": command_id,
+                    "command_type": command_type,
+                    "result": result,
+                },
+                session_id=int(target_id) if command_type == "CLOSE_SESSION" and str(target_id).isdigit() else None,
+            )
+            results.append((command_id, "executed"))
+        return results
+
+    async def _execute_control_command(
+        self,
+        command_type: str,
+        target_id: Any,
+        payload: dict[str, Any],
+        reason: str,
+        at: datetime,
+    ) -> dict[str, Any]:
+        if command_type == "PAUSE_NEW_ENTRIES":
+            self.repository.set_control_state("new_entries_paused", True, at)
+            return {"new_entries_paused": True}
+        if command_type == "RESUME_NEW_ENTRIES":
+            risk = self.risk.can_open_new_symbol(
+                [],
+                self.config.capital_per_symbol,
+                account_equity=self._account_equity or self.config.total_capital_limit,
+                window_pnl=self.repository.window_realized_pnl(self.current_window_id),
+                window_stop_count=self.repository.window_stop_count(self.current_window_id),
+            )
+            if risk.action in {RiskAction.HALT_WINDOW, RiskAction.BLOCK}:
+                raise ValueError(risk.reason)
+            self.repository.set_control_state("new_entries_paused", False, at)
+            return {"new_entries_paused": False}
+        if command_type == "CLOSE_SESSION":
+            try:
+                session_id = int(target_id)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("close-session 缺少有效 session_id。") from exc
+            session = next(
+                (item for item in self.active_sessions.values() if item.session_id == session_id),
+                None,
+            )
+            if session is None:
+                raise ValueError("目标会话不存在或已经关闭。")
+            closed = await self._close_session(session, reason, at)
+            if not closed:
+                raise RuntimeError("会话清理未完成，将保持 CLOSING。")
+            return {"session_id": session_id, "closed": True}
+        if command_type == "STOP_ALL":
+            closed = (
+                await self.stop_round(reason, at)
+                if self.round_active
+                else await self.close_all_active_sessions(reason, at)
+            )
+            return {"closed_symbols": closed}
+        if command_type == "SAFETY_SWEEP":
+            closed = await self.close_all_active_sessions(reason, at)
+            reconciled = await self.reconcile_positions_once(at, include_inactive=True)
+            return {"closed_symbols": closed, "reconciled": reconciled}
+        raise ValueError(f"不支持的控制命令: {command_type}")
 
     async def reconcile_positions_once(
         self,

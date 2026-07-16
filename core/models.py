@@ -8,8 +8,12 @@ from typing import Any
 
 class GridState(Enum):
     IDLE = "IDLE"
+    SELECTING = "SELECTING"
     OBSERVING = "OBSERVING"
+    READY = "READY"
     RUNNING = "RUNNING"
+    REBALANCING = "REBALANCING"
+    RECOVERING = "RECOVERING"
     PAUSED = "PAUSED"
     COOLDOWN = "COOLDOWN"
     CLOSING = "CLOSING"
@@ -32,9 +36,12 @@ class OrderStatus(Enum):
 class RiskAction(Enum):
     NONE = "none"
     SKIP = "skip"
+    REDUCE = "reduce"
+    BLOCK = "block"
     COOLDOWN = "cooldown"
     CLOSE = "close"
     FORCE_CLOSE = "force_close"
+    HALT_WINDOW = "halt_window"
 
 
 @dataclass(frozen=True)
@@ -52,6 +59,12 @@ class GridParams:
     volatility_method: str = "std"
     volatility_value: float = 0.0
     volatility_window: int = 0
+    upper_stop_loss_price: float | None = None
+    grid_mode: str = "legacy"
+    regime_score: float | None = None
+    cost_floor_pct: float = 0.0
+    qty_weights: tuple[float, ...] = ()
+    parameter_version: str = "legacy-v1"
 
 
 @dataclass

@@ -26,9 +26,12 @@ from exchange.binance import BinanceFuturesClient
 from exchange.mock import MockExchangeClient
 from strategy.backtest import BacktestConfig, BacktestResult, run_grid_backtest
 from strategy.cooldown import CooldownConfig
-from strategy.controller import ControllerConfig, TradingController, _position_close_specs
+from strategy.adaptive_grid import AdaptiveGridConfig
+from strategy.controller import ControllerConfig, TradingController, V2FeatureFlags, _position_close_specs
 from strategy.grid_calculator import GridConfig, calculate_grid_params
+from strategy.inventory import InventoryConfig
 from strategy.observer import ObserverConfig
+from strategy.regime import RegimeConfig, RegimeWeights
 from strategy.selector import SelectionConfig, _is_perpetual_contract
 
 
@@ -2225,7 +2228,11 @@ def _round_to_step(value: float, step: float, rounding) -> float:
 
 def _build_repository(config) -> Repository:
     notifier = build_system_log_notifier(config.raw.get("notifications", {}))
-    return Repository(config.database_path, notifier=notifier)
+    return Repository(
+        config.database_path,
+        notifier=notifier,
+        account_id=getattr(config, "account_id", "default"),
+    )
 
 
 def _build_controller(exchange, config, live_observation: bool | None = None) -> TradingController:
@@ -2235,6 +2242,12 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
     grid = raw["grid"]
     cooldown = raw["cooldown"]
     selection = raw["selection"]
+    features = raw.get("features", {})
+    regime = raw.get("regime", {})
+    risk = raw.get("risk", {})
+    inventory = raw.get("inventory", {})
+    costs = raw.get("costs", {})
+    regime_weights = regime.get("weights", {})
     testnet_force_window = bool(getattr(config, "binance_testnet", False)) and bool(timing.get("testnet_force_window", False))
     testnet_fast_observation = bool(getattr(config, "binance_testnet", False)) and bool(
         timing.get("testnet_fast_observation", False)
@@ -2292,6 +2305,12 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             maker_fee_check_interval_seconds=float(trading.get("maker_fee_check_interval_seconds", 300.0)),
             loop_interval_seconds=float(timing["loop_interval_seconds"]),
             scheduler_check_minutes=float(timing["scheduler_check_minutes"]),
+            effective_leverage_cap=float(risk.get("effective_leverage_cap", float("inf"))),
+            max_session_loss_pct=float(risk.get("max_session_loss_pct", 0.0)),
+            max_window_loss_pct=float(risk.get("max_weekend_loss_pct", 0.0)),
+            max_symbol_inventory_pct=float(risk.get("max_symbol_inventory_pct", 0.10)),
+            max_consecutive_session_losses=int(risk.get("max_consecutive_session_losses", 0)),
+            max_window_stop_count=int(risk.get("max_window_stop_count", 0)),
         ),
         cooldown_config=CooldownConfig(
             atr_period=int(cooldown["atr_period"]),
@@ -2299,6 +2318,56 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             atr_recovery_ratio=float(cooldown["atr_recovery_ratio"]),
             amplitude_multiplier=float(cooldown["amplitude_multiplier"]),
             min_calm_minutes=int(timing.get("min_calm_minutes", cooldown.get("min_calm_minutes", 15))),
+        ),
+        feature_flags=V2FeatureFlags(
+            regime_v2=bool(features.get("regime_v2", False)),
+            inventory_manager=bool(features.get("inventory_manager", False)),
+            adaptive_grid_v2=bool(features.get("adaptive_grid_v2", False)),
+            risk_manager_v2=bool(features.get("risk_manager_v2", False)),
+        ),
+        regime_config=RegimeConfig(
+            short_window=int(regime.get("short_window", 15)),
+            long_window=int(regime.get("long_window", 60)),
+            enter_threshold=float(regime.get("enter_threshold", 75)),
+            stay_threshold=float(regime.get("stay_threshold", 65)),
+            max_data_age_seconds=float(regime.get("max_data_age_seconds", 90)),
+            max_spread_pct=float(regime.get("hard_limits", {}).get("max_spread_pct", 0.001)),
+            max_vol_expansion_ratio=float(
+                regime.get("hard_limits", {}).get("max_vol_expansion_ratio", 2.5)
+            ),
+            min_depth_usdt=float(regime.get("hard_limits", {}).get("min_depth_usdt", 10_000)),
+            weights=RegimeWeights(
+                volatility=float(regime_weights.get("volatility", 0.25)),
+                trend=float(regime_weights.get("trend", 0.25)),
+                liquidity=float(regime_weights.get("liquidity", 0.20)),
+                mean_reversion=float(regime_weights.get("mean_reversion", 0.15)),
+                cost=float(regime_weights.get("cost", 0.10)),
+                event=float(regime_weights.get("event", 0.05)),
+            ),
+        ),
+        adaptive_grid_config=AdaptiveGridConfig(
+            center_half_life_minutes=float(grid.get("center_half_life_minutes", 30)),
+            k_atr_range=float(grid.get("k_atr_range", 2.0)),
+            k_sigma_range=float(grid.get("k_sigma_range", 2.0)),
+            max_range_pct=float(grid.get("max_range_pct", 0.03)),
+            min_step_pct=float(grid.get("min_step_pct", 0.0015)),
+            max_step_pct=float(grid.get("max_step_pct", 0.01)),
+            k_atr_step=float(grid.get("k_atr_step", 0.50)),
+            k_sigma_step=float(grid.get("k_sigma_step", 0.80)),
+            min_grid_num=int(grid.get("min_grid_num", 6)),
+            max_grid_num=int(grid.get("max_grid_num", 20)),
+            expansion_rate=float(grid.get("expansion_rate", 0.08)),
+            stop_buffer_pct=float(trading.get("stop_buffer_pct", 0.015)),
+            adverse_selection_buffer_pct=float(costs.get("adverse_selection_buffer_pct", 0.0005)),
+            slippage_buffer_pct=float(costs.get("slippage_buffer_pct", 0.0005)),
+            safety_margin_pct=float(costs.get("safety_margin_pct", 0.0005)),
+        ),
+        inventory_config=InventoryConfig(
+            caution_utilization=float(inventory.get("caution_utilization", 0.40)),
+            high_utilization=float(inventory.get("high_utilization", 0.60)),
+            critical_utilization=float(inventory.get("critical_utilization", 0.80)),
+            suppress_same_side_orders=bool(inventory.get("suppress_same_side_orders", True)),
+            passive_reduce_first=bool(inventory.get("passive_reduce_first", True)),
         ),
     )
 

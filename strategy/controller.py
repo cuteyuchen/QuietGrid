@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
 from math import isfinite
 from typing import Any
@@ -12,6 +12,7 @@ from core.scheduler import Scheduler
 from db.repository import Repository
 from exchange.base import ExchangeClient
 from strategy.cooldown import CooldownConfig, CooldownEvaluator
+from strategy.adaptive_grid import AdaptiveGridConfig, AdaptiveGridGenerator
 from strategy.grid_calculator import SUPPORTED_RANGE_METHODS, GridCalculationError, GridConfig
 from strategy.grid_calculator import calculate_grid_params, calculate_volatility_metric
 from strategy.grid_engine import (
@@ -24,6 +25,8 @@ from strategy.grid_engine import (
     _response_order_id,
 )
 from strategy.observer import ObservationAborted, Observer, ObserverConfig
+from strategy.inventory import InventoryAction, InventoryConfig, InventoryManager, InventorySnapshot
+from strategy.regime import REGIME_MODEL_VERSION, RegimeConfig, RegimeDecision, RegimeEngine
 from strategy.risk import RiskConfig, RiskManager
 from strategy.selector import SelectionConfig, Selector
 from strategy.state_machine import StateMachine
@@ -40,6 +43,20 @@ class ControllerConfig:
     maker_fee_check_interval_seconds: float = 300.0
     loop_interval_seconds: float = 10
     scheduler_check_minutes: float = 5
+    effective_leverage_cap: float = float("inf")
+    max_session_loss_pct: float = 0.0
+    max_window_loss_pct: float = 0.0
+    max_symbol_inventory_pct: float = 0.10
+    max_consecutive_session_losses: int = 0
+    max_window_stop_count: int = 0
+
+
+@dataclass(frozen=True)
+class V2FeatureFlags:
+    regime_v2: bool = False
+    inventory_manager: bool = False
+    adaptive_grid_v2: bool = False
+    risk_manager_v2: bool = False
 
 
 @dataclass(frozen=True)
@@ -67,6 +84,10 @@ class TradingController:
         grid_config: GridConfig,
         controller_config: ControllerConfig,
         cooldown_config: CooldownConfig | None = None,
+        feature_flags: V2FeatureFlags | None = None,
+        regime_config: RegimeConfig | None = None,
+        adaptive_grid_config: AdaptiveGridConfig | None = None,
+        inventory_config: InventoryConfig | None = None,
     ) -> None:
         self.exchange = exchange
         self.scheduler = scheduler
@@ -78,12 +99,41 @@ class TradingController:
         self.engine = GridEngine(exchange, log_system=repository.log_system)
         self.state_machine = StateMachine()
         self.config = controller_config
+        self.feature_flags = feature_flags or V2FeatureFlags()
+        self.regime = RegimeEngine(regime_config or RegimeConfig())
+        self.adaptive_grid = AdaptiveGridGenerator(adaptive_grid_config or AdaptiveGridConfig())
+        self.inventory = InventoryManager(inventory_config or InventoryConfig())
         self.risk = RiskManager(
             scheduler,
             RiskConfig(
                 take_profit_usdt=controller_config.take_profit_usdt,
                 total_capital_limit=controller_config.total_capital_limit,
                 max_concurrent=controller_config.max_concurrent,
+                effective_leverage_cap=(
+                    controller_config.effective_leverage_cap
+                    if self.feature_flags.risk_manager_v2
+                    else float("inf")
+                ),
+                max_session_loss_pct=(
+                    controller_config.max_session_loss_pct
+                    if self.feature_flags.risk_manager_v2
+                    else 0.0
+                ),
+                max_window_loss_pct=(
+                    controller_config.max_window_loss_pct
+                    if self.feature_flags.risk_manager_v2
+                    else 0.0
+                ),
+                max_consecutive_session_losses=(
+                    controller_config.max_consecutive_session_losses
+                    if self.feature_flags.risk_manager_v2
+                    else 0
+                ),
+                max_window_stop_count=(
+                    controller_config.max_window_stop_count
+                    if self.feature_flags.risk_manager_v2
+                    else 0
+                ),
             ),
         )
         self.active_sessions: dict[str, SymbolSession] = {}
@@ -99,6 +149,9 @@ class TradingController:
         self._grid_recalculated_at: dict[int, datetime] = {}
         self._session_event_locks: dict[str, asyncio.Lock] = {}
         self._last_maker_fee_by_symbol: dict[str, float] = {}
+        self._regime_by_symbol: dict[str, RegimeDecision] = {}
+        self._inventory_by_symbol: dict[str, InventorySnapshot] = {}
+        self._account_equity: float | None = None
         self._maker_fee_checked_at: datetime | None = None
         self._runtime_config_signature = self._runtime_config_signature_from_config(controller_config)
         self._runtime_config_error_signature: str | None = None
@@ -143,6 +196,22 @@ class TradingController:
                 current_time,
             )
             return result
+        if (
+            self.feature_flags.risk_manager_v2
+            and self.config.leverage > self.config.effective_leverage_cap
+        ):
+            result = StartupCheck(False, "配置杠杆超过 v2 有效杠杆上限。", 0.0)
+            self.repository.log_system(
+                "ERROR",
+                "risk_v2",
+                result.reason,
+                (
+                    f"leverage={self.config.leverage}, "
+                    f"effective_leverage_cap={self.config.effective_leverage_cap}"
+                ),
+                current_time,
+            )
+            return result
         if required_budget > self.config.total_capital_limit:
             result = StartupCheck(False, "配置的并发本金超过总资金上限。", 0.0)
             self.repository.log_system("ERROR", "controller", result.reason, None, current_time)
@@ -172,6 +241,7 @@ class TradingController:
             )
             return result
 
+        self._account_equity = balance
         result = StartupCheck(True, "启动前检查通过。", balance)
         self.repository.log_system(
             "INFO",
@@ -723,24 +793,105 @@ class TradingController:
         calculated_at: datetime,
     ) -> tuple[float, GridParams, tuple[float, float, float]]:
         current_price = (float(item.bid_price) + float(item.ask_price)) / 2
-        limit = max(int(observer_config.observe_hours * 60), observer_config.min_samples)
+        limit = max(
+            int(observer_config.observe_hours * 60),
+            observer_config.min_samples,
+            self.regime.config.long_window + 1 if self.feature_flags.regime_v2 else 0,
+        )
         klines, funding_rate = await asyncio.gather(
             self.exchange.get_klines(item.symbol, "1m", limit),
             self.exchange.get_funding_rate(item.symbol),
         )
+        regime_decision: RegimeDecision | None = None
+        if self.feature_flags.regime_v2:
+            maker_fee_rate = self._last_maker_fee_by_symbol.get(
+                item.symbol,
+                self.config.max_maker_fee_rate,
+            )
+            cost_floor_pct = (
+                max(0.0, maker_fee_rate) * 2
+                + abs(float(funding_rate))
+                + self.adaptive_grid.config.adverse_selection_buffer_pct
+                + self.adaptive_grid.config.slippage_buffer_pct
+                + self.adaptive_grid.config.safety_margin_pct
+            )
+            regime_decision = self.regime.evaluate(
+                item.symbol,
+                klines,
+                spread_pct=float(item.spread_pct),
+                depth_usdt=float(item.depth_usdt),
+                funding_rate=float(funding_rate),
+                expected_step_pct=max(grid_config.min_step_pct, cost_floor_pct),
+                cost_floor_pct=cost_floor_pct,
+                running=item.symbol in self.active_sessions,
+                as_of=calculated_at,
+            )
+            self._regime_by_symbol[item.symbol] = regime_decision
+            active = self.active_sessions.get(item.symbol)
+            feature_snapshot_id = self.repository.create_feature_snapshot(
+                session_id=active.session_id if active else None,
+                symbol=item.symbol,
+                as_of_time=regime_decision.as_of,
+                source_time=calculated_at,
+                features=asdict(regime_decision.features),
+                feature_version=REGIME_MODEL_VERSION,
+            )
+            self.repository.create_regime_decision(
+                session_id=active.session_id if active else None,
+                symbol=item.symbol,
+                as_of_time=regime_decision.as_of,
+                state=regime_decision.state,
+                grid_score=regime_decision.grid_score,
+                allowed=regime_decision.allowed,
+                reasons=regime_decision.reasons,
+                hard_blocks=regime_decision.hard_blocks,
+                component_scores=regime_decision.component_scores,
+                model_version=regime_decision.model_version,
+                feature_snapshot_id=feature_snapshot_id,
+            )
+            self.repository.append_event(
+                "REGIME_CHANGED",
+                regime_decision.as_of,
+                {
+                    "state": regime_decision.state,
+                    "grid_score": regime_decision.grid_score,
+                    "allowed": regime_decision.allowed,
+                    "reasons": regime_decision.reasons,
+                    "hard_blocks": regime_decision.hard_blocks,
+                },
+                session_id=active.session_id if active else None,
+                symbol=item.symbol,
+            )
+            if not regime_decision.allowed:
+                detail = regime_decision.hard_blocks or regime_decision.reasons
+                raise GridCalculationError("Regime Engine 禁止启动网格: " + "；".join(detail))
         lows = [float(row["low"]) for row in klines]
         highs = [float(row["high"]) for row in klines]
         lower = min(lows)
         upper = max(highs)
         range_width_pct = (upper - lower) / lower
-        params = calculate_grid_params(
-            item.symbol,
-            klines,
-            current_price,
-            funding_rate,
-            replace(grid_config, min_samples=observer_config.min_samples),
-            calculated_at=calculated_at,
-        )
+        if self.feature_flags.adaptive_grid_v2:
+            params = self.adaptive_grid.generate(
+                item.symbol,
+                klines,
+                current_price=current_price,
+                funding_rate=float(funding_rate),
+                maker_fee_rate=self._last_maker_fee_by_symbol.get(
+                    item.symbol,
+                    self.config.max_maker_fee_rate,
+                ),
+                regime_score=regime_decision.grid_score if regime_decision else 100.0,
+                calculated_at=calculated_at,
+            )
+        else:
+            params = calculate_grid_params(
+                item.symbol,
+                klines,
+                current_price,
+                funding_rate,
+                replace(grid_config, min_samples=observer_config.min_samples),
+                calculated_at=calculated_at,
+            )
         return current_price, params, (lower, upper, range_width_pct)
 
     async def _start_round_session(
@@ -751,6 +902,34 @@ class TradingController:
         at: datetime,
     ) -> bool:
         if self.current_window_id is None or symbol in self.round_stopped_symbols:
+            return False
+        entry_risk = self.risk.can_open_new_symbol(
+            list(self.active_sessions.values()),
+            self.config.capital_per_symbol,
+            regime_allowed=(
+                not self.feature_flags.regime_v2
+                or bool(self._regime_by_symbol.get(symbol) and self._regime_by_symbol[symbol].allowed)
+            ),
+            account_equity=self._account_equity or self.config.total_capital_limit,
+            window_pnl=self.repository.window_realized_pnl(self.current_window_id),
+            window_stop_count=self.repository.window_stop_count(self.current_window_id),
+        )
+        if entry_risk.action != RiskAction.NONE:
+            self.repository.create_risk_snapshot(
+                as_of_time=at,
+                risk_level="HALT" if entry_risk.action == RiskAction.HALT_WINDOW else "BLOCK",
+                action=entry_risk.action.value,
+                reason=entry_risk.reason,
+                window_id=self.current_window_id,
+                symbol=symbol,
+                window_pnl=self.repository.window_realized_pnl(self.current_window_id),
+                limits={
+                    "max_window_loss_pct": self.config.max_window_loss_pct,
+                    "max_window_stop_count": self.config.max_window_stop_count,
+                },
+            )
+            if entry_risk.action == RiskAction.HALT_WINDOW:
+                self.round_stopping = True
             return False
         session_id = self.repository.create_session(
             self.current_window_id,
@@ -1641,9 +1820,109 @@ class TradingController:
                     continue
             await self._refresh_session_current_volatility_if_due(session, current_time)
             last_price = await self._current_price(symbol)
-            decision = self.risk.evaluate_symbol(session, last_price, current_time)
+            regime_decision = self._regime_by_symbol.get(symbol)
+            if (
+                self.feature_flags.regime_v2
+                and regime_decision is not None
+                and not regime_decision.allowed
+            ):
+                await self._enter_cooldown(
+                    session,
+                    f"Regime 已不适合网格: {regime_decision.state}",
+                    current_time,
+                )
+                actions.append((symbol, RiskAction.COOLDOWN.value))
+                continue
+
+            inventory_snapshot: InventorySnapshot | None = None
+            if self.feature_flags.inventory_manager:
+                max_inventory_notional = (
+                    (self._account_equity or self.config.total_capital_limit)
+                    * self.config.effective_leverage_cap
+                    * self.config.max_symbol_inventory_pct
+                )
+                inventory_decision = self.inventory.evaluate(
+                    session.orders,
+                    mark_price=last_price,
+                    max_inventory_notional=max_inventory_notional,
+                    trend_direction=(
+                        regime_decision.features.trend_direction
+                        if regime_decision is not None
+                        else 0
+                    ),
+                )
+                inventory_snapshot = inventory_decision.snapshot
+                self._inventory_by_symbol[symbol] = inventory_snapshot
+                self.repository.replace_inventory_lots(
+                    session.session_id,
+                    symbol,
+                    inventory_snapshot.unpaired_lots,
+                    current_time,
+                )
+                self.repository.create_inventory_snapshot(
+                    session.session_id,
+                    symbol,
+                    inventory_snapshot,
+                    current_time,
+                )
+                if inventory_decision.action == InventoryAction.CLOSE:
+                    await self._close_session(session, inventory_decision.reason, current_time)
+                    actions.append((symbol, RiskAction.CLOSE.value))
+                    continue
+                if inventory_decision.action != InventoryAction.ALLOW:
+                    cancelled = await self.engine.suppress_inventory_increasing_orders(
+                        session,
+                        net_qty=inventory_snapshot.net_qty,
+                    )
+                    self._persist_session_orders(session)
+                    self.repository.append_event(
+                        "RISK_LIMIT_BREACHED",
+                        current_time,
+                        {
+                            "source": "inventory",
+                            "action": inventory_decision.action.value,
+                            "reason": inventory_decision.reason,
+                            "utilization": inventory_snapshot.utilization,
+                            "cancelled_orders": len(cancelled),
+                        },
+                        session_id=session.session_id,
+                        symbol=symbol,
+                    )
+                    actions.append((symbol, inventory_decision.action.value.lower()))
+
+            window_pnl = self.repository.window_realized_pnl(self.current_window_id)
+            decision = self.risk.evaluate_symbol(
+                session,
+                last_price,
+                current_time,
+                inventory=inventory_snapshot,
+                account_equity=self._account_equity or self.config.total_capital_limit,
+                window_pnl=window_pnl,
+                window_stop_count=self.repository.window_stop_count(self.current_window_id),
+            )
             if decision.action == RiskAction.NONE:
                 continue
+            self.repository.create_risk_snapshot(
+                as_of_time=current_time,
+                risk_level=(
+                    "CRITICAL"
+                    if decision.action in {RiskAction.CLOSE, RiskAction.FORCE_CLOSE, RiskAction.HALT_WINDOW}
+                    else "HIGH"
+                ),
+                action=decision.action.value,
+                reason=decision.reason,
+                session_id=session.session_id,
+                window_id=self.current_window_id,
+                symbol=symbol,
+                session_pnl=session.realized_pnl + (inventory_snapshot.unrealized_pnl if inventory_snapshot else 0.0),
+                window_pnl=window_pnl,
+                inventory_utilization=inventory_snapshot.utilization if inventory_snapshot else None,
+                limits={
+                    "max_session_loss_pct": self.config.max_session_loss_pct,
+                    "max_window_loss_pct": self.config.max_window_loss_pct,
+                    "max_symbol_inventory_pct": self.config.max_symbol_inventory_pct,
+                },
+            )
             await self._apply_risk_decision(session, decision.action, decision.reason, current_time)
             actions.append((symbol, decision.action.value))
         if not any(session.state == GridState.CLOSING for session in self.active_sessions.values()):
@@ -2108,8 +2387,23 @@ class TradingController:
     async def _apply_risk_decision(self, session: SymbolSession, action: RiskAction, reason: str, at: datetime) -> None:
         if session.state in {GridState.CLOSING, GridState.STOPPED}:
             return
+        if action == RiskAction.HALT_WINDOW:
+            if self.round_active:
+                await self.stop_round(reason, at)
+            else:
+                await self.close_all_active_sessions(reason, at)
+            return
         if action in {RiskAction.FORCE_CLOSE, RiskAction.CLOSE}:
             await self._close_session(session, reason, at)
+            return
+        if action == RiskAction.REDUCE:
+            snapshot = self._inventory_by_symbol.get(session.symbol)
+            if snapshot is not None:
+                await self.engine.suppress_inventory_increasing_orders(
+                    session,
+                    net_qty=snapshot.net_qty,
+                )
+                self._persist_session_orders(session)
             return
         if action == RiskAction.COOLDOWN:
             await self._enter_cooldown(session, reason, at)
@@ -2588,7 +2882,12 @@ class TradingController:
             params.volatility_method,
             params.volatility_value,
             params.volatility_window,
+            params.regime_score,
+            params.grid_mode,
+            params.cost_floor_pct,
+            params.parameter_version,
         )
+        self.repository.create_grid_plan(session_id, params)
         self.repository.update_session_current_volatility(
             session_id,
             params.volatility_value,

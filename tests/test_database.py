@@ -545,3 +545,81 @@ def test_round_candidate_is_marked_stale_after_ninety_seconds_without_market_upd
 
     assert changed == 1
     assert repo.round_candidates(window_id)[0]["data_stale"] == 1
+
+
+def test_v2_event_and_regime_snapshots_round_trip(tmp_path) -> None:
+    db_path = tmp_path / "v2.db"
+    init_db(db_path)
+    repo = Repository(db_path, account_id="paper")
+    now = datetime.now(timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "BTCUSDT", "RUNNING", 100, 1, now)
+
+    event_id = repo.append_event(
+        "BAR_CLOSED",
+        now,
+        {"close": 100.0},
+        session_id=session_id,
+        symbol="BTCUSDT",
+    )
+    feature_id = repo.create_feature_snapshot(
+        session_id=session_id,
+        symbol="BTCUSDT",
+        as_of_time=now,
+        source_time=now,
+        features={"volatility_expansion": 0.8},
+        feature_version="features-v2",
+    )
+    repo.create_regime_decision(
+        session_id=session_id,
+        symbol="BTCUSDT",
+        as_of_time=now,
+        state="QUIET_RANGE",
+        grid_score=88.0,
+        allowed=True,
+        reasons=["低波动"],
+        hard_blocks=[],
+        component_scores={"trend": 90.0},
+        model_version="regime-v2",
+        feature_snapshot_id=feature_id,
+    )
+
+    assert event_id
+    assert repo.session_events(session_id)[0]["payload"] == {"close": 100.0}
+    regime = repo.latest_regime_decision("BTCUSDT")
+    assert regime is not None
+    assert regime["allowed"] == 1
+    assert regime["reasons"] == ["低波动"]
+
+
+def test_v2_schema_is_idempotent_and_session_grid_metadata_is_persisted(tmp_path) -> None:
+    db_path = tmp_path / "v2-grid.db"
+    init_db(db_path)
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime.now(timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "BTCUSDT", "OBSERVING", 100, 1, now)
+
+    repo.update_session_grid(
+        session_id,
+        102,
+        98,
+        10,
+        0.002,
+        0.5,
+        97,
+        "adaptive_v2",
+        0.01,
+        60,
+        regime_score=86,
+        grid_mode="adaptive_v2",
+        cost_floor_pct=0.001,
+        parameter_version="adaptive-grid-v2",
+    )
+
+    row = repo.get_session(session_id)
+    assert row is not None
+    assert row["regime_score"] == 86
+    assert row["grid_mode"] == "adaptive_v2"
+    assert row["parameter_version"] == "adaptive-grid-v2"

@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from core.models import GridState, RiskAction, SymbolSession
 from core.scheduler import Scheduler
 from strategy.grid_calculator import GridConfig, calculate_grid_params
+from strategy.inventory import InventoryLevel, InventorySnapshot
 from strategy.risk import RiskConfig, RiskManager
 
 
@@ -143,3 +144,79 @@ def test_invalid_capital_values_skip_new_symbol() -> None:
 
     assert decision.action == RiskAction.SKIP
     assert "资金占用异常" in decision.reason
+
+
+def test_v2_risk_manager_halts_window_at_loss_budget() -> None:
+    manager = RiskManager(
+        scheduler=FakeScheduler(force_close=False),  # type: ignore[arg-type]
+        config=RiskConfig(
+            take_profit_usdt=10,
+            total_capital_limit=1000,
+            max_concurrent=3,
+            max_window_loss_pct=0.015,
+        ),
+    )
+
+    decision = manager.evaluate_symbol(_session(), 100, window_pnl=-15)
+
+    assert decision.action == RiskAction.HALT_WINDOW
+
+
+def test_v2_risk_manager_uses_inventory_unrealized_loss() -> None:
+    manager = RiskManager(
+        scheduler=FakeScheduler(force_close=False),  # type: ignore[arg-type]
+        config=RiskConfig(
+            take_profit_usdt=10,
+            total_capital_limit=1000,
+            max_concurrent=3,
+            max_session_loss_pct=0.005,
+        ),
+    )
+    inventory = InventorySnapshot(
+        net_qty=1,
+        net_notional=100,
+        gross_notional=100,
+        avg_entry_price=106,
+        unrealized_pnl=-6,
+        utilization=0.3,
+        risk_score=20,
+        level=InventoryLevel.NORMAL,
+        unpaired_lots=(),
+    )
+
+    decision = manager.evaluate_symbol(_session(), 100, inventory=inventory)
+
+    assert decision.action == RiskAction.CLOSE
+
+
+def test_v2_risk_manager_reduces_high_inventory() -> None:
+    manager = RiskManager(
+        scheduler=FakeScheduler(force_close=False),  # type: ignore[arg-type]
+        config=RiskConfig(take_profit_usdt=10, total_capital_limit=1000, max_concurrent=3),
+    )
+    inventory = InventorySnapshot(
+        net_qty=1,
+        net_notional=100,
+        gross_notional=100,
+        avg_entry_price=100,
+        unrealized_pnl=0,
+        utilization=0.7,
+        risk_score=60,
+        level=InventoryLevel.HIGH,
+        unpaired_lots=(),
+    )
+
+    decision = manager.evaluate_symbol(_session(), 100, inventory=inventory)
+
+    assert decision.action == RiskAction.REDUCE
+
+
+def test_v2_entry_requires_regime_approval() -> None:
+    manager = RiskManager(
+        scheduler=FakeScheduler(force_close=False),  # type: ignore[arg-type]
+        config=RiskConfig(take_profit_usdt=10, total_capital_limit=1000, max_concurrent=3),
+    )
+
+    decision = manager.can_open_new_symbol([], 200, regime_allowed=False)
+
+    assert decision.action == RiskAction.BLOCK

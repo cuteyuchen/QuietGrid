@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 from core.models import GridOrder
 from db.database import connect
@@ -76,9 +77,15 @@ def _upsert_control_value(conn: sqlite3.Connection, key: str, value: Any, update
 
 
 class Repository:
-    def __init__(self, db_path: str | Path, notifier: SystemLogNotifier | None = None) -> None:
+    def __init__(
+        self,
+        db_path: str | Path,
+        notifier: SystemLogNotifier | None = None,
+        account_id: str = "default",
+    ) -> None:
         self.db_path = db_path
         self.notifier = notifier
+        self.account_id = str(account_id).strip() or "default"
 
     def create_window(
         self,
@@ -229,6 +236,10 @@ class Repository:
         volatility_method: str | None = None,
         volatility_value: float | None = None,
         volatility_window: int | None = None,
+        regime_score: float | None = None,
+        grid_mode: str | None = None,
+        cost_floor_pct: float | None = None,
+        parameter_version: str | None = None,
     ) -> None:
         with connect(self.db_path) as conn:
             conn.execute(
@@ -242,7 +253,11 @@ class Repository:
                     stop_loss_price = ?,
                     volatility_method = ?,
                     volatility_value = ?,
-                    volatility_window = ?
+                    volatility_window = ?,
+                    regime_score = ?,
+                    grid_mode = ?,
+                    cost_floor_pct = ?,
+                    parameter_version = ?
                 WHERE id = ?
                 """,
                 (
@@ -255,6 +270,10 @@ class Repository:
                     volatility_method,
                     volatility_value,
                     volatility_window,
+                    regime_score,
+                    grid_mode,
+                    cost_floor_pct,
+                    parameter_version,
                     session_id,
                 ),
             )
@@ -1012,7 +1031,24 @@ class Repository:
         return result
 
     def recent_rows(self, table: str, limit: int = 50) -> list[dict[str, Any]]:
-        if table not in {"windows", "sessions", "orders", "trades", "state_logs", "system_logs", "selection_candidates"}:
+        if table not in {
+            "windows",
+            "sessions",
+            "orders",
+            "trades",
+            "state_logs",
+            "system_logs",
+            "selection_candidates",
+            "event_store",
+            "feature_snapshots",
+            "regime_decisions",
+            "grid_plans",
+            "inventory_lots",
+            "inventory_snapshots",
+            "risk_snapshots",
+            "control_commands",
+            "audit_logs",
+        }:
             raise ValueError(f"不支持查询表: {table}")
         with connect(self.db_path) as conn:
             rows = conn.execute(f"SELECT * FROM {table} ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
@@ -1285,3 +1321,482 @@ class Repository:
                 "realized_pnl": realized_pnl,
                 "latest_system_message": latest_log["message"] if latest_log else "",
             }
+
+    def append_event(
+        self,
+        event_type: str,
+        event_time: datetime,
+        payload: dict[str, Any],
+        *,
+        session_id: int | None = None,
+        symbol: str | None = None,
+        available_time: datetime | None = None,
+        event_id: str | None = None,
+        code_commit: str | None = None,
+    ) -> str:
+        normalized_event_id = str(event_id or uuid4())
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO event_store
+                    (event_id, account_id, session_id, symbol, event_type, event_time,
+                     available_time, payload_json, code_commit)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    normalized_event_id,
+                    self.account_id,
+                    session_id,
+                    str(symbol).strip().upper() if symbol else None,
+                    str(event_type).strip().upper(),
+                    event_time.isoformat(),
+                    (available_time or event_time).isoformat(),
+                    _json(payload),
+                    code_commit,
+                ),
+            )
+            conn.commit()
+        return normalized_event_id
+
+    def create_feature_snapshot(
+        self,
+        *,
+        session_id: int | None,
+        symbol: str,
+        as_of_time: datetime,
+        source_time: datetime,
+        features: dict[str, Any],
+        feature_version: str,
+    ) -> int:
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO feature_snapshots
+                    (session_id, symbol, as_of_time, source_time, features_json, feature_version)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    symbol.strip().upper(),
+                    as_of_time.isoformat(),
+                    source_time.isoformat(),
+                    _json(features),
+                    feature_version,
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def create_regime_decision(
+        self,
+        *,
+        session_id: int | None,
+        symbol: str,
+        as_of_time: datetime,
+        state: str,
+        grid_score: float,
+        allowed: bool,
+        reasons: list[str] | tuple[str, ...],
+        hard_blocks: list[str] | tuple[str, ...],
+        component_scores: dict[str, float],
+        model_version: str,
+        feature_snapshot_id: int | None,
+    ) -> int:
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO regime_decisions
+                    (session_id, symbol, as_of_time, state, grid_score, allowed,
+                     reasons_json, hard_blocks_json, component_scores_json,
+                     model_version, feature_snapshot_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    symbol.strip().upper(),
+                    as_of_time.isoformat(),
+                    state,
+                    grid_score,
+                    int(allowed),
+                    _json(list(reasons)),
+                    _json(list(hard_blocks)),
+                    _json(component_scores),
+                    model_version,
+                    feature_snapshot_id,
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def create_grid_plan(self, session_id: int | None, params: Any) -> int:
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO grid_plans
+                    (session_id, symbol, as_of_time, center, lower_price, upper_price,
+                     step_pct, grid_num, prices_json, qty_weights_json, cost_floor_pct,
+                     regime_score, parameter_version, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    params.symbol,
+                    params.calculated_at.isoformat(),
+                    params.center,
+                    params.lower,
+                    params.upper,
+                    params.step_pct,
+                    params.grid_num,
+                    _json(params.grid_prices),
+                    _json(params.qty_weights),
+                    params.cost_floor_pct,
+                    params.regime_score,
+                    params.parameter_version,
+                    None,
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def replace_inventory_lots(
+        self,
+        session_id: int,
+        symbol: str,
+        lots: list[Any] | tuple[Any, ...],
+        updated_at: datetime,
+    ) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute("DELETE FROM inventory_lots WHERE session_id = ?", (session_id,))
+            conn.executemany(
+                """
+                INSERT INTO inventory_lots
+                    (session_id, symbol, side, entry_price, qty, entry_grid_index,
+                     target_exit_price, opened_at, status, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)
+                """,
+                [
+                    (
+                        session_id,
+                        symbol.strip().upper(),
+                        lot.side,
+                        lot.entry_price,
+                        lot.qty,
+                        lot.entry_grid_index,
+                        lot.target_exit_price,
+                        lot.opened_at.isoformat() if hasattr(lot.opened_at, "isoformat") else lot.opened_at,
+                        updated_at.isoformat(),
+                    )
+                    for lot in lots
+                ],
+            )
+            conn.commit()
+
+    def create_inventory_snapshot(
+        self,
+        session_id: int,
+        symbol: str,
+        snapshot: Any,
+        as_of_time: datetime,
+    ) -> int:
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO inventory_snapshots
+                    (session_id, symbol, as_of_time, net_qty, net_notional,
+                     gross_notional, avg_entry_price, unrealized_pnl, utilization,
+                     risk_score, risk_level, unpaired_lots)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    symbol.strip().upper(),
+                    as_of_time.isoformat(),
+                    snapshot.net_qty,
+                    snapshot.net_notional,
+                    snapshot.gross_notional,
+                    snapshot.avg_entry_price,
+                    snapshot.unrealized_pnl,
+                    snapshot.utilization,
+                    snapshot.risk_score,
+                    snapshot.level.value,
+                    len(snapshot.unpaired_lots),
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def create_risk_snapshot(
+        self,
+        *,
+        as_of_time: datetime,
+        risk_level: str,
+        action: str,
+        reason: str,
+        session_id: int | None = None,
+        window_id: int | None = None,
+        symbol: str | None = None,
+        session_pnl: float | None = None,
+        window_pnl: float | None = None,
+        inventory_utilization: float | None = None,
+        limits: dict[str, Any] | None = None,
+    ) -> int:
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO risk_snapshots
+                    (session_id, window_id, symbol, as_of_time, risk_level, action,
+                     reason, session_pnl, window_pnl, inventory_utilization, limits_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    window_id,
+                    symbol.strip().upper() if symbol else None,
+                    as_of_time.isoformat(),
+                    risk_level,
+                    action,
+                    reason,
+                    session_pnl,
+                    window_pnl,
+                    inventory_utilization,
+                    _json(limits or {}),
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def latest_regime_decision(self, symbol: str | None = None) -> dict[str, Any] | None:
+        sql = "SELECT * FROM regime_decisions"
+        params: tuple[Any, ...] = ()
+        if symbol:
+            sql += " WHERE symbol = ?"
+            params = (symbol.strip().upper(),)
+        sql += " ORDER BY id DESC LIMIT 1"
+        with connect(self.db_path) as conn:
+            row = conn.execute(sql, params).fetchone()
+            return _decoded_row(
+                row,
+                "reasons_json",
+                "hard_blocks_json",
+                "component_scores_json",
+            )
+
+    def latest_inventory_snapshot(self, session_id: int | None = None) -> dict[str, Any] | None:
+        sql = "SELECT * FROM inventory_snapshots"
+        params: tuple[Any, ...] = ()
+        if session_id is not None:
+            sql += " WHERE session_id = ?"
+            params = (session_id,)
+        sql += " ORDER BY id DESC LIMIT 1"
+        with connect(self.db_path) as conn:
+            row = conn.execute(sql, params).fetchone()
+            return dict(row) if row is not None else None
+
+    def latest_risk_snapshot(self, session_id: int | None = None) -> dict[str, Any] | None:
+        sql = "SELECT * FROM risk_snapshots"
+        params: tuple[Any, ...] = ()
+        if session_id is not None:
+            sql += " WHERE session_id = ?"
+            params = (session_id,)
+        sql += " ORDER BY id DESC LIMIT 1"
+        with connect(self.db_path) as conn:
+            row = conn.execute(sql, params).fetchone()
+            return _decoded_row(row, "limits_json")
+
+    def session_events(self, session_id: int, limit: int = 500) -> list[dict[str, Any]]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM event_store
+                WHERE session_id = ?
+                ORDER BY event_time ASC, id ASC
+                LIMIT ?
+                """,
+                (session_id, max(1, min(int(limit), 5000))),
+            ).fetchall()
+            return [_decoded_row(row, "payload_json") or {} for row in rows]
+
+    def window_realized_pnl(self, window_id: int | None) -> float:
+        if window_id is None:
+            return 0.0
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(realized_pnl), 0) AS value FROM sessions WHERE window_id = ?",
+                (window_id,),
+            ).fetchone()
+            return float(row["value"] or 0.0)
+
+    def window_stop_count(self, window_id: int | None) -> int:
+        if window_id is None:
+            return 0
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS value
+                FROM sessions
+                WHERE window_id = ?
+                  AND close_reason IS NOT NULL
+                  AND (
+                    LOWER(close_reason) LIKE '%stop%'
+                    OR close_reason LIKE '%止损%'
+                    OR close_reason LIKE '%库存风险%'
+                  )
+                """,
+                (window_id,),
+            ).fetchone()
+            return int(row["value"] or 0)
+
+    def enqueue_control_command(
+        self,
+        *,
+        command_type: str,
+        target_type: str,
+        target_id: str | None,
+        payload: dict[str, Any],
+        reason: str,
+        idempotency_key: str,
+        requested_at: datetime,
+        requested_by: str = "console",
+    ) -> dict[str, Any]:
+        normalized_key = str(idempotency_key).strip()
+        if not normalized_key:
+            raise ValueError("idempotency_key 不能为空。")
+        with connect(self.db_path) as conn:
+            existing = conn.execute(
+                "SELECT * FROM control_commands WHERE idempotency_key = ?",
+                (normalized_key,),
+            ).fetchone()
+            if existing is not None:
+                return _decoded_row(existing, "payload_json", "result_json") or {}
+            command_id = f"cmd_{uuid4().hex}"
+            conn.execute(
+                """
+                INSERT INTO control_commands
+                    (command_id, account_id, command_type, target_type, target_id,
+                     payload_json, reason, idempotency_key, status, requested_by,
+                     requested_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
+                """,
+                (
+                    command_id,
+                    self.account_id,
+                    command_type.strip().upper(),
+                    target_type.strip().upper(),
+                    target_id,
+                    _json(payload),
+                    reason,
+                    normalized_key,
+                    requested_by,
+                    requested_at.isoformat(),
+                    requested_at.isoformat(),
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM control_commands WHERE command_id = ?",
+                (command_id,),
+            ).fetchone()
+            conn.commit()
+            return _decoded_row(row, "payload_json", "result_json") or {}
+
+    def pending_control_commands(self, limit: int = 50) -> list[dict[str, Any]]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM control_commands
+                WHERE account_id = ? AND status = 'PENDING'
+                ORDER BY id ASC
+                LIMIT ?
+                """,
+                (self.account_id, max(1, min(int(limit), 200))),
+            ).fetchall()
+            return [
+                _decoded_row(row, "payload_json", "result_json") or {}
+                for row in rows
+            ]
+
+    def update_control_command(
+        self,
+        command_id: str,
+        status: str,
+        result: dict[str, Any] | str | None,
+        updated_at: datetime,
+    ) -> None:
+        normalized_status = status.strip().upper()
+        if normalized_status not in {"PENDING", "ACCEPTED", "REJECTED", "EXECUTED", "FAILED"}:
+            raise ValueError(f"不支持的控制命令状态: {status}")
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE control_commands
+                SET status = ?, result_json = ?, updated_at = ?
+                WHERE command_id = ?
+                """,
+                (
+                    normalized_status,
+                    _json(result) if result is not None else None,
+                    updated_at.isoformat(),
+                    command_id,
+                ),
+            )
+            conn.commit()
+
+    def get_control_command(self, command_id: str) -> dict[str, Any] | None:
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM control_commands WHERE command_id = ?",
+                (command_id,),
+            ).fetchone()
+            return _decoded_row(row, "payload_json", "result_json")
+
+    def append_audit_log(
+        self,
+        *,
+        actor: str,
+        action: str,
+        resource_type: str,
+        resource_id: str | None,
+        detail: dict[str, Any],
+        created_at: datetime,
+        source_ip: str | None = None,
+        user_agent: str | None = None,
+    ) -> int:
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO audit_logs
+                    (actor, action, resource_type, resource_id, detail_json,
+                     source_ip, user_agent, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    actor,
+                    action,
+                    resource_type,
+                    resource_id,
+                    _json(detail),
+                    source_ip,
+                    user_agent,
+                    created_at.isoformat(),
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, default=str, separators=(",", ":"))
+
+
+def _decoded_row(row: sqlite3.Row | None, *json_fields: str) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    result = dict(row)
+    for field in json_fields:
+        raw = result.get(field)
+        if raw is None:
+            continue
+        try:
+            result[field.removesuffix("_json")] = json.loads(str(raw))
+        except json.JSONDecodeError:
+            result[field.removesuffix("_json")] = raw
+    return result

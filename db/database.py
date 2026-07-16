@@ -159,6 +159,178 @@ CREATE TABLE IF NOT EXISTS round_candidates (
     updated_at          DATETIME NOT NULL,
     UNIQUE(window_id, symbol)
 );
+
+CREATE TABLE IF NOT EXISTS event_store (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id        TEXT NOT NULL UNIQUE,
+    account_id      TEXT NOT NULL DEFAULT 'default',
+    session_id      INTEGER REFERENCES sessions(id),
+    symbol          TEXT,
+    event_type      TEXT NOT NULL,
+    event_time      DATETIME NOT NULL,
+    available_time  DATETIME NOT NULL,
+    payload_json    TEXT NOT NULL,
+    code_commit     TEXT,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS feature_snapshots (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id      INTEGER REFERENCES sessions(id),
+    symbol          TEXT NOT NULL,
+    as_of_time      DATETIME NOT NULL,
+    source_time     DATETIME NOT NULL,
+    features_json   TEXT NOT NULL,
+    feature_version TEXT NOT NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS regime_decisions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          INTEGER REFERENCES sessions(id),
+    symbol              TEXT NOT NULL,
+    as_of_time          DATETIME NOT NULL,
+    state               TEXT NOT NULL,
+    grid_score          REAL NOT NULL,
+    allowed             INTEGER NOT NULL,
+    reasons_json        TEXT NOT NULL,
+    hard_blocks_json    TEXT NOT NULL,
+    component_scores_json TEXT NOT NULL,
+    model_version       TEXT NOT NULL,
+    feature_snapshot_id INTEGER REFERENCES feature_snapshots(id),
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS grid_plans (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          INTEGER REFERENCES sessions(id),
+    symbol              TEXT NOT NULL,
+    as_of_time          DATETIME NOT NULL,
+    center              REAL NOT NULL,
+    lower_price         REAL NOT NULL,
+    upper_price         REAL NOT NULL,
+    step_pct            REAL NOT NULL,
+    grid_num            INTEGER NOT NULL,
+    prices_json         TEXT NOT NULL,
+    qty_weights_json    TEXT NOT NULL,
+    cost_floor_pct      REAL NOT NULL DEFAULT 0,
+    regime_score        REAL,
+    parameter_version   TEXT NOT NULL,
+    expires_at          DATETIME,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS inventory_lots (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          INTEGER NOT NULL REFERENCES sessions(id),
+    symbol              TEXT NOT NULL,
+    side                TEXT NOT NULL,
+    entry_price         REAL NOT NULL,
+    qty                 REAL NOT NULL,
+    entry_grid_index    INTEGER,
+    target_exit_price   REAL,
+    opened_at           DATETIME,
+    status              TEXT NOT NULL DEFAULT 'OPEN',
+    updated_at          DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inventory_snapshots (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          INTEGER NOT NULL REFERENCES sessions(id),
+    symbol              TEXT NOT NULL,
+    as_of_time          DATETIME NOT NULL,
+    net_qty             REAL NOT NULL,
+    net_notional        REAL NOT NULL,
+    gross_notional      REAL NOT NULL,
+    avg_entry_price     REAL,
+    unrealized_pnl      REAL NOT NULL,
+    utilization         REAL NOT NULL,
+    risk_score          REAL NOT NULL,
+    risk_level          TEXT NOT NULL,
+    unpaired_lots       INTEGER NOT NULL,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS risk_snapshots (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          INTEGER REFERENCES sessions(id),
+    window_id           INTEGER REFERENCES windows(id),
+    symbol              TEXT,
+    as_of_time          DATETIME NOT NULL,
+    risk_level          TEXT NOT NULL,
+    action              TEXT NOT NULL,
+    reason              TEXT NOT NULL,
+    session_pnl         REAL,
+    window_pnl          REAL,
+    inventory_utilization REAL,
+    limits_json         TEXT NOT NULL,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS parameter_versions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    version             TEXT NOT NULL UNIQUE,
+    status              TEXT NOT NULL,
+    config_json         TEXT NOT NULL,
+    code_commit         TEXT,
+    validation_report   TEXT,
+    activated_at        DATETIME,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id              TEXT NOT NULL UNIQUE,
+    symbol              TEXT NOT NULL,
+    started_at          DATETIME NOT NULL,
+    completed_at        DATETIME,
+    data_start          DATETIME,
+    data_end            DATETIME,
+    fill_model          TEXT NOT NULL,
+    parameter_version   TEXT,
+    code_commit         TEXT,
+    status              TEXT NOT NULL,
+    report_path         TEXT,
+    config_json         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS backtest_metrics (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    backtest_run_id     INTEGER NOT NULL REFERENCES backtest_runs(id),
+    metric_name         TEXT NOT NULL,
+    metric_value        REAL,
+    metric_json         TEXT,
+    UNIQUE(backtest_run_id, metric_name)
+);
+
+CREATE TABLE IF NOT EXISTS control_commands (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    command_id          TEXT NOT NULL UNIQUE,
+    account_id          TEXT NOT NULL DEFAULT 'default',
+    command_type        TEXT NOT NULL,
+    target_type         TEXT NOT NULL,
+    target_id           TEXT,
+    payload_json        TEXT NOT NULL,
+    reason              TEXT NOT NULL,
+    idempotency_key     TEXT NOT NULL UNIQUE,
+    status              TEXT NOT NULL DEFAULT 'PENDING',
+    result_json         TEXT,
+    requested_by        TEXT,
+    requested_at        DATETIME NOT NULL,
+    updated_at          DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor               TEXT NOT NULL,
+    action              TEXT NOT NULL,
+    resource_type       TEXT NOT NULL,
+    resource_id         TEXT,
+    detail_json         TEXT NOT NULL,
+    source_ip           TEXT,
+    user_agent          TEXT,
+    created_at          DATETIME NOT NULL
+);
 """
 
 INDEX_SCHEMA_SQL = """
@@ -180,6 +352,15 @@ DROP INDEX IF EXISTS uq_windows_runtime;
 CREATE INDEX IF NOT EXISTS idx_windows_runtime ON windows(runtime_id) WHERE runtime_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_round_candidates_window_rank ON round_candidates(window_id, liquidity_rank);
 CREATE INDEX IF NOT EXISTS idx_round_candidates_session ON round_candidates(session_id);
+CREATE INDEX IF NOT EXISTS idx_event_store_session_time ON event_store(session_id, event_time);
+CREATE INDEX IF NOT EXISTS idx_event_store_symbol_time ON event_store(symbol, event_time);
+CREATE INDEX IF NOT EXISTS idx_feature_snapshots_symbol_time ON feature_snapshots(symbol, as_of_time);
+CREATE INDEX IF NOT EXISTS idx_regime_decisions_symbol_time ON regime_decisions(symbol, as_of_time);
+CREATE INDEX IF NOT EXISTS idx_grid_plans_session_time ON grid_plans(session_id, as_of_time);
+CREATE INDEX IF NOT EXISTS idx_inventory_lots_session_status ON inventory_lots(session_id, status);
+CREATE INDEX IF NOT EXISTS idx_inventory_snapshots_session_time ON inventory_snapshots(session_id, as_of_time);
+CREATE INDEX IF NOT EXISTS idx_risk_snapshots_window_time ON risk_snapshots(window_id, as_of_time);
+CREATE INDEX IF NOT EXISTS idx_control_commands_status_time ON control_commands(status, requested_at);
 """
 
 SCHEMA_SQL = TABLE_SCHEMA_SQL + "\n" + INDEX_SCHEMA_SQL
@@ -193,6 +374,10 @@ SESSION_COLUMN_MIGRATIONS = {
     "volatility_current_value": "REAL",
     "volatility_current_window": "INTEGER",
     "volatility_current_at": "DATETIME",
+    "regime_score": "REAL",
+    "grid_mode": "TEXT",
+    "cost_floor_pct": "REAL",
+    "parameter_version": "TEXT",
 }
 
 WINDOW_COLUMN_MIGRATIONS = {

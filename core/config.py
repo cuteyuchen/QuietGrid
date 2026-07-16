@@ -16,6 +16,8 @@ class AccountConfig:
     binance_api_key: str
     binance_api_secret: str
     database_path: Path
+    binance_testnet: bool = False
+    binance_testnet_raw: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,13 +51,14 @@ def load_config(config_path: str | Path = "config/config.yaml", env_path: str | 
         raw = yaml.safe_load(fh) or {}
 
     raw_testnet = os.getenv("BINANCE_TESTNET")
-    accounts = _load_accounts(raw)
+    global_testnet = _as_bool(raw_testnet, False)
+    accounts = _load_accounts(raw, global_testnet, raw_testnet)
     selected_account_id = _selected_account_id(raw, accounts)
     base_config = AppConfig(
         raw=raw,
         binance_api_key="",
         binance_api_secret="",
-        binance_testnet=_as_bool(raw_testnet, False),
+        binance_testnet=global_testnet,
         binance_testnet_raw=raw_testnet,
         accounts=accounts,
     )
@@ -85,8 +88,8 @@ def select_account(config: AppConfig, account_id: str | None) -> AppConfig:
                 raw=config.raw,
                 binance_api_key=account.binance_api_key,
                 binance_api_secret=account.binance_api_secret,
-                binance_testnet=config.binance_testnet,
-                binance_testnet_raw=config.binance_testnet_raw,
+                binance_testnet=account.binance_testnet,
+                binance_testnet_raw=account.binance_testnet_raw,
                 account_id=account.id,
                 account_label=account.label,
                 accounts=config.accounts,
@@ -106,7 +109,11 @@ def require_testnet(config: AppConfig) -> None:
         raise RuntimeError("当前实现阶段要求 BINANCE_TESTNET=true，避免误连真实交易环境。")
 
 
-def _load_accounts(raw: dict[str, Any]) -> tuple[AccountConfig, ...]:
+def _load_accounts(
+    raw: dict[str, Any],
+    default_testnet: bool,
+    default_testnet_raw: str | None,
+) -> tuple[AccountConfig, ...]:
     database_path = Path(raw.get("database", {}).get("path", "data/trading.db"))
     raw_accounts = raw.get("accounts")
     if not raw_accounts:
@@ -116,6 +123,8 @@ def _load_accounts(raw: dict[str, Any]) -> tuple[AccountConfig, ...]:
                 label="默认账户",
                 binance_api_key=os.getenv("BINANCE_API_KEY", ""),
                 binance_api_secret=os.getenv("BINANCE_API_SECRET", ""),
+                binance_testnet=default_testnet,
+                binance_testnet_raw=default_testnet_raw,
                 database_path=database_path,
             ),
         )
@@ -133,12 +142,20 @@ def _load_accounts(raw: dict[str, Any]) -> tuple[AccountConfig, ...]:
         env_suffix = _env_suffix(account_id)
         api_key_env = str(spec.get("api_key_env") or f"BINANCE_{env_suffix}_API_KEY")
         api_secret_env = str(spec.get("api_secret_env") or f"BINANCE_{env_suffix}_API_SECRET")
+        account_testnet, account_testnet_raw = _account_testnet(
+            spec,
+            env_suffix,
+            default_testnet,
+            default_testnet_raw,
+        )
         accounts.append(
             AccountConfig(
                 id=account_id,
                 label=str(spec.get("label") or account_id),
                 binance_api_key=str(spec.get("api_key") or os.getenv(api_key_env, "")),
                 binance_api_secret=str(spec.get("api_secret") or os.getenv(api_secret_env, "")),
+                binance_testnet=account_testnet,
+                binance_testnet_raw=account_testnet_raw,
                 database_path=_account_database_path(database_path, account_id, spec.get("database_path")),
             )
         )
@@ -172,6 +189,36 @@ def _normalize_account_id(value: Any) -> str:
 def _env_suffix(account_id: str) -> str:
     chars = [char if char.isalnum() else "_" for char in account_id.upper()]
     return "".join(chars).strip("_") or "DEFAULT"
+
+
+def _account_testnet(
+    spec: dict[str, Any],
+    env_suffix: str,
+    default_testnet: bool,
+    default_testnet_raw: str | None,
+) -> tuple[bool, str | None]:
+    env_name = str(spec.get("testnet_env") or spec.get("binance_testnet_env") or f"BINANCE_{env_suffix}_TESTNET")
+    env_value = os.getenv(env_name)
+    if env_value is not None:
+        return _as_bool(env_value, default_testnet), env_value
+
+    if "testnet" in spec:
+        raw_value = _raw_bool_text(spec.get("testnet"))
+        return _as_bool(raw_value, default_testnet), raw_value
+
+    if "binance_testnet" in spec:
+        raw_value = _raw_bool_text(spec.get("binance_testnet"))
+        return _as_bool(raw_value, default_testnet), raw_value
+
+    return default_testnet, default_testnet_raw
+
+
+def _raw_bool_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 def _account_database_path(base_path: Path, account_id: str, explicit_path: Any) -> Path:

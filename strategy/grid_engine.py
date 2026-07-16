@@ -47,7 +47,14 @@ class GridEngine:
         self.config = config or GridEngineConfig()
         self.log_system = log_system
 
-    async def start(self, session: SymbolSession, current_price: float) -> list[GridOrder]:
+    async def start(
+        self,
+        session: SymbolSession,
+        current_price: float,
+        *,
+        place_protection: bool = True,
+        client_id_tag: str = "",
+    ) -> list[GridOrder]:
         if session.params is None:
             raise ValueError("启动网格前必须先计算 GridParams。")
         if not _positive_finite(current_price):
@@ -98,7 +105,8 @@ class GridEngine:
 
         created: list[GridOrder] = []
         for index, side, price in order_specs:
-            client_id = f"qg-{session.session_id}-{index}-{side.value.lower()}"
+            tag = f"-{client_id_tag}" if client_id_tag else ""
+            client_id = f"qg-{session.session_id}{tag}-{index}-{side.value.lower()}"
             try:
                 response = await self._place_limit_order_post_only_reconciled(
                     session.symbol,
@@ -113,7 +121,10 @@ class GridEngine:
                 if _is_post_only_rejection(exc):
                     continue
                 try:
-                    await self.exchange.cancel_all_orders(session.symbol)
+                    if place_protection:
+                        await self.exchange.cancel_all_orders(session.symbol)
+                    else:
+                        await self._cancel_grid_orders(session.symbol, created)
                 except Exception as cancel_exc:
                     self._log_force_close_warning(
                         session,
@@ -141,6 +152,8 @@ class GridEngine:
             raise ValueError("所有 POST_ONLY 网格挂单均被拒绝。")
 
         session.orders.extend(created)
+        if not place_protection:
+            return created
         try:
             await self._place_stop_protection_side(
                 session,
@@ -176,6 +189,16 @@ class GridEngine:
             raise exc
 
         return created
+
+    async def pause_grid_orders(self, session: SymbolSession) -> list[GridOrder]:
+        cancelled = [order for order in session.orders if order.status == OrderStatus.OPEN]
+        await self._cancel_grid_orders(session.symbol, cancelled)
+        return cancelled
+
+    async def _cancel_grid_orders(self, symbol: str, orders: list[GridOrder]) -> None:
+        for order in orders:
+            await self.exchange.cancel_order(symbol, order.order_id)
+            order.status = OrderStatus.CANCELLED
 
     async def ensure_stop_protection_for_position(self, session: SymbolSession, position_qty: float) -> None:
         qty = _finite_float(position_qty, "position qty")
@@ -235,10 +258,34 @@ class GridEngine:
         open_orders = await self.exchange.get_open_orders(session.symbol)
         open_ids = {str(order.get("orderId", order.get("client_id", order.get("clientOrderId", "")))) for order in open_orders}
         open_client_ids = {str(order.get("client_id", order.get("clientOrderId", ""))) for order in open_orders}
+        open_by_id = {
+            str(order.get("orderId", order.get("client_id", order.get("clientOrderId", "")))): order
+            for order in open_orders
+        }
+        open_by_client_id = {
+            str(order.get("client_id", order.get("clientOrderId", ""))): order
+            for order in open_orders
+        }
         inferred_fills: list[OrderSyncEvent] = []
         inferred_partial_fills: list[OrderSyncEvent] = []
         for order in session.orders:
-            if order.status == OrderStatus.OPEN and order.order_id not in open_ids and order.client_id not in open_client_ids:
+            if order.status != OrderStatus.OPEN:
+                continue
+            open_order = open_by_id.get(order.order_id) or open_by_client_id.get(order.client_id)
+            if open_order is not None:
+                executed_qty = _exchange_executed_qty(open_order)
+                if executed_qty > 1e-12:
+                    fill_price = _exchange_order_price(open_order, order.price)
+                    if executed_qty > order.qty + 1e-12:
+                        inferred_fills.append(OrderSyncEvent(order=order, price=fill_price, qty=executed_qty))
+                    elif executed_qty + 1e-12 < order.qty:
+                        inferred_partial_fills.append(OrderSyncEvent(order=order, price=fill_price, qty=executed_qty))
+                    else:
+                        order.status = OrderStatus.FILLED
+                        order.filled_at = datetime.now(timezone.utc)
+                        inferred_fills.append(OrderSyncEvent(order=order, price=fill_price, qty=executed_qty))
+                continue
+            if order.order_id not in open_ids and order.client_id not in open_client_ids:
                 try:
                     exchange_order = await self.exchange.get_order(session.symbol, order.order_id, order.client_id)
                 except Exception as exc:
@@ -490,7 +537,7 @@ class GridEngine:
             pnl = (entry_price - valid_fill_price) * qty
         return _finite_float(pnl, "grid pnl")
 
-    async def force_close(self, session: SymbolSession, reason: str) -> None:
+    async def force_close(self, session: SymbolSession, reason: str) -> list[dict]:
         cancel_error: Exception | None = None
         try:
             await self.stop(session, reason)
@@ -502,22 +549,23 @@ class GridEngine:
                 f"reason={exc}",
         )
         position = await self.exchange.get_position(session.symbol)
+        close_orders: list[dict] = []
         for side, qty, position_side in _position_close_specs(position):
             kwargs = {"position_side": position_side} if position_side is not None else {}
             client_id = _force_close_client_id(session, side, position_side)
-            _response_order_id(
-                await self._place_market_order_reconciled(
+            response = await self._place_market_order_reconciled(
                     session.symbol,
                     side,
                     qty,
                     reduce_only=True,
                     client_id=client_id,
                     **kwargs,
-                ),
-                client_id,
-            )
+                )
+            _response_order_id(response, client_id)
+            close_orders.append(response)
         if cancel_error is not None:
             raise cancel_error
+        return close_orders
 
     async def _place_market_order_reconciled(
         self,
@@ -657,20 +705,19 @@ def _exchange_order_price(order: dict, fallback: float) -> float:
 
 
 def _exchange_order_qty(order: dict, fallback: float) -> float:
-    invalid_error: ValueError | None = None
-    saw_value = False
-    for key in ("executedQty", "z", "cumQty", "qty", "origQty", "q"):
+    for key in ("executedQty", "z", "cumQty"):
         value = order.get(key)
         if value not in (None, ""):
-            saw_value = True
-            try:
-                return _positive_float(value, key)
-            except ValueError as exc:
-                invalid_error = exc
-                continue
-    if saw_value:
-        raise invalid_error or ValueError("exchange order qty invalid")
+            return _positive_float(value, key)
     return _positive_float(fallback, "fallback qty")
+
+
+def _exchange_executed_qty(order: dict) -> float:
+    for key in ("executedQty", "z", "cumQty"):
+        value = order.get(key)
+        if value not in (None, ""):
+            return _non_negative_float(value, key)
+    return 0.0
 
 
 def _position_qty(position: dict) -> float:

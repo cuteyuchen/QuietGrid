@@ -132,6 +132,9 @@ def test_selector_skips_symbols_with_invalid_liquidity_snapshots() -> None:
         assert [item.symbol for item in selected] == ["MSFTUSDT"]
         assert selected[0].volume_24h == 1000
         assert selected[0].depth_usdt == 402
+        assert selected[0].bid_price == 100
+        assert selected[0].ask_price == 101
+        assert selected[0].spread_pct > 0
 
     asyncio.run(run())
 
@@ -217,5 +220,21 @@ def test_selector_respects_max_concurrent() -> None:
 
         assert len(selected) == 1
         assert selected[0].symbol == "TSLAPREUSDT"
+
+    asyncio.run(run())
+
+
+def test_selector_score_candidates_returns_full_ranked_liquidity_board() -> None:
+    async def run() -> None:
+        selector = Selector(SelectionExchange(), SelectionConfig(max_concurrent=1))
+
+        scored = await selector.score_candidates()
+        selected = await selector.select()
+
+        assert [item.symbol for item in scored] == ["TSLAPREUSDT", "AAPLUSDT", "MSFTUSDT"]
+        assert [item.symbol for item in selected] == ["TSLAPREUSDT"]
+        assert scored[0].bid_price == 100
+        assert scored[0].ask_price == 100
+        assert scored[0].spread_pct == 0
 
     asyncio.run(run())

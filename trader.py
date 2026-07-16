@@ -41,6 +41,8 @@ ORDER_CREATE_RECOVERY_DELAY_SECONDS = 0.25
 BINANCE_TESTNET_SUBSTITUTE_SYMBOLS = {"BTCUSDT", "ETHUSDT", "BCHUSDT"}
 BINANCE_LOOP_TASK_CANCEL_TIMEOUT_SECONDS = 5.0
 BINANCE_LOOP_SHUTDOWN_CLEANUP_TIMEOUT_SECONDS = 30.0
+DEFAULT_BOUNDED_RUN_SECONDS = 60.0
+TRADER_RUNTIME_ID = str(uuid4())
 
 
 class _TestnetAlwaysOpenScheduler:
@@ -59,7 +61,7 @@ def main() -> None:
     parser.add_argument("--mock-once", action="store_true", help="使用 mock 交易所执行一轮编排验证")
     parser.add_argument("--binance-once", action="store_true", help="使用 Binance 测试网执行一轮编排")
     parser.add_argument("--mock-loop", action="store_true", help="使用 mock 交易所运行长期循环")
-    parser.add_argument("--binance-loop", action="store_true", help="使用 Binance 测试网运行长期循环")
+    parser.add_argument("--binance-loop", action="store_true", help="使用当前连接的 Binance 环境运行长期循环")
     parser.add_argument("--binance-check", action="store_true", help="只检查 Binance 测试网连接和账户配置，不下单")
     parser.add_argument("--binance-order-smoke", action="store_true", help="使用 Binance 测试网创建并清理一组最小订单")
     parser.add_argument("--binance-test-order-smoke", action="store_true", help="使用 Binance 测试网 order/test 校验下单参数，不创建订单")
@@ -69,13 +71,19 @@ def main() -> None:
     parser.add_argument("--binance-signed-write-health", action="store_true", help="只执行 Binance 测试网签名写接口预检，不启动网格")
     parser.add_argument("--binance-listen-key-smoke", action="store_true", help="验证 Binance Futures 用户流 listenKey 生命周期")
     parser.add_argument("--binance-algo-stop-smoke", action="store_true", help="创建并撤销一个 Binance Futures Algo STOP_MARKET 条件单")
-    parser.add_argument("--binance-position-smoke", action="store_true", help="只读检查 Binance 测试网持仓模式、持仓和未成交订单")
-    parser.add_argument("--binance-safety-sweep", action="store_true", help="清理 Binance 测试网 allowlist 标的的挂单和仓位")
-    parser.add_argument("--binance-test-run", action="store_true", help="执行测试网有界运行流程：前置持仓检查、限时loop、安全清扫、后置持仓检查")
+    parser.add_argument("--binance-position-smoke", action="store_true", help="只读检查当前连接环境的持仓模式、持仓和未成交订单")
+    parser.add_argument("--binance-safety-sweep", action="store_true", help="清理当前连接环境 allowlist 标的的挂单和仓位")
+    parser.add_argument(
+        "--binance-bounded-run",
+        "--binance-test-run",
+        dest="binance_test_run",
+        action="store_true",
+        help="执行当前连接环境有界运行流程：前置持仓检查、限时loop、安全清扫、后置持仓检查",
+    )
     parser.add_argument("--account-id", help="选择 config.yaml accounts 中的账户；未配置时使用默认 BINANCE_API_KEY/SECRET")
     parser.add_argument("--all-accounts", action="store_true", help="对 config.yaml accounts 中全部账户并发执行同一个 Binance 运行模式")
     parser.add_argument("--loop-iterations", type=int, help="限制 --mock-loop 或 --binance-loop 的主循环轮数，留空则持续运行")
-    parser.add_argument("--loop-seconds", type=float, help="限制 --mock-loop、--binance-loop 或 --binance-test-run 的运行秒数；测试流程默认600秒")
+    parser.add_argument("--loop-seconds", type=float, help="限制 --mock-loop、--binance-loop 或有界运行流程的运行秒数；有界运行默认60秒")
     parser.add_argument("--backtest-csv", help="读取本地CSV K线文件执行离线网格回测，不连接交易所")
     parser.add_argument("--backtest-dir", help="读取目录内所有CSV K线文件执行批量离线回测，不连接交易所")
     parser.add_argument("--backtest-observe-rows", type=int, default=60, help="CSV前多少行作为观察期样本，默认60")
@@ -173,15 +181,20 @@ def main() -> None:
         return
     if args.binance_position_smoke:
         result = _run_binance_mode(config, account_configs, _run_binance_position_smoke)
-        logger.info("Binance testnet position smoke result: {}", result)
+        logger.info("Binance current-environment position check result: {}", result)
         return
     if args.binance_safety_sweep:
         result = _run_binance_mode(config, account_configs, _run_binance_safety_sweep)
-        logger.info("Binance testnet safety sweep result: {}", result)
+        logger.info("Binance current-environment safety sweep result: {}", result)
         return
     if args.binance_test_run:
-        result = _run_binance_mode(config, account_configs, _run_binance_test_run, max_seconds=args.loop_seconds or 600.0)
-        logger.info("Binance testnet bounded run result: {}", result)
+        result = _run_binance_mode(
+            config,
+            account_configs,
+            _run_binance_test_run,
+            max_seconds=args.loop_seconds or DEFAULT_BOUNDED_RUN_SECONDS,
+        )
+        logger.info("Binance current-environment bounded run result: {}", result)
         return
     if args.backtest_csv:
         result = _run_backtest_csv(
@@ -219,7 +232,7 @@ def main() -> None:
         return
 
     logger.info(
-        "QuietGrid initialized in testnet-safe mode. Use --mock-once, --binance-check, --binance-order-smoke, --binance-test-order-smoke, --binance-market-roundtrip-smoke, --binance-direct-order-diagnose, --binance-price-stream-smoke, --binance-signed-write-health, --binance-listen-key-smoke, --binance-algo-stop-smoke, --binance-position-smoke, --binance-safety-sweep, --binance-test-run, --backtest-csv, --backtest-dir, --binance-once, --mock-loop or --binance-loop. Use --loop-iterations or --loop-seconds with loop commands for bounded test runs."
+        "QuietGrid initialized. Use --mock-once, --binance-check, --binance-order-smoke, --binance-test-order-smoke, --binance-market-roundtrip-smoke, --binance-direct-order-diagnose, --binance-price-stream-smoke, --binance-signed-write-health, --binance-listen-key-smoke, --binance-algo-stop-smoke, --binance-position-smoke, --binance-safety-sweep, --binance-bounded-run, --backtest-csv, --backtest-dir, --binance-once, --mock-loop or --binance-loop. Use --loop-iterations or --loop-seconds with loop commands for bounded runs."
     )
 
 
@@ -272,6 +285,8 @@ async def _run_mock_once(config):
 
 async def _run_mock_loop(config, max_iterations: int | None = None, max_seconds: float | None = None):
     controller = _build_controller(MockExchangeClient(), config, live_observation=False)
+    controller.repository.register_runtime(TRADER_RUNTIME_ID, datetime.now(timezone.utc))
+    controller.repository.close_unfinished_windows(datetime.now(timezone.utc))
     loop_task = controller.run_loop(max_iterations=max_iterations)
     if max_seconds is None:
         await loop_task
@@ -1132,10 +1147,9 @@ async def _run_binance_algo_stop_smoke(config):
 
 
 async def _run_binance_position_smoke(config):
-    require_testnet(config)
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
-        raise RuntimeError("执行 --binance-position-smoke 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
+        raise RuntimeError("执行持仓只读检查需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
     exchange = await _create_binance_client_for_module(config, "binance_position_smoke")
     try:
         eligible = await _require_binance_smoke_symbols(exchange, config)
@@ -1164,7 +1178,7 @@ async def _run_binance_position_smoke(config):
         _build_repository(config).log_system(
             "INFO",
             "binance_position_smoke",
-            "Binance testnet position smoke completed.",
+            "Binance current-environment position check completed.",
             _json_log_detail(result),
             datetime.now(timezone.utc),
         )
@@ -1174,10 +1188,9 @@ async def _run_binance_position_smoke(config):
 
 
 async def _run_binance_safety_sweep(config):
-    require_testnet(config)
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
-        raise RuntimeError("执行 --binance-safety-sweep 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
+        raise RuntimeError("执行安全清扫需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
     repository = _build_repository(config)
     exchange = await _create_binance_client_for_module(config, "binance_safety_sweep")
     try:
@@ -1186,7 +1199,7 @@ async def _run_binance_safety_sweep(config):
         repository.log_system(
             "INFO",
             "binance_safety_sweep",
-            "Binance testnet safety sweep completed.",
+            "Binance current-environment safety sweep completed.",
             _json_log_detail(result),
             datetime.now(timezone.utc),
         )
@@ -1195,10 +1208,17 @@ async def _run_binance_safety_sweep(config):
         await exchange.close()
 
 
-async def _run_binance_test_run(config, max_seconds: float = 600.0) -> dict[str, Any]:
+async def _run_binance_test_run(config, max_seconds: float = DEFAULT_BOUNDED_RUN_SECONDS) -> dict[str, Any]:
     if max_seconds <= 0:
-        raise RuntimeError("测试网有界运行秒数必须是正数。")
+        raise RuntimeError("有界运行秒数必须是正数。")
     pre_position = await _run_binance_position_smoke(config)
+    repository = _build_repository(config)
+    repository.register_runtime(TRADER_RUNTIME_ID, datetime.now(timezone.utc))
+    repository.request_round_start(
+        "bounded_run_diagnostic",
+        f"bounded-{uuid4()}",
+        datetime.now(timezone.utc),
+    )
     loop_result: Any = None
     loop_error: str | None = None
     try:
@@ -1218,10 +1238,14 @@ async def _run_binance_test_run(config, max_seconds: float = 600.0) -> dict[str,
             "safety_sweep": safety_sweep,
             "post_position": post_position,
         }
-        _build_repository(config).log_system(
+        repository.log_system(
             "INFO" if loop_error is None else "ERROR",
             "binance_test_run",
-            "Binance testnet bounded run completed." if loop_error is None else "Binance testnet bounded run failed after cleanup.",
+            (
+                "Binance current-environment bounded run completed."
+                if loop_error is None
+                else "Binance current-environment bounded run failed after cleanup."
+            ),
             _json_log_detail(result),
             datetime.now(timezone.utc),
         )
@@ -1247,7 +1271,7 @@ async def _sweep_binance_symbols(exchange, repository: Repository, eligible: lis
                 if fallback_errors:
                     raise RuntimeError(
                         (
-                            f"测试网安全清扫全撤失败且逐单撤单未完全成功: symbol={symbol}, "
+                            f"当前环境安全清扫全撤失败且逐单撤单未完全成功: symbol={symbol}, "
                             f"cancel_all_error={exc}, fallback_errors={fallback_errors}"
                         )
                     ) from None
@@ -1280,11 +1304,11 @@ async def _sweep_binance_symbols(exchange, repository: Repository, eligible: lis
         repository.log_system(
             "ERROR",
             "binance_safety_sweep",
-            "Binance testnet safety sweep left residual exposure.",
+            "Binance current-environment safety sweep left residual exposure.",
             _json_log_detail({"symbols": results, "residuals": residuals}),
             datetime.now(timezone.utc),
         )
-        raise RuntimeError(f"测试网安全清扫后仍有残留: {'; '.join(residuals)}")
+        raise RuntimeError(f"当前环境安全清扫后仍有残留: {'; '.join(residuals)}")
     closed_sessions = _close_unclosed_sessions_after_safety_sweep(repository, eligible, datetime.now(timezone.utc))
     return {
         "safety_sweep_ok": True,
@@ -1313,7 +1337,7 @@ def _close_unclosed_sessions_after_safety_sweep(
             from_state,
             "STOPPED",
             "binance_safety_sweep",
-            "测试网安全清扫完成后同步关闭数据库未结束会话。",
+            "当前环境安全清扫完成后同步关闭数据库未结束会话。",
             at,
         )
         closed.append({"session_id": session_id, "symbol": symbol, "from_state": from_state})
@@ -1454,20 +1478,24 @@ async def _run_binance_order_smoke_for_symbol(exchange, symbol: str, leverage: i
 
 
 async def _run_binance_loop(config, max_iterations: int | None = None, max_seconds: float | None = None):
-    require_testnet(config)
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
-        raise RuntimeError("执行 --binance-loop 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
+        raise RuntimeError("执行 Binance loop 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
     exchange = await _create_binance_client_for_module(config, "binance_loop")
     bounded_timeout_reached = False
     try:
         eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
         await _require_binance_signed_write_health(exchange, config, eligible, "binance_loop")
         controller = _build_controller(exchange, config, live_observation=True)
+        controller_repository = getattr(controller, "repository", None) or _build_repository(config)
+        if not hasattr(controller, "repository"):
+            controller.repository = controller_repository
+        controller_repository.register_runtime(TRADER_RUNTIME_ID, datetime.now(timezone.utc))
         check = await controller.validate_startup()
         if not check.ok:
             raise RuntimeError(check.reason)
         await controller.recover_unclosed_sessions(recoverable_symbols=set(eligible))
+        controller_repository.close_unfinished_windows(datetime.now(timezone.utc))
         user_stream_task = asyncio.create_task(exchange.run_user_stream(controller.handle_order_filled_event))
         price_stream_task = asyncio.create_task(
             _run_dynamic_price_stream(exchange, controller, poll_seconds=float(config.raw["timing"]["loop_interval_seconds"]))
@@ -1585,7 +1613,7 @@ async def _run_binance_loop_safety_sweep_fallback(exchange, controller: TradingC
     repository.log_system(
         "INFO",
         "binance_safety_sweep",
-        "Binance testnet safety sweep completed.",
+        "Binance current-environment safety sweep completed.",
         _json_log_detail(fallback),
         datetime.now(timezone.utc),
     )
@@ -1593,29 +1621,50 @@ async def _run_binance_loop_safety_sweep_fallback(exchange, controller: TradingC
 
 
 async def _run_dynamic_price_stream(exchange, controller: TradingController, poll_seconds: float = 10) -> None:
+    poll_seconds = min(max(float(poll_seconds), 0.1), 1.0)
     subscribed_symbols: tuple[str, ...] = ()
     price_stream_task: asyncio.Task | None = None
+    kline_stream_task: asyncio.Task | None = None
     try:
         while True:
-            active_symbols = tuple(sorted(controller.active_sessions))
+            market_symbols = getattr(controller, "market_stream_symbols", None)
+            active_symbols = tuple(
+                market_symbols() if callable(market_symbols) else sorted(controller.active_sessions)
+            )
             if price_stream_task is not None and price_stream_task.done():
                 await price_stream_task
                 raise RuntimeError("Binance price stream stopped unexpectedly.")
+            if kline_stream_task is not None and kline_stream_task.done():
+                await kline_stream_task
+                raise RuntimeError("Binance 1m kline stream stopped unexpectedly.")
             if active_symbols != subscribed_symbols:
                 if price_stream_task is not None:
                     price_stream_task.cancel()
                     await _await_cancelled(price_stream_task)
                     price_stream_task = None
+                if kline_stream_task is not None:
+                    kline_stream_task.cancel()
+                    await _await_cancelled(kline_stream_task)
+                    kline_stream_task = None
                 subscribed_symbols = active_symbols
                 if active_symbols:
                     price_stream_task = asyncio.create_task(
                         exchange.run_price_stream(list(active_symbols), controller.handle_price_update_event)
                     )
+                    run_kline_stream = getattr(exchange, "run_kline_stream", None)
+                    kline_handler = getattr(controller, "handle_kline_closed_event", None)
+                    if callable(run_kline_stream) and callable(kline_handler):
+                        kline_stream_task = asyncio.create_task(
+                            run_kline_stream(list(active_symbols), kline_handler, interval="1m")
+                        )
             await asyncio.sleep(poll_seconds)
     finally:
         if price_stream_task is not None:
             price_stream_task.cancel()
             await _await_cancelled(price_stream_task)
+        if kline_stream_task is not None:
+            kline_stream_task.cancel()
+            await _await_cancelled(kline_stream_task)
 
 
 async def _await_cancelled(task: asyncio.Task) -> None:
@@ -1638,7 +1687,10 @@ async def _cancel_and_drain_task(task: asyncio.Task) -> None:
 
 
 async def _close_all_active_sessions_or_raise(controller: TradingController, reason: str) -> list[str]:
-    closed = await controller.close_all_active_sessions(reason, datetime.now(timezone.utc))
+    if bool(getattr(controller, "round_active", False)) and callable(getattr(controller, "stop_round", None)):
+        closed = await controller.stop_round(reason, datetime.now(timezone.utc))
+    else:
+        closed = await controller.close_all_active_sessions(reason, datetime.now(timezone.utc))
     remaining = tuple(sorted(getattr(controller, "active_sessions", {})))
     if remaining:
         raise RuntimeError(f"{reason} 未能清理所有活跃会话: {', '.join(remaining)}")
@@ -2129,7 +2181,7 @@ async def _close_sweep_position_specs(exchange, symbol: str, close_specs: list[t
             response = recovered
         order_id = _order_id_or_none(response)
         if order_id is None:
-            raise RuntimeError(f"测试网安全清扫平仓响应缺少订单ID: symbol={symbol}, client_id={client_id}")
+            raise RuntimeError(f"当前环境安全清扫平仓响应缺少订单ID: symbol={symbol}, client_id={client_id}")
         closed.append({"side": side, "qty": qty, "position_side": position_side})
     return closed
 
@@ -2200,6 +2252,7 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
         repository=_build_repository(config),
         selector_config=SelectionConfig(
             max_concurrent=int(trading["max_concurrent"]),
+            scan_candidate_count=int(selection.get("scan_candidate_count", 10)),
             symbol_blacklist=tuple(selection.get("symbol_blacklist", [])),
             symbol_allowlist=tuple(selection.get("symbol_allowlist", [])),
             volume_weight=float(selection["volume_weight"]),
@@ -2219,6 +2272,7 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             quantile_upper=float(grid["quantile_upper"]),
             quantile_lower=float(grid["quantile_lower"]),
             min_step_pct=float(grid["min_step_pct"]),
+            min_tradable_range_pct=float(grid.get("min_tradable_range_pct", 0.0015)),
             safety_multiplier=float(grid["safety_multiplier"]),
             max_grid_num=int(grid["max_grid_num"]),
             max_range_pct=float(grid["max_range_pct"]),

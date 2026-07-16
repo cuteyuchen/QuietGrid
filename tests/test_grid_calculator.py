@@ -88,6 +88,21 @@ def test_ohlc_volatility_range_respects_max_range_pct() -> None:
         raise AssertionError("range above max_range_pct should be rejected")
 
 
+def test_grid_range_must_reach_minimum_tradable_threshold() -> None:
+    try:
+        calculate_grid_params(
+            "AAPLUSDT",
+            _klines(),
+            100.0,
+            0.0001,
+            GridConfig(min_tradable_range_pct=0.02),
+        )
+    except GridCalculationError as exc:
+        assert "最小可交易波动阈值" in str(exc)
+    else:
+        raise AssertionError("range below min_tradable_range_pct should be rejected")
+
+
 def test_rejects_non_finite_or_non_positive_numeric_inputs() -> None:
     cases = [
         (_klines(), "nan", 0.0001, "当前价格"),
@@ -127,6 +142,7 @@ def test_rejects_invalid_grid_config_values() -> None:
         (GridConfig(std_k=float("nan")), "std_k"),
         (GridConfig(quantile_lower=0.7, quantile_upper=0.3), "分位数"),
         (GridConfig(min_step_pct=0), "min_step_pct"),
+        (GridConfig(min_tradable_range_pct=0), "min_tradable_range_pct"),
         (GridConfig(safety_multiplier=-1), "safety_multiplier"),
         (GridConfig(max_grid_num=0), "max_grid_num"),
         (GridConfig(max_range_pct=0), "max_range_pct"),

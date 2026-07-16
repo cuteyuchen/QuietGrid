@@ -12,6 +12,7 @@ class MockExchangeClient(ExchangeClient):
         self.stop_orders: dict[str, list[dict[str, Any]]] = {}
         self.positions: dict[str, float] = {}
         self.market_orders: list[dict[str, Any]] = []
+        self.order_trades: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self.balance = 10_000.0
         self.symbols = [
             {"symbol": "AAPLUSDT", "status": "TRADING", "contractType": "PERPETUAL"},
@@ -35,6 +36,20 @@ class MockExchangeClient(ExchangeClient):
     async def get_account_balance(self) -> float:
         return self.balance
 
+    async def get_account_summary(self) -> dict[str, Any]:
+        exposure = sum(abs(qty) * 100.0 for qty in self.positions.values())
+        return {
+            "asset": "USDT",
+            "balance": self.balance,
+            "available_balance": self.balance,
+            "margin_balance": self.balance,
+            "initial_margin": 0.0,
+            "maintenance_margin": 0.0,
+            "unrealized_pnl": 0.0,
+            "current_exposure": exposure,
+            "positions": [],
+        }
+
     async def get_position(self, symbol: str) -> dict[str, Any]:
         return {"symbol": symbol, "qty": self.positions.get(symbol, 0.0)}
 
@@ -46,6 +61,9 @@ class MockExchangeClient(ExchangeClient):
             if str(order.get("orderId", order.get("client_id", ""))) == str(order_id) or str(order.get("client_id", "")) == str(client_id):
                 return {**order, "status": self.order_statuses.get(str(order.get("client_id", "")), order.get("status", "open"))}
         return {"symbol": symbol, "orderId": order_id, "client_id": client_id, "status": self.order_statuses.get(client_id, "unknown")}
+
+    async def get_order_trades(self, symbol: str, order_id: str) -> list[dict[str, Any]]:
+        return list(self.order_trades.get((symbol, str(order_id)), []))
 
     async def place_limit_order_post_only(
         self,
@@ -120,7 +138,15 @@ class MockExchangeClient(ExchangeClient):
         self.stop_orders.setdefault(symbol, []).append(order)
         return order
 
-    async def cancel_order(self, symbol: str, order_id: str) -> None:
+    async def cancel_order(self, symbol: str, order_id: str) -> dict[str, Any]:
+        matched = next(
+            (
+                order
+                for order in self.orders.get(symbol, [])
+                if str(order.get("orderId", order.get("client_id", ""))) == str(order_id)
+            ),
+            None,
+        )
         for order in self.orders.get(symbol, []):
             if str(order.get("orderId", order.get("client_id", ""))) == str(order_id):
                 self.order_statuses[str(order.get("client_id", ""))] = "CANCELED"
@@ -129,6 +155,13 @@ class MockExchangeClient(ExchangeClient):
             for order in self.orders.get(symbol, [])
             if str(order.get("orderId", order.get("client_id", ""))) != str(order_id)
         ]
+        return {
+            **(matched or {}),
+            "symbol": symbol,
+            "orderId": str(order_id),
+            "status": "CANCELED",
+            "executedQty": str((matched or {}).get("executedQty", 0.0)),
+        }
 
     async def cancel_all_orders(self, symbol: str) -> None:
         for order in self.orders.get(symbol, []):

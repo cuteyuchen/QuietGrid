@@ -234,14 +234,16 @@ def test_localize_message_translates_common_system_messages() -> None:
 
 def test_compact_latest_message_uses_short_chinese_status() -> None:
     assert web._compact_latest_message("Binance testnet position smoke completed.") == "持仓只读通过"
+    assert web._compact_latest_message("Binance current-environment position check completed.") == "持仓只读通过"
     assert web._compact_latest_message("Binance maker fee health check completed.") == "费率检查完成"
     assert web._compact_latest_message("Binance testnet bounded run completed.") == "有界运行完成"
+    assert web._compact_latest_message("Binance current-environment bounded run completed.") == "有界运行完成"
 
 
 def test_localize_detail_translates_json_keys_and_common_values() -> None:
     detail = (
         '{"signed_write_ok": false, "caller": "binance_once", "proxy_enabled": true, '
-        '"errors": ["Binance testnet safety sweep completed."], '
+        '"errors": ["Binance current-environment safety sweep completed."], '
         '"symbols": [{"symbol": "BTCUSDT", "status": "warn", "long_qty": 0.0}]}'
     )
 
@@ -251,7 +253,7 @@ def test_localize_detail_translates_json_keys_and_common_values() -> None:
     assert "调用入口" in localized
     assert "代理启用" in localized
     assert "错误列表" in localized
-    assert "Binance 测试网安全清扫完成。" in localized
+    assert "Binance 当前环境安全清扫完成。" in localized
     assert "标的明细" in localized
     assert "多仓数量" in localized
 
@@ -317,7 +319,7 @@ def test_testnet_verification_rows_summarize_latest_logs() -> None:
             {
                 "module": "binance_safety_sweep",
                 "level": "INFO",
-                "message": "Binance testnet safety sweep completed.",
+                "message": "Binance current-environment safety sweep completed.",
                 "detail": json.dumps(
                     {
                         "safety_sweep_ok": True,

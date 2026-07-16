@@ -3,17 +3,17 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import isfinite
 from typing import Any
 
-from core.models import GridOrder, GridState, OrderSide, OrderStatus, RiskAction, SymbolSession
+from core.models import GridOrder, GridParams, GridState, OrderSide, OrderStatus, RiskAction, SymbolSession
 from core.scheduler import Scheduler
 from db.repository import Repository
 from exchange.base import ExchangeClient
 from strategy.cooldown import CooldownConfig, CooldownEvaluator
 from strategy.grid_calculator import SUPPORTED_RANGE_METHODS, GridCalculationError, GridConfig
-from strategy.grid_calculator import calculate_volatility_metric
+from strategy.grid_calculator import calculate_grid_params, calculate_volatility_metric
 from strategy.grid_engine import (
     ORDER_CREATE_RECOVERY_ATTEMPTS,
     ORDER_CREATE_RECOVERY_DELAY_SECONDS,
@@ -88,8 +88,16 @@ class TradingController:
         )
         self.active_sessions: dict[str, SymbolSession] = {}
         self.current_window_id: int | None = None
+        self.round_active = False
+        self.round_stopping = False
+        self.round_candidate_symbols: set[str] = set()
+        self.round_stopped_symbols: set[str] = set()
+        self._processed_kline_close_at: dict[str, datetime] = {}
+        self._next_round_scan_at: datetime | None = None
+        self._round_scan_lock = asyncio.Lock()
         self._volatility_refreshed_at: dict[int, datetime] = {}
         self._grid_recalculated_at: dict[int, datetime] = {}
+        self._session_event_locks: dict[str, asyncio.Lock] = {}
         self._last_maker_fee_by_symbol: dict[str, float] = {}
         self._maker_fee_checked_at: datetime | None = None
         self._runtime_config_signature = self._runtime_config_signature_from_config(controller_config)
@@ -287,7 +295,8 @@ class TradingController:
             return RunOnceResult("new_entries_paused", [], [])
 
         effective_observer_config, effective_grid_config, effective_max_concurrent = self._effective_next_entry_settings(current_time)
-        selected = await self.selector.select(max_concurrent=effective_max_concurrent)
+        scan_limit = self._effective_scan_candidate_count(effective_max_concurrent)
+        selected = await self.selector.select(max_concurrent=max(effective_max_concurrent, scan_limit))
         selected_symbols = [item.symbol for item in selected]
         self._log_selection(selected, current_time)
         if not selected_symbols:
@@ -313,14 +322,13 @@ class TradingController:
         window_id = self.repository.create_window(current_time)
         self.current_window_id = window_id
         started: list[str] = []
+        prepared: list[tuple[int, str, float, GridParams]] = []
         effective_risk = RiskManager(
             self.scheduler,
             replace(self.risk.config, max_concurrent=effective_max_concurrent),
         )
-        for symbol in fee_eligible_symbols[:effective_max_concurrent]:
-            allowed = effective_risk.can_open_new_symbol(list(self.active_sessions.values()), self.config.capital_per_symbol)
-            if allowed.action != RiskAction.NONE:
-                continue
+        observation_sessions: list[tuple[int, str]] = []
+        for symbol in fee_eligible_symbols:
             session_id = self.repository.create_session(
                 window_id=window_id,
                 symbol=symbol,
@@ -339,51 +347,107 @@ class TradingController:
                 None,
                 current_time,
             )
-            current_price = await self._current_price(symbol)
-            try:
-                params = await self.observer.observe_then_calculate(
-                    symbol,
-                    current_price,
-                    should_abort=lambda: self.scheduler.should_force_close(),
-                    observer_config=effective_observer_config,
-                    grid_config=effective_grid_config,
-                )
-            except ObservationAborted:
-                self.repository.close_session(session_id, "observation_aborted_force_close", current_time)
-                self.repository.log_state(
-                    session_id,
-                    symbol,
-                    GridState.OBSERVING.value,
-                    GridState.STOPPED.value,
-                    "observation_aborted",
-                    "观察期内触发强制离场，未建仓。",
-                    current_time,
-                )
+            observation_sessions.append((session_id, symbol))
+
+        observation_results = await asyncio.gather(
+            *(
+                self._observe_grid_candidate(symbol, effective_observer_config, effective_grid_config)
+                for _session_id, symbol in observation_sessions
+            ),
+            return_exceptions=True,
+        )
+        for (session_id, symbol), observation_result in zip(observation_sessions, observation_results):
+            if isinstance(observation_result, ObservationAborted):
+                for aborted_session_id, aborted_symbol in observation_sessions:
+                    self.repository.close_session(aborted_session_id, "observation_aborted_force_close", current_time)
+                    if self.state_machine.get_state(aborted_symbol) == GridState.OBSERVING:
+                        self.state_machine.transition(aborted_symbol, GridState.STOPPED, "observation_aborted", at=current_time)
+                    self.repository.log_state(
+                        aborted_session_id,
+                        aborted_symbol,
+                        GridState.OBSERVING.value,
+                        GridState.STOPPED.value,
+                        "observation_aborted",
+                        "观察期内触发强制离场，未建仓。",
+                        current_time,
+                    )
                 if self.active_sessions:
                     await self.close_all_active_sessions("observation_aborted_force_close", current_time)
                 else:
                     self._close_current_window(current_time, status="aborted")
                 return RunOnceResult("observation_aborted", selected_symbols, started)
-            except GridCalculationError as exc:
+            if isinstance(observation_result, GridCalculationError):
                 self.repository.close_session(session_id, "grid_calculation_failed", current_time)
+                self.state_machine.transition(symbol, GridState.STOPPED, "grid_calculation_failed", str(observation_result), current_time)
                 self.repository.log_state(
                     session_id,
                     symbol,
                     GridState.OBSERVING.value,
                     GridState.STOPPED.value,
                     "grid_calculation_failed",
-                    str(exc),
+                    str(observation_result),
                     current_time,
                 )
                 self.repository.log_system(
                     "WARN",
                     "controller",
                     "Grid calculation failed; symbol skipped.",
-                    f"symbol={symbol}, reason={exc}",
+                    f"symbol={symbol}, reason={observation_result}",
                     current_time,
                 )
                 continue
+            if isinstance(observation_result, BaseException):
+                self.repository.close_session(session_id, "observation_failed", current_time)
+                self.state_machine.transition(symbol, GridState.STOPPED, "observation_failed", str(observation_result), current_time)
+                self.repository.log_state(
+                    session_id,
+                    symbol,
+                    GridState.OBSERVING.value,
+                    GridState.STOPPED.value,
+                    "observation_failed",
+                    str(observation_result),
+                    current_time,
+                )
+                self.repository.log_system(
+                    "ERROR",
+                    "controller",
+                    "Observation failed; symbol skipped.",
+                    f"symbol={symbol}, reason={observation_result}",
+                    current_time,
+                )
+                continue
+            current_price, params = observation_result
             self._persist_session_grid(session_id, params)
+            prepared.append((session_id, symbol, current_price, params))
+
+        for index, (session_id, symbol, current_price, params) in enumerate(prepared):
+            if index >= effective_max_concurrent:
+                self.repository.close_session(session_id, "eligible_but_concurrency_limit_reached", current_time)
+                self.state_machine.transition(symbol, GridState.STOPPED, "concurrency_limit", at=current_time)
+                self.repository.log_state(
+                    session_id,
+                    symbol,
+                    GridState.OBSERVING.value,
+                    GridState.STOPPED.value,
+                    "concurrency_limit",
+                    f"max_concurrent={effective_max_concurrent}",
+                    current_time,
+                )
+                continue
+            allowed = effective_risk.can_open_new_symbol(list(self.active_sessions.values()), self.config.capital_per_symbol)
+            if allowed.action != RiskAction.NONE:
+                self.repository.close_session(session_id, "risk_limit_reached", current_time)
+                self.state_machine.transition(symbol, GridState.STOPPED, "risk_limit", allowed.reason, current_time)
+                self.repository.log_state(
+                    session_id,
+                    symbol,
+                    GridState.OBSERVING.value,
+                    GridState.STOPPED.value,
+                    "risk_limit",
+                    allowed.reason,
+                    current_time,
+                )
+                continue
             session = SymbolSession(
                 session_id=session_id,
                 symbol=symbol,
@@ -424,6 +488,7 @@ class TradingController:
                     )
                 else:
                     self.repository.close_session(session_id, "grid_start_failed", current_time)
+                    self.state_machine.transition(symbol, GridState.STOPPED, "grid_start_failed", str(exc), current_time)
                     self.repository.log_state(
                         session_id,
                         symbol,
@@ -464,6 +529,315 @@ class TradingController:
 
         return RunOnceResult("started", selected_symbols, started)
 
+    async def start_round(self, now: datetime | None = None) -> RunOnceResult:
+        current_time = now or datetime.now(timezone.utc)
+        self._apply_runtime_config_draft(current_time)
+        if self.scheduler.should_force_close(current_time):
+            return RunOnceResult("force_close_window", [], [])
+        if not self.scheduler.is_in_window(current_time):
+            return RunOnceResult("outside_window", [], [])
+        startup = await self.validate_startup(current_time)
+        if not startup.ok:
+            return RunOnceResult("startup_check_failed", [], [])
+        runtime = self.repository.runtime_state()
+        runtime_id = str(runtime.get("runtime_id") or "")
+        window_id = self.repository.claim_round_window(runtime_id, current_time)
+        self.current_window_id = window_id
+        self.round_active = True
+        self.round_stopping = False
+        self.round_candidate_symbols.clear()
+        self.round_stopped_symbols.clear()
+        self._processed_kline_close_at.clear()
+        return await self.scan_round_once(current_time)
+
+    async def scan_round_once(self, now: datetime | None = None) -> RunOnceResult:
+        async with self._round_scan_lock:
+            return await self._scan_round_once_locked(now)
+
+    async def _scan_round_once_locked(self, now: datetime | None = None) -> RunOnceResult:
+        current_time = now or datetime.now(timezone.utc)
+        if not self.round_active or self.round_stopping or self.current_window_id is None:
+            return RunOnceResult("round_inactive", [], [])
+        if self.scheduler.should_force_close(current_time) or not self.scheduler.is_in_window(current_time):
+            await self.stop_round("交易窗口结束", current_time)
+            return RunOnceResult("round_stopped", [], [])
+
+        self.repository.mark_round_candidates_stale(
+            self.current_window_id,
+            current_time - timedelta(seconds=90),
+            current_time,
+        )
+
+        effective_observer_config, effective_grid_config, effective_max_concurrent = self._effective_next_entry_settings(current_time)
+        scan_limit = self._effective_scan_candidate_count(effective_max_concurrent)
+        selected = await self.selector.select(max_concurrent=scan_limit)
+        selected_symbols = [item.symbol for item in selected]
+        self.round_candidate_symbols.update(selected_symbols)
+        self._log_selection(selected, current_time)
+        disabled_symbols = self.repository.disabled_symbols()
+        entries_paused = self.repository.new_entries_paused()
+        analyzable = [
+            item
+            for item in selected
+            if item.symbol.upper() not in disabled_symbols
+            and item.symbol not in self.round_stopped_symbols
+            and item.symbol not in self.active_sessions
+        ]
+        fee_eligible = set(
+            await self._filter_symbols_by_maker_fee([item.symbol for item in analyzable], current_time)
+        )
+        analyses = await asyncio.gather(
+            *(
+                self._analyze_round_candidate(item, effective_observer_config, effective_grid_config, current_time)
+                for item in selected
+            ),
+            return_exceptions=True,
+        )
+        eligible: list[tuple[Any, float, GridParams]] = []
+        for rank, (item, analysis) in enumerate(zip(selected, analyses), start=1):
+            symbol = item.symbol
+            base = {
+                "liquidity_rank": rank,
+                "score": item.score,
+                "volume_score": item.volume_score,
+                "depth_score": item.depth_score,
+                "volume_24h": item.volume_24h,
+                "depth_usdt": item.depth_usdt,
+                "bid_price": item.bid_price,
+                "ask_price": item.ask_price,
+                "spread_pct": item.spread_pct,
+                "market_updated_at": current_time.isoformat(),
+                "data_stale": False,
+            }
+            active = self.active_sessions.get(symbol)
+            if active is not None:
+                active_values: dict[str, Any] = {
+                    **base,
+                    "price": (item.bid_price + item.ask_price) / 2,
+                    "threshold_met": True,
+                    "session_id": active.session_id,
+                    "stage": "trading" if active.state != GridState.PAUSED else "paused",
+                    "error": None,
+                }
+                if not isinstance(analysis, BaseException):
+                    current_price, params, snapshot = analysis
+                    active_values.update(
+                        {
+                            "price": current_price,
+                            "volatility_method": params.volatility_method,
+                            "volatility_value": params.volatility_value,
+                            "volatility_window": params.volatility_window,
+                            "range_lower": snapshot[0],
+                            "range_upper": snapshot[1],
+                            "range_width_pct": snapshot[2],
+                            "calculated_at": params.calculated_at.isoformat(),
+                        }
+                    )
+                    self.repository.update_session_current_volatility(
+                        active.session_id,
+                        params.volatility_value,
+                        params.volatility_window,
+                        params.calculated_at,
+                    )
+                    self._volatility_refreshed_at[active.session_id] = params.calculated_at
+                self.repository.upsert_round_candidate(
+                    self.current_window_id,
+                    symbol,
+                    current_time,
+                    **active_values,
+                )
+                continue
+            if symbol in self.round_stopped_symbols:
+                self.repository.upsert_round_candidate(
+                    self.current_window_id, symbol, current_time, **base, threshold_met=False, stage="stopped"
+                )
+                continue
+            if symbol.upper() in disabled_symbols:
+                self.repository.upsert_round_candidate(
+                    self.current_window_id, symbol, current_time, **base, threshold_met=False, stage="not_selected", error="标的已禁用"
+                )
+                continue
+            if symbol not in fee_eligible:
+                self.repository.upsert_round_candidate(
+                    self.current_window_id, symbol, current_time, **base, threshold_met=False, stage="not_selected", error="手续费率不符合条件"
+                )
+                continue
+            if isinstance(analysis, BaseException):
+                self.repository.upsert_round_candidate(
+                    self.current_window_id,
+                    symbol,
+                    current_time,
+                    **base,
+                    threshold_met=False,
+                    stage="below_threshold" if isinstance(analysis, GridCalculationError) else "error",
+                    error=str(analysis),
+                    calculated_at=current_time.isoformat(),
+                )
+                continue
+            current_price, params, snapshot = analysis
+            self.repository.upsert_round_candidate(
+                self.current_window_id,
+                symbol,
+                current_time,
+                **base,
+                price=current_price,
+                volatility_method=params.volatility_method,
+                volatility_value=params.volatility_value,
+                volatility_window=params.volatility_window,
+                range_lower=snapshot[0],
+                range_upper=snapshot[1],
+                range_width_pct=snapshot[2],
+                threshold_met=True,
+                stage="eligible",
+                error="新开仓已暂停" if entries_paused else None,
+                calculated_at=params.calculated_at.isoformat(),
+            )
+            if not entries_paused:
+                eligible.append((item, current_price, params))
+
+        started: list[str] = []
+        slots = max(0, effective_max_concurrent - len(self.active_sessions))
+        for item, current_price, params in eligible[:slots]:
+            if self.round_stopping:
+                break
+            if await self._start_round_session(item.symbol, current_price, params, current_time):
+                started.append(item.symbol)
+
+        next_scan = current_time + timedelta(minutes=1)
+        self._next_round_scan_at = next_scan
+        round_state = "RUNNING" if self.active_sessions else "SCANNING"
+        self.repository.set_round_runtime_state(
+            self.current_window_id,
+            round_state,
+            current_time,
+            last_scan_at=current_time,
+            next_scan_at=next_scan,
+        )
+        return RunOnceResult("started" if started else "scanning", selected_symbols, started)
+
+    async def _analyze_round_candidate(
+        self,
+        item: Any,
+        observer_config: ObserverConfig,
+        grid_config: GridConfig,
+        calculated_at: datetime,
+    ) -> tuple[float, GridParams, tuple[float, float, float]]:
+        current_price = (float(item.bid_price) + float(item.ask_price)) / 2
+        limit = max(int(observer_config.observe_hours * 60), observer_config.min_samples)
+        klines, funding_rate = await asyncio.gather(
+            self.exchange.get_klines(item.symbol, "1m", limit),
+            self.exchange.get_funding_rate(item.symbol),
+        )
+        lows = [float(row["low"]) for row in klines]
+        highs = [float(row["high"]) for row in klines]
+        lower = min(lows)
+        upper = max(highs)
+        range_width_pct = (upper - lower) / lower
+        params = calculate_grid_params(
+            item.symbol,
+            klines,
+            current_price,
+            funding_rate,
+            replace(grid_config, min_samples=observer_config.min_samples),
+            calculated_at=calculated_at,
+        )
+        return current_price, params, (lower, upper, range_width_pct)
+
+    async def _start_round_session(
+        self,
+        symbol: str,
+        current_price: float,
+        params: GridParams,
+        at: datetime,
+    ) -> bool:
+        if self.current_window_id is None or symbol in self.round_stopped_symbols:
+            return False
+        session_id = self.repository.create_session(
+            self.current_window_id,
+            symbol,
+            GridState.OBSERVING.value,
+            self.config.capital_per_symbol,
+            self.config.leverage,
+            at,
+        )
+        self.state_machine.transition(symbol, GridState.OBSERVING, "round_candidate_eligible", at=at)
+        self.repository.log_state(
+            session_id, symbol, GridState.IDLE.value, GridState.OBSERVING.value, "round_candidate_eligible", None, at
+        )
+        self._persist_session_grid(session_id, params)
+        session = SymbolSession(
+            session_id=session_id,
+            symbol=symbol,
+            state=GridState.OBSERVING,
+            params=params,
+            orders=[],
+            realized_pnl=0.0,
+            capital=self.config.capital_per_symbol,
+            leverage=self.config.leverage,
+            open_time=at,
+            state_entered_at=at,
+        )
+        try:
+            await self.engine.start(session, current_price)
+        except Exception as exc:
+            self._persist_session_orders(session)
+            self.active_sessions[symbol] = session
+            await self._record_grid_start_failure_fills(session, at)
+            closed = await self._close_session(session, "grid_start_failed", at)
+            if closed:
+                self.repository.log_system(
+                    "ERROR",
+                    "controller",
+                    "Grid start failed; fills reconciled and symbol closed for this round.",
+                    f"symbol={symbol}, reason={exc}",
+                    at,
+                )
+            else:
+                self.repository.log_system(
+                    "ERROR",
+                    "controller",
+                    "Grid start failed and cleanup is pending; session kept active for retry.",
+                    f"symbol={symbol}, reason={exc}",
+                    at,
+                )
+            return False
+        session.state = GridState.RUNNING
+        self._persist_session_orders(session)
+        self.active_sessions[symbol] = session
+        self.state_machine.transition(symbol, GridState.RUNNING, "grid_started", at=at)
+        self.repository.update_session_state(session_id, GridState.RUNNING.value)
+        self.repository.log_state(
+            session_id,
+            symbol,
+            GridState.OBSERVING.value,
+            GridState.RUNNING.value,
+            "grid_started",
+            f"grid_num={params.grid_num}, step_pct={params.step_pct}",
+            at,
+        )
+        self.repository.mark_round_candidate_stage(self.current_window_id, symbol, "trading", at, session_id)
+        return True
+
+    async def stop_round(self, reason: str, now: datetime | None = None) -> list[str]:
+        current_time = now or datetime.now(timezone.utc)
+        if not self.round_active or self.current_window_id is None:
+            return []
+        window_id = self.current_window_id
+        self.round_stopping = True
+        self.repository.set_round_runtime_state(window_id, "STOPPING", current_time)
+        closed = await self.close_all_active_sessions(reason, current_time)
+        if self.active_sessions:
+            return closed
+        self.repository.close_window(window_id, current_time, status="STOPPED")
+        self.repository.set_round_runtime_state(window_id, "STOPPED", current_time)
+        self.repository.update_round_start_request("completed", {"status": "STOPPED", "reason": reason}, current_time)
+        self.repository.update_round_stop_request("completed", {"closed_symbols": closed}, current_time)
+        self.current_window_id = None
+        self.round_active = False
+        self.round_stopping = False
+        self._next_round_scan_at = None
+        return closed
+
     def _effective_next_entry_settings(self, at: datetime) -> tuple[ObserverConfig, GridConfig, int]:
         draft = self.repository.strategy_config_draft()
         if not draft:
@@ -474,16 +848,30 @@ class TradingController:
                 raise ValueError(f"不支持的波动率算法: {volatility_method}")
             max_concurrent = int(draft.get("max_concurrent", self.config.max_concurrent))
             observe_hours = float(draft.get("observe_hours", self.observer.observer_config.observe_hours))
+            kline_interval = str(draft.get("observe_kline_interval", self.observer.observer_config.kline_interval)).strip()
             min_step_pct = float(draft.get("min_step_pct", self.grid_config.min_step_pct))
+            min_tradable_range_pct = float(
+                draft.get("min_tradable_range_pct", self.grid_config.min_tradable_range_pct)
+            )
             max_grid_num = int(draft.get("max_grid_num", self.grid_config.max_grid_num))
+            stop_buffer_pct = float(draft.get("stop_buffer_pct", self.grid_config.stop_buffer_pct))
+            safety_multiplier = float(draft.get("safety_multiplier", self.grid_config.safety_multiplier))
             if max_concurrent < 1:
                 raise ValueError("max_concurrent 必须大于等于 1")
             if observe_hours <= 0:
                 raise ValueError("observe_hours 必须大于 0")
+            if not kline_interval:
+                raise ValueError("observe_kline_interval 不能为空")
             if min_step_pct <= 0:
                 raise ValueError("min_step_pct 必须大于 0")
+            if min_tradable_range_pct <= 0:
+                raise ValueError("min_tradable_range_pct 必须大于 0")
             if max_grid_num < 1:
                 raise ValueError("max_grid_num 必须大于等于 1")
+            if stop_buffer_pct < 0 or stop_buffer_pct >= 1:
+                raise ValueError("stop_buffer_pct 必须在 [0, 1) 内")
+            if safety_multiplier < 0:
+                raise ValueError("safety_multiplier 必须为非负数")
         except (TypeError, ValueError) as exc:
             self.repository.log_system(
                 "WARN",
@@ -494,15 +882,27 @@ class TradingController:
             )
             return self.observer.observer_config, self.grid_config, self.config.max_concurrent
         return (
-            replace(self.observer.observer_config, observe_hours=observe_hours),
+            replace(self.observer.observer_config, observe_hours=observe_hours, kline_interval=kline_interval),
             replace(
                 self.grid_config,
                 range_method=volatility_method,
                 min_step_pct=min_step_pct,
+                min_tradable_range_pct=min_tradable_range_pct,
                 max_grid_num=max_grid_num,
+                stop_buffer_pct=stop_buffer_pct,
+                safety_multiplier=safety_multiplier,
             ),
             max_concurrent,
         )
+
+    def _effective_scan_candidate_count(self, max_concurrent: int) -> int:
+        draft = self.repository.strategy_config_draft() or {}
+        raw_value = draft.get("scan_candidate_count", self.selector.config.scan_candidate_count)
+        try:
+            configured = int(raw_value)
+        except (TypeError, ValueError):
+            configured = 0
+        return max(max_concurrent, configured if configured > 0 else max_concurrent)
 
     def _apply_runtime_config_draft(self, at: datetime) -> None:
         draft = self.repository.strategy_config_draft()
@@ -510,11 +910,17 @@ class TradingController:
             return
         try:
             max_concurrent = int(draft.get("max_concurrent", self.config.max_concurrent))
+            capital_per_symbol = float(draft.get("capital_per_symbol", self.config.capital_per_symbol))
+            leverage = int(draft.get("leverage", self.config.leverage))
             take_profit_usdt = float(draft.get("take_profit_usdt", self.config.take_profit_usdt))
             total_capital_limit = float(draft.get("total_capital_limit", self.config.total_capital_limit))
             max_maker_fee_rate = float(draft.get("max_maker_fee_rate", self.config.max_maker_fee_rate))
             if max_concurrent < 1:
                 raise ValueError("max_concurrent 必须大于等于 1")
+            if capital_per_symbol <= 0:
+                raise ValueError("capital_per_symbol 必须大于 0")
+            if leverage < 1:
+                raise ValueError("leverage 必须大于等于 1")
             if take_profit_usdt <= 0:
                 raise ValueError("take_profit_usdt 必须大于 0")
             if total_capital_limit <= 0:
@@ -525,6 +931,8 @@ class TradingController:
                 isfinite(value)
                 for value in (
                     float(max_concurrent),
+                    capital_per_symbol,
+                    float(leverage),
                     take_profit_usdt,
                     total_capital_limit,
                     max_maker_fee_rate,
@@ -547,6 +955,8 @@ class TradingController:
         next_config = replace(
             self.config,
             max_concurrent=max_concurrent,
+            capital_per_symbol=capital_per_symbol,
+            leverage=leverage,
             take_profit_usdt=take_profit_usdt,
             total_capital_limit=total_capital_limit,
             max_maker_fee_rate=max_maker_fee_rate,
@@ -555,12 +965,16 @@ class TradingController:
         if next_signature == self._runtime_config_signature:
             return
         previous = {
+            "capital_per_symbol": self.config.capital_per_symbol,
+            "leverage": self.config.leverage,
             "max_concurrent": self.config.max_concurrent,
             "take_profit_usdt": self.config.take_profit_usdt,
             "total_capital_limit": self.config.total_capital_limit,
             "max_maker_fee_rate": self.config.max_maker_fee_rate,
         }
         current = {
+            "capital_per_symbol": capital_per_symbol,
+            "leverage": leverage,
             "max_concurrent": max_concurrent,
             "take_profit_usdt": take_profit_usdt,
             "total_capital_limit": total_capital_limit,
@@ -584,8 +998,10 @@ class TradingController:
         )
 
     @staticmethod
-    def _runtime_config_signature_from_config(config: ControllerConfig) -> tuple[int, float, float, float]:
+    def _runtime_config_signature_from_config(config: ControllerConfig) -> tuple[float, int, int, float, float, float]:
         return (
+            float(config.capital_per_symbol),
+            int(config.leverage),
             int(config.max_concurrent),
             float(config.take_profit_usdt),
             float(config.total_capital_limit),
@@ -636,6 +1052,11 @@ class TradingController:
 
     async def handle_order_filled_event(self, event: dict[str, Any]) -> GridOrder | None:
         symbol = str(event["symbol"])
+        async with self._session_event_locks.setdefault(symbol, asyncio.Lock()):
+            return await self._handle_order_filled_event_locked(event)
+
+    async def _handle_order_filled_event_locked(self, event: dict[str, Any]) -> GridOrder | None:
+        symbol = str(event["symbol"])
         client_id = str(event["client_id"])
         session = self.active_sessions.get(symbol)
         if session is None:
@@ -657,9 +1078,18 @@ class TradingController:
 
         price = _positive_price(event.get("price", filled_order.price), "fill price")
         qty = _positive_qty(event.get("qty", filled_order.qty), "fill qty")
+        fee = _non_negative_float(event.get("fee", 0.0), "fill fee")
+        exchange_realized_pnl = _finite_float(event.get("realized_pnl", 0.0), "fill realized pnl")
         trade_time = event.get("trade_time")
         if not isinstance(trade_time, datetime):
             trade_time = datetime.now(timezone.utc)
+        trade_summary = await self._load_order_trade_summary(symbol, str(event.get("order_id", filled_order.order_id)))
+        if trade_summary is not None and trade_summary["qty"] + 1e-12 >= qty:
+            price = trade_summary["price"]
+            qty = trade_summary["qty"]
+            fee = trade_summary["fee"]
+            exchange_realized_pnl = trade_summary["realized_pnl"]
+            trade_time = trade_summary["trade_time"]
 
         if qty > 0 and qty + 1e-12 < filled_order.qty:
             if filled_order.status == OrderStatus.FILLED and filled_order.fill_price is None:
@@ -737,9 +1167,11 @@ class TradingController:
             grid_index=filled_order.grid_index,
             grid_pnl=grid_pnl,
             trade_time=trade_time,
+            fee=fee,
         )
-        if grid_pnl is not None:
-            session.realized_pnl += grid_pnl
+        pnl_delta = (grid_pnl if grid_pnl is not None else exchange_realized_pnl) - fee
+        if abs(pnl_delta) > 1e-12:
+            session.realized_pnl += pnl_delta
             self.repository.update_session_pnl(session.session_id, session.realized_pnl)
         if refill_error is not None and _is_post_only_rejection(refill_error):
             self.repository.log_system(
@@ -808,39 +1240,44 @@ class TradingController:
         partial_order = next((order for order in session.orders if order.client_id == str(event.get("client_id", ""))), None)
         price: float | None = None
         qty: float | None = None
+        fee = 0.0
+        exchange_realized_pnl = 0.0
         invalid_detail: str | None = None
         try:
             price = _positive_price(event.get("price", partial_order.price if partial_order is not None else 0.0), "partial fill price")
             qty = _positive_qty(event.get("qty", 0.0), "partial fill qty")
+            fee = _non_negative_float(event.get("fee", 0.0), "partial fill fee")
+            exchange_realized_pnl = _finite_float(event.get("realized_pnl", 0.0), "partial fill realized pnl")
             if partial_order is not None and qty > partial_order.qty + 1e-12:
                 invalid_detail = "partial fill qty exceeds local order qty"
         except ValueError as exc:
             invalid_detail = str(exc)
         order_id = str(event.get("order_id", partial_order.order_id if partial_order is not None else event.get("client_id", "")))
-        trade_id = str(event.get("trade_id", ""))
-        trade_order_id = f"{order_id}:{trade_id}" if trade_id else order_id
-        if (
-            invalid_detail is None
-            and price is not None
-            and qty is not None
-            and not self.repository.trade_exists(session.session_id, trade_order_id)
-        ):
-            self.repository.create_trade(
-                session_id=session.session_id,
-                symbol=session.symbol,
-                order_id=trade_order_id,
-                side=partial_order.side.value if partial_order is not None else str(event.get("side", "")),
-                price=price,
-                qty=qty,
-                grid_index=partial_order.grid_index if partial_order is not None else None,
-                grid_pnl=None,
-                trade_time=event_time,
-            )
+        confirmed_summary: dict[str, Any] | None = None
+        if invalid_detail is None and price is not None and qty is not None:
+            confirmed_summary = {
+                "price": price,
+                "qty": qty,
+                "fee": fee,
+                "realized_pnl": exchange_realized_pnl,
+                "trade_time": event_time,
+            }
+        trade_summary = await self._load_order_trade_summary(session.symbol, order_id)
+        if trade_summary is not None:
+            confirmed_summary = trade_summary
+            price = trade_summary["price"]
+            qty = trade_summary["qty"]
+            fee = trade_summary["fee"]
+            exchange_realized_pnl = trade_summary["realized_pnl"]
+            event_time = trade_summary["trade_time"]
+            invalid_detail = None
+            if partial_order is not None and qty > partial_order.qty + 1e-12:
+                invalid_detail = "partial fill qty exceeds local order qty"
         if invalid_detail is not None:
             self.repository.log_system(
                 "ERROR",
                 "partial_fill",
-                "Partial fill event has invalid details; closing session without recording trade.",
+                "Partial fill event has invalid details; recording confirmed fill before closing session.",
                 json.dumps(
                     {
                         "session_id": session.session_id,
@@ -856,25 +1293,73 @@ class TradingController:
                 ),
                 event_time,
             )
-        self.repository.log_system(
-            "WARN",
-            "partial_fill",
-            "Partial fill detected; closing session because partial grid accounting is unsupported.",
-            json.dumps(
-                {
-                    "session_id": session.session_id,
-                    "symbol": session.symbol,
-                    "client_id": event.get("client_id"),
-                    "order_id": event.get("order_id"),
-                    "side": event.get("side"),
-                    "price": event.get("price"),
-                    "qty": event.get("qty"),
-                },
-                ensure_ascii=False,
-            ),
-            event_time,
-        )
-        await self._close_session(session, "检测到部分成交，当前版本不支持部分成交网格补单，执行安全平仓。", event_time)
+            if partial_order is not None and confirmed_summary is not None:
+                self._record_confirmed_partial_fill(session, partial_order, order_id, confirmed_summary)
+            await self._close_session(session, "部分成交数据异常，执行安全平仓。", event_time)
+            return
+        if partial_order is None:
+            await self._close_session(session, "部分成交订单无法匹配本地网格，执行安全平仓。", event_time)
+            return
+        try:
+            cancel_response = await self.exchange.cancel_order(session.symbol, partial_order.order_id)
+            cancel_executed_qty = _non_negative_float(
+                cancel_response.get("executedQty"),
+                "cancel executed qty",
+            )
+            target_qty = max(qty or 0.0, cancel_executed_qty)
+            if target_qty > partial_order.qty + 1e-12:
+                raise ValueError("撤单响应累计成交量超过本地订单数量")
+            final_summary = await self._load_order_trade_summary(
+                session.symbol,
+                order_id,
+                attempts=5,
+                min_qty=target_qty,
+            )
+            if final_summary is None or final_summary["qty"] > partial_order.qty + 1e-12:
+                raise ValueError("撤单后无法取得有效累计成交明细")
+            partial_order.qty = final_summary["qty"]
+            final_event = {
+                **event,
+                "status": "FILLED",
+                "price": final_summary["price"],
+                "qty": final_summary["qty"],
+                "fee": final_summary["fee"],
+                "realized_pnl": final_summary["realized_pnl"],
+                "trade_time": final_summary["trade_time"],
+            }
+            self.repository.log_system(
+                "INFO",
+                "partial_fill",
+                "Partial fill remainder cancelled; continuing grid with final filled quantity.",
+                json.dumps(
+                    {
+                        "session_id": session.session_id,
+                        "symbol": session.symbol,
+                        "order_id": order_id,
+                        "final_qty": final_summary["qty"],
+                        "final_price": final_summary["price"],
+                    },
+                    ensure_ascii=False,
+                ),
+                event_time,
+            )
+            await self._handle_order_filled_event_locked(final_event)
+        except Exception as exc:
+            latest_summary = await self._load_order_trade_summary(session.symbol, order_id, attempts=3)
+            if latest_summary is not None and (
+                confirmed_summary is None or latest_summary["qty"] > confirmed_summary["qty"]
+            ):
+                confirmed_summary = latest_summary
+            if confirmed_summary is not None:
+                self._record_confirmed_partial_fill(session, partial_order, order_id, confirmed_summary)
+            self.repository.log_system(
+                "ERROR",
+                "partial_fill",
+                "Failed to finalize partial fill; closing session.",
+                f"session_id={session.session_id}, symbol={session.symbol}, order_id={order_id}, reason={exc}",
+                event_time,
+            )
+            await self._close_session(session, "部分成交撤单或累计成交对账失败，执行安全平仓。", event_time)
 
     async def _handle_stop_order_filled_event(self, session: SymbolSession, event: dict[str, Any]) -> None:
         trade_time = event.get("trade_time")
@@ -943,17 +1428,55 @@ class TradingController:
 
     async def handle_price_update_event(self, event: dict[str, Any]) -> str | None:
         symbol = str(event["symbol"])
-        session = self.active_sessions.get(symbol)
-        if session is None:
-            return None
         event_time = event.get("event_time")
         if not isinstance(event_time, datetime):
             event_time = datetime.now(timezone.utc)
-        decision = self.risk.evaluate_symbol(session, _positive_price(event["price"], "price event"), event_time)
-        if decision.action == RiskAction.NONE:
+        price = _positive_price(event["price"], "price event")
+        if self.round_active and self.current_window_id is not None and symbol in self.round_candidate_symbols:
+            self.repository.update_round_candidate_market(
+                self.current_window_id,
+                symbol,
+                price,
+                event_time,
+                bid_price=event.get("bid_price"),
+                ask_price=event.get("ask_price"),
+            )
+        async with self._session_event_locks.setdefault(symbol, asyncio.Lock()):
+            session = self.active_sessions.get(symbol)
+            if session is None or session.state not in {GridState.RUNNING, GridState.PAUSED, GridState.COOLDOWN}:
+                return None
+            decision = self.risk.evaluate_symbol(session, price, event_time)
+            if decision.action == RiskAction.NONE:
+                return None
+            await self._apply_risk_decision(session, decision.action, decision.reason, event_time)
+            return decision.action.value
+
+    async def handle_kline_closed_event(self, event: dict[str, Any]) -> str | None:
+        if not bool(event.get("closed")) or not self.round_active:
             return None
-        await self._apply_risk_decision(session, decision.action, decision.reason, event_time)
-        return decision.action.value
+        symbol = str(event.get("symbol") or "").strip().upper()
+        if not symbol or symbol not in self.round_candidate_symbols:
+            return None
+        close_time = event.get("close_time")
+        if not isinstance(close_time, datetime):
+            return None
+        previous = self._processed_kline_close_at.get(symbol)
+        if previous is not None and close_time <= previous:
+            return None
+        self._processed_kline_close_at[symbol] = close_time
+        if self.current_window_id is not None:
+            self.repository.upsert_round_candidate(
+                self.current_window_id,
+                symbol,
+                close_time,
+                last_kline_close_at=close_time.isoformat(),
+                data_stale=False,
+            )
+        await self.scan_round_once(close_time)
+        return "scanned"
+
+    def market_stream_symbols(self) -> list[str]:
+        return sorted(self.round_candidate_symbols | set(self.active_sessions))
 
     async def poll_active_sessions_once(self, now: datetime | None = None) -> list[tuple[str, str]]:
         current_time = now or datetime.now(timezone.utc)
@@ -964,11 +1487,17 @@ class TradingController:
             actions.append(("*", commission_action))
         processed_symbols: set[str] = set()
         stop_requests = self.repository.pending_session_stop_requests()
+        control_requests = self.repository.pending_session_control_requests()
         for symbol, session in list(self.active_sessions.items()):
             processed_symbols.add(symbol)
             stop_request = stop_requests.get(session.session_id)
             if stop_request is not None:
                 action = await self._apply_session_stop_request(session, stop_request, current_time)
+                actions.append((symbol, action))
+                continue
+            control_request = control_requests.get(session.session_id)
+            if control_request is not None:
+                action = await self._apply_session_control_request(session, control_request, current_time)
                 actions.append((symbol, action))
                 continue
             if self.scheduler.should_force_close(current_time):
@@ -989,6 +1518,30 @@ class TradingController:
                 recovered = await self._try_recover_from_cooldown(session, current_time)
                 if recovered:
                     actions.append((symbol, "recovered"))
+                continue
+            if session.state == GridState.PAUSED:
+                try:
+                    reconcile_action = await self._reconcile_active_session_position(session, current_time)
+                except Exception as exc:
+                    self.repository.log_system(
+                        "ERROR",
+                        "position_reconciliation",
+                        "Position reconciliation failed while session paused; forcing close.",
+                        f"session_id={session.session_id}, symbol={symbol}, error={exc}",
+                        current_time,
+                    )
+                    await self._close_session(session, "暂停期间持仓对账异常，执行安全平仓。", current_time)
+                    actions.append((symbol, "position_reconciliation_failed"))
+                    continue
+                if reconcile_action is not None:
+                    await self._close_session(session, "暂停期间持仓不一致，执行安全平仓。", current_time)
+                    actions.append((symbol, reconcile_action))
+                    continue
+                await self._refresh_session_current_volatility_if_due(session, current_time)
+                decision = self.risk.evaluate_symbol(session, await self._current_price(symbol), current_time)
+                if decision.action != RiskAction.NONE:
+                    await self._apply_risk_decision(session, decision.action, decision.reason, current_time)
+                    actions.append((symbol, decision.action.value))
                 continue
             sync_result = await self.engine.sync_orders(session)
             filled_handled = False
@@ -1185,20 +1738,39 @@ class TradingController:
         iteration = 0
         while max_iterations is None or iteration < max_iterations:
             iteration += 1
-            if self.active_sessions:
-                actions = await self.poll_active_sessions_once()
-                statuses.append("poll:" + ",".join(f"{symbol}:{action}" for symbol, action in actions))
+            current_time = datetime.now(timezone.utc)
+            if self.round_active:
+                stop_request = self.repository.round_stop_request()
+                if stop_request is not None:
+                    closed = await self.stop_round(str(stop_request.get("reason") or "控制台停止整轮"), current_time)
+                    statuses.append("round_stopped:" + ",".join(closed))
+                elif self.scheduler.should_force_close(current_time) or not self.scheduler.is_in_window(current_time):
+                    closed = await self.stop_round("交易窗口结束", current_time)
+                    statuses.append("round_stopped:" + ",".join(closed))
+                else:
+                    actions = await self.poll_active_sessions_once(current_time) if self.active_sessions else []
+                    if self._next_round_scan_at is None or current_time >= self._next_round_scan_at:
+                        result = await self.scan_round_once(current_time)
+                        statuses.append(result.status)
+                    else:
+                        statuses.append("poll:" + ",".join(f"{symbol}:{action}" for symbol, action in actions))
                 await sleep_fn(self.config.loop_interval_seconds)
                 continue
 
-            result = await self.run_once()
+            request = self.repository.round_start_request()
+            if request is None:
+                statuses.append("idle_waiting_start")
+                await sleep_fn(self.config.loop_interval_seconds)
+                continue
+            try:
+                result = await self.start_round(current_time)
+            except Exception as exc:
+                self.repository.update_round_start_request("failed", str(exc), datetime.now(timezone.utc))
+                raise
+            if result.status in {"outside_window", "force_close_window", "startup_check_failed"}:
+                self.repository.update_round_start_request("failed", {"status": result.status}, datetime.now(timezone.utc))
             statuses.append(result.status)
-            sleep_seconds = (
-                self.config.loop_interval_seconds
-                if result.status not in {"outside_window", "force_close_window"}
-                else self.config.scheduler_check_minutes * 60
-            )
-            await sleep_fn(sleep_seconds)
+            await sleep_fn(self.config.loop_interval_seconds)
         return statuses
 
     async def reconcile_positions_once(
@@ -1423,7 +1995,119 @@ class TradingController:
         )
         return "manual_close_pending" if is_manual_close else "manual_stop_pending"
 
+    async def _apply_session_control_request(
+        self,
+        session: SymbolSession,
+        request: dict[str, Any],
+        at: datetime,
+    ) -> str:
+        action = str(request.get("action") or "").strip().lower()
+        if action == "pause":
+            if session.state == GridState.PAUSED:
+                self.repository.update_session_control_request(session.session_id, "completed", "会话已处于暂停状态。", at)
+                return "already_paused"
+            try:
+                await self.engine.pause_grid_orders(session)
+            except Exception as exc:
+                self.repository.update_session_control_request(session.session_id, "failed", str(exc), at)
+                return "pause_failed"
+            previous = session.state
+            session.state = GridState.PAUSED
+            session.state_entered_at = at
+            self._persist_session_orders(session)
+            self.repository.update_session_state(session.session_id, GridState.PAUSED.value)
+            if self.round_active and self.current_window_id is not None:
+                self.repository.mark_round_candidate_stage(
+                    self.current_window_id,
+                    session.symbol,
+                    "paused",
+                    at,
+                    session.session_id,
+                )
+            self.state_machine.transition(session.symbol, GridState.PAUSED, "console_pause", at=at)
+            self.repository.log_state(
+                session.session_id,
+                session.symbol,
+                previous.value,
+                GridState.PAUSED.value,
+                "console_pause",
+                str(request.get("reason") or "控制台暂停"),
+                at,
+            )
+            self.repository.update_session_control_request(session.session_id, "completed", "已撤销网格挂单，持仓和保护性止损保留。", at)
+            return "paused"
+        if action == "resume":
+            if session.state != GridState.PAUSED:
+                self.repository.update_session_control_request(session.session_id, "completed", "会话当前不是暂停状态。", at)
+                return "not_paused"
+            effective_observer_config, effective_grid_config, _ = self._effective_next_entry_settings(at)
+            current_price = await self._current_price(session.symbol)
+            try:
+                params = await self.observer.observe_then_calculate(
+                    session.symbol,
+                    current_price,
+                    should_abort=lambda: self.scheduler.should_force_close(),
+                    observer_config=effective_observer_config,
+                    grid_config=effective_grid_config,
+                )
+                session.params = params
+                self._persist_session_grid(session.session_id, params)
+                await self.engine.start(
+                    session,
+                    current_price,
+                    place_protection=False,
+                    client_id_tag=f"r{int(at.timestamp())}",
+                )
+            except Exception as exc:
+                self._persist_session_orders(session)
+                self.repository.update_session_control_request(session.session_id, "failed", str(exc), at)
+                return "resume_failed"
+            session.state = GridState.RUNNING
+            session.state_entered_at = at
+            self._persist_session_orders(session)
+            self.repository.update_session_state(session.session_id, GridState.RUNNING.value)
+            self.repository.update_session_current_volatility(
+                session.session_id,
+                params.volatility_value,
+                params.volatility_window,
+                params.calculated_at,
+            )
+            self._volatility_refreshed_at[session.session_id] = params.calculated_at
+            if self.round_active and self.current_window_id is not None:
+                self.repository.upsert_round_candidate(
+                    self.current_window_id,
+                    session.symbol,
+                    at,
+                    price=current_price,
+                    volatility_method=params.volatility_method,
+                    volatility_value=params.volatility_value,
+                    volatility_window=params.volatility_window,
+                    threshold_met=True,
+                    session_id=session.session_id,
+                    stage="trading",
+                    error=None,
+                    calculated_at=params.calculated_at.isoformat(),
+                    market_updated_at=at.isoformat(),
+                    data_stale=False,
+                )
+            self.state_machine.transition(session.symbol, GridState.RUNNING, "console_resume", at=at)
+            self.repository.log_state(
+                session.session_id,
+                session.symbol,
+                GridState.PAUSED.value,
+                GridState.RUNNING.value,
+                "console_resume",
+                str(request.get("reason") or "控制台恢复"),
+                at,
+            )
+            self.repository.update_session_control_request(session.session_id, "completed", "已重新计算区间并恢复网格挂单。", at)
+            return "resumed"
+        self.repository.update_session_control_request(session.session_id, "failed", "不支持的控制动作。", at)
+        return "control_failed"
+
     async def _apply_risk_decision(self, session: SymbolSession, action: RiskAction, reason: str, at: datetime) -> None:
+        if session.state in {GridState.CLOSING, GridState.STOPPED}:
+            return
         if action in {RiskAction.FORCE_CLOSE, RiskAction.CLOSE}:
             await self._close_session(session, reason, at)
             return
@@ -1518,12 +2202,20 @@ class TradingController:
         return max(0.0, long_qty), max(0.0, short_qty)
 
     async def _enter_cooldown(self, session: SymbolSession, reason: str, at: datetime) -> None:
-        await self.engine.force_close(session, reason)
+        close_orders = await self.engine.force_close(session, reason)
+        await self._record_force_close_trades(session, close_orders or [], at)
+        if self._session_is_already_stopped(session):
+            self._finalize_already_stopped_session(session, at)
+            return
         self._persist_session_orders(session)
         old_state = session.state
         session.state = GridState.COOLDOWN
         session.state_entered_at = at
         self.repository.update_session_state(session.session_id, GridState.COOLDOWN.value)
+        if self.round_active and self.current_window_id is not None:
+            self.repository.mark_round_candidate_stage(
+                self.current_window_id, session.symbol, "cooldown", at, session.session_id
+            )
         self.state_machine.transition(session.symbol, GridState.COOLDOWN, "risk_cooldown", reason, at)
         self.repository.log_state(
             session.session_id,
@@ -1582,6 +2274,10 @@ class TradingController:
         session.state = GridState.RUNNING
         session.state_entered_at = at
         self.repository.update_session_state(session.session_id, GridState.RUNNING.value)
+        if self.round_active and self.current_window_id is not None:
+            self.repository.mark_round_candidate_stage(
+                self.current_window_id, session.symbol, "trading", at, session.session_id
+            )
         self.state_machine.transition(session.symbol, GridState.RUNNING, "grid_restarted", at=at)
         self.repository.log_state(
             session.session_id,
@@ -1652,29 +2348,37 @@ class TradingController:
             at,
         )
         self.active_sessions.pop(session.symbol, None)
-        if not self.active_sessions:
+        if self.round_active and self.current_window_id is not None:
+            self.round_stopped_symbols.add(session.symbol)
+            self.repository.mark_round_candidate_stage(
+                self.current_window_id, session.symbol, "stopped", at, session.session_id
+            )
+        if not self.active_sessions and not self.round_active:
             self._close_current_window(at)
 
     async def _close_session(self, session: SymbolSession, reason: str, at: datetime) -> bool:
         if self._session_is_already_stopped(session):
             self._finalize_already_stopped_session(session, at)
             return True
+        old_state = session.state
+        if old_state != GridState.CLOSING:
+            self.state_machine.transition(session.symbol, GridState.CLOSING, "risk_close", reason, at)
+            session.state = GridState.CLOSING
+            session.state_entered_at = at
+            self.repository.update_session_state(session.session_id, GridState.CLOSING.value)
+            self.repository.log_state(
+                session.session_id,
+                session.symbol,
+                old_state.value,
+                GridState.CLOSING.value,
+                "risk_close",
+                reason,
+                at,
+            )
         try:
-            await self.engine.force_close(session, reason)
+            close_orders = await self.engine.force_close(session, reason)
         except Exception as exc:
             self._persist_session_orders(session)
-            old_state = session.state
-            if old_state != GridState.CLOSING:
-                self.state_machine.transition(session.symbol, GridState.CLOSING, "force_close_failed", str(exc), at)
-                self.repository.log_state(
-                    session.session_id,
-                    session.symbol,
-                    old_state.value,
-                    GridState.CLOSING.value,
-                    "force_close_failed",
-                    str(exc),
-                    at,
-                )
             session.state = GridState.CLOSING
             session.state_entered_at = at
             self.repository.update_session_state(session.session_id, GridState.CLOSING.value)
@@ -1686,22 +2390,11 @@ class TradingController:
                 at,
             )
             return False
+        await self._record_force_close_trades(session, close_orders or [], at)
         if self._session_is_already_stopped(session):
             self._finalize_already_stopped_session(session, at)
             return True
         self._persist_session_orders(session)
-        old_state = session.state
-        if old_state != GridState.CLOSING:
-            self.state_machine.transition(session.symbol, GridState.CLOSING, "risk_close", reason, at)
-            self.repository.log_state(
-                session.session_id,
-                session.symbol,
-                old_state.value,
-                GridState.CLOSING.value,
-                "risk_close",
-                reason,
-                at,
-            )
         session.state = GridState.STOPPED
         self.repository.close_session(session.session_id, reason, at)
         self.repository.log_state(
@@ -1715,9 +2408,134 @@ class TradingController:
         )
         self.state_machine.transition(session.symbol, GridState.STOPPED, "session_stopped", reason, at)
         self.active_sessions.pop(session.symbol, None)
-        if not self.active_sessions:
+        if self.round_active and self.current_window_id is not None:
+            self.round_stopped_symbols.add(session.symbol)
+            self.repository.mark_round_candidate_stage(
+                self.current_window_id, session.symbol, "stopped", at, session.session_id
+            )
+        if not self.active_sessions and not self.round_active:
             self._close_current_window(at)
         return True
+
+    async def _load_order_trade_summary(
+        self,
+        symbol: str,
+        order_id: str,
+        attempts: int = 1,
+        min_qty: float | None = None,
+    ) -> dict[str, Any] | None:
+        if not order_id:
+            return None
+        retry_count = max(1, attempts)
+        for attempt in range(retry_count):
+            try:
+                trades = await self.exchange.get_order_trades(symbol, order_id)
+            except Exception:
+                trades = []
+            try:
+                summary = _summarize_exchange_trades(trades)
+            except (TypeError, ValueError):
+                summary = None
+            if summary is not None and (min_qty is None or summary["qty"] + 1e-12 >= min_qty):
+                return summary
+            if attempt < retry_count - 1:
+                await asyncio.sleep(0.2)
+        return None
+
+    async def _record_force_close_trades(
+        self,
+        session: SymbolSession,
+        close_orders: list[dict[str, Any]],
+        at: datetime,
+    ) -> None:
+        for response in close_orders:
+            order_id = _response_order_id(response, _response_client_id_or_none(response))
+            if self.repository.trade_exists(session.session_id, order_id):
+                continue
+            summary = await self._load_order_trade_summary(session.symbol, order_id, attempts=5)
+            if summary is None:
+                if order_id.isdigit():
+                    self.repository.log_system(
+                        "ERROR",
+                        "trade_accounting",
+                        "Force-close order filled but Binance trade details were unavailable.",
+                        f"session_id={session.session_id}, symbol={session.symbol}, order_id={order_id}",
+                        at,
+                    )
+                continue
+            self.repository.create_trade(
+                session_id=session.session_id,
+                symbol=session.symbol,
+                order_id=order_id,
+                side=summary["side"],
+                price=summary["price"],
+                qty=summary["qty"],
+                grid_index=None,
+                grid_pnl=summary["realized_pnl"],
+                trade_time=summary["trade_time"],
+                fee=summary["fee"],
+            )
+            session.realized_pnl += summary["realized_pnl"] - summary["fee"]
+            self.repository.update_session_pnl(session.session_id, session.realized_pnl)
+
+    async def _record_grid_start_failure_fills(self, session: SymbolSession, at: datetime) -> None:
+        for order in session.orders:
+            if self.repository.trade_exists(session.session_id, order.order_id):
+                continue
+            summary = await self._load_order_trade_summary(session.symbol, order.order_id, attempts=5)
+            if summary is None:
+                continue
+            try:
+                self._record_confirmed_partial_fill(session, order, order.order_id, summary)
+            except (TypeError, ValueError) as exc:
+                self.repository.log_system(
+                    "ERROR",
+                    "trade_accounting",
+                    "Grid-start fill details were invalid during cleanup.",
+                    f"session_id={session.session_id}, symbol={session.symbol}, order_id={order.order_id}, error={exc}",
+                    at,
+                )
+
+    def _record_confirmed_partial_fill(
+        self,
+        session: SymbolSession,
+        order: GridOrder,
+        order_id: str,
+        summary: dict[str, Any],
+    ) -> None:
+        if self.repository.trade_exists(session.session_id, order_id):
+            return
+        price = _positive_price(summary.get("price"), "confirmed partial fill price")
+        qty = _positive_qty(summary.get("qty"), "confirmed partial fill qty")
+        fee = _non_negative_float(summary.get("fee", 0.0), "confirmed partial fill fee")
+        exchange_realized_pnl = _finite_float(
+            summary.get("realized_pnl", 0.0),
+            "confirmed partial fill realized pnl",
+        )
+        trade_time = summary.get("trade_time")
+        if not isinstance(trade_time, datetime):
+            trade_time = datetime.now(timezone.utc)
+        grid_pnl = self.engine.grid_pnl_for_fill(order, price)
+        if grid_pnl is not None and abs(qty - order.qty) > 1e-12:
+            grid_pnl *= qty / order.qty
+        self.repository.create_trade(
+            session_id=session.session_id,
+            symbol=session.symbol,
+            order_id=order_id,
+            side=order.side.value,
+            price=price,
+            qty=qty,
+            grid_index=order.grid_index,
+            grid_pnl=grid_pnl,
+            trade_time=trade_time,
+            fee=fee,
+        )
+        pnl_delta = (grid_pnl if grid_pnl is not None else exchange_realized_pnl) - fee
+        if abs(pnl_delta) > 1e-12:
+            session.realized_pnl += pnl_delta
+            self.repository.update_session_pnl(session.session_id, session.realized_pnl)
+        order.fill_price = price
+        order.filled_at = trade_time
 
     def _session_is_already_stopped(self, session: SymbolSession) -> bool:
         return session.state == GridState.STOPPED or self.state_machine.get_state(session.symbol) == GridState.STOPPED
@@ -1727,12 +2545,33 @@ class TradingController:
         session.state_entered_at = at
         self._persist_session_orders(session)
         self.active_sessions.pop(session.symbol, None)
-        if not self.active_sessions:
+        if self.round_active and self.current_window_id is not None:
+            self.round_stopped_symbols.add(session.symbol)
+            self.repository.mark_round_candidate_stage(
+                self.current_window_id, session.symbol, "stopped", at, session.session_id
+            )
+        if not self.active_sessions and not self.round_active:
             self._close_current_window(at)
 
     async def _current_price(self, symbol: str) -> float:
         ticker = await self.exchange.get_24h_ticker(symbol)
         return _ticker_last_price(ticker)
+
+    async def _observe_grid_candidate(
+        self,
+        symbol: str,
+        observer_config: ObserverConfig,
+        grid_config: GridConfig,
+    ) -> tuple[float, GridParams]:
+        current_price = await self._current_price(symbol)
+        params = await self.observer.observe_then_calculate(
+            symbol,
+            current_price,
+            should_abort=lambda: self.scheduler.should_force_close(),
+            observer_config=observer_config,
+            grid_config=grid_config,
+        )
+        return current_price, params
 
     def _persist_session_orders(self, session: SymbolSession) -> None:
         self.repository.upsert_orders(session.session_id, session.orders)
@@ -2118,6 +2957,54 @@ def _finite_float(value: Any, label: str) -> float:
     if not isfinite(number):
         raise ValueError(f"{label} 不是有限数字。")
     return number
+
+
+def _response_client_id_or_none(response: dict[str, Any]) -> str | None:
+    for key in ("clientOrderId", "client_id", "origClientOrderId"):
+        value = response.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
+def _summarize_exchange_trades(trades: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not trades:
+        return None
+    total_qty = 0.0
+    total_quote = 0.0
+    total_fee = 0.0
+    realized_pnl = 0.0
+    latest_time = 0
+    side = ""
+    for trade in trades:
+        qty = _positive_qty(trade.get("qty"), "exchange trade qty")
+        price = _positive_price(trade.get("price"), "exchange trade price")
+        fee = _non_negative_float(trade.get("commission", 0.0), "exchange trade commission")
+        pnl = _finite_float(trade.get("realizedPnl", 0.0), "exchange trade realized pnl")
+        trade_side = str(trade.get("side", "")).upper()
+        if trade_side not in {"BUY", "SELL"}:
+            raise ValueError("exchange trade side invalid")
+        if side and side != trade_side:
+            raise ValueError("exchange order trades include mixed sides")
+        side = trade_side
+        total_qty += qty
+        total_quote += price * qty
+        total_fee += fee
+        realized_pnl += pnl
+        latest_time = max(latest_time, int(trade.get("time", 0) or 0))
+    trade_time = (
+        datetime.fromtimestamp(latest_time / 1000, tz=timezone.utc)
+        if latest_time > 0
+        else datetime.now(timezone.utc)
+    )
+    return {
+        "side": side,
+        "price": total_quote / total_qty,
+        "qty": total_qty,
+        "fee": total_fee,
+        "realized_pnl": realized_pnl,
+        "trade_time": trade_time,
+    }
 
 
 def _is_session_stop_order_client_id(session: SymbolSession, client_id: str) -> bool:

@@ -1435,8 +1435,8 @@ python web.py
 - [x] M6 击穿-冷静期状态机
 - [x] M7 风控模块
 - [x] M8 SQLite 数据持久化
-- [x] M9 Web 监控界面（Streamlit 只读版）
-- [ ] 测试网全链路测试
+- [x] M9 Web 监控界面（已从 Streamlit 只读版升级为 Vue 3 + FastAPI 可操作控制台，`web.py` 保留为后端工具函数）
+- [x] 测试网全链路测试（单账户：前置验证 + 有界运行 + 安全清扫已通过，详见 §10.4；多账户隔离待补第二套 API Key）
 - [ ] 实盘小资金验证（2~3个窗口）
 
 ### 10.2 v1.1 TODO（优先级高）
@@ -1490,6 +1490,13 @@ python web.py
 - `--all-accounts --binance-test-run --loop-seconds 30` 通过：前置持仓检查正常，交易 loop 按 30 秒上限结束，安全清扫成功，后置持仓检查正常。
 - 运行结束后再次执行 `--binance-position-smoke` 通过：BTCUSDT/ETHUSDT/BCHUSDT 净仓位、LONG、SHORT、普通挂单和 Algo 条件单均为 0。
 - 由于尚未配置第二套测试网 API Key，真实多账户隔离验证仍需后续补测。
+
+2026-07-16 文档同步记录：
+
+- 已核对代码实现，M1–M9 及 v1.1/v1.2 全部进阶功能（通知、回测、费率监控、滚动重算区间、手动平仓、多账户支持、性能优化）均已落地，README 已重写为结构化文档并标注实现现状。
+- Web 界面已从 plan §5.4/M9 设想的 Streamlit 只读版演进为 Vue 3 + FastAPI 可操作控制台，plan 中相关规格已过时，以实际实现为准。
+- §10.4 剩余两项均卡在外部前置条件、非代码缺失：多账户隔离需配置第二套测试网 API Key；实盘小资金验证需先在测试网稳定并获得实盘授权，验收流程见 `docs/live-acceptance.md`。
+- 待办安全项：`config/config.yaml` 的 `web.auth_token` 默认为空，Console API 对外暴露前必须配置；通知目前挂在 WARN/ERROR 日志级别，若需逐笔成交推送需另行扩展。
 
 ### 10.5 长期 Backlog
 

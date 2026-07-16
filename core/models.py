@@ -10,6 +10,7 @@ class GridState(Enum):
     IDLE = "IDLE"
     OBSERVING = "OBSERVING"
     RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
     COOLDOWN = "COOLDOWN"
     CLOSING = "CLOSING"
     STOPPED = "STOPPED"

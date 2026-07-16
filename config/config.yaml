@@ -27,6 +27,7 @@ grid:
   quantile_upper: 0.95
   quantile_lower: 0.05
   min_step_pct: 0.0015
+  min_tradable_range_pct: 0.0015
   safety_multiplier: 3.5
   max_grid_num: 20
   max_range_pct: 0.05
@@ -41,6 +42,7 @@ cooldown:
   amplitude_multiplier: 2.0
 
 selection:
+  scan_candidate_count: 10
   volume_weight: 0.7
   depth_weight: 0.3
   depth_levels: 5
@@ -70,6 +72,17 @@ web:
   address: "0.0.0.0"
   auth_token: ""
 
+# Vue 控制台的交易 loop 进程控制。mode=auto 在 Linux 下使用 systemd，在 Windows 下显示不可用。
+# 非 systemd 环境可使用 mode=command，并配置 status_command / stop_command / restart_command 为字符串列表。
+process_control:
+  mode: "auto"
+  service: "quietgrid-trader"
+  # mode: "command"
+  # status_command: ["powershell", "-NoProfile", "-Command", "Get-Service quietgrid-trader"]
+  # stop_command: ["powershell", "-NoProfile", "-Command", "Stop-Service quietgrid-trader"]
+  # restart_command: ["powershell", "-NoProfile", "-Command", "Restart-Service quietgrid-trader"]
+  # timeout_seconds: 15
+
 notifications:
   enabled: false
   webhook_url: ""
@@ -86,11 +99,15 @@ database:
 # accounts:
 #   - id: main
 #     label: 主账户
+#     testnet: false
 #     api_key_env: BINANCE_MAIN_API_KEY
 #     api_secret_env: BINANCE_MAIN_API_SECRET
 #     database_path: data/trading-main.db
 #   - id: hedge
 #     label: 对冲账户
+#     testnet: true
+#     # 或使用独立环境变量：
+#     # testnet_env: BINANCE_HEDGE_TESTNET
 #     api_key_env: BINANCE_HEDGE_API_KEY
 #     api_secret_env: BINANCE_HEDGE_API_SECRET
 #     database_path: data/trading-hedge.db

@@ -78,11 +78,13 @@ accounts:
     label: 主账户
     api_key_env: QG_MAIN_API_KEY
     api_secret_env: QG_MAIN_API_SECRET
+    testnet: false
   - id: hedge
     label: 对冲账户
     database_path: {hedge_db.as_posix()}
     api_key_env: QG_HEDGE_API_KEY
     api_secret_env: QG_HEDGE_API_SECRET
+    testnet_env: QG_HEDGE_TESTNET
 """,
         encoding="utf-8",
     )
@@ -94,6 +96,7 @@ accounts:
                 "QG_MAIN_API_SECRET=main-secret",
                 "QG_HEDGE_API_KEY=hedge-key",
                 "QG_HEDGE_API_SECRET=hedge-secret",
+                "QG_HEDGE_TESTNET=true",
             ]
         ),
         encoding="utf-8",
@@ -106,6 +109,8 @@ accounts:
     assert config.account_label == "主账户"
     assert config.binance_api_key == "main-key"
     assert config.binance_api_secret == "main-secret"
+    assert config.binance_testnet is False
+    assert config.binance_testnet_raw == "false"
     assert config.database_path == Path(base_db.with_name("trading-main.db"))
     assert [account.id for account in config.accounts] == ["main", "hedge"]
     assert [account.account_id for account in select_all_accounts(config)] == ["main", "hedge"]
@@ -113,6 +118,8 @@ accounts:
     assert hedge_config.account_label == "对冲账户"
     assert hedge_config.binance_api_key == "hedge-key"
     assert hedge_config.binance_api_secret == "hedge-secret"
+    assert hedge_config.binance_testnet is True
+    assert hedge_config.binance_testnet_raw == "true"
     assert hedge_config.database_path == hedge_db
 
 

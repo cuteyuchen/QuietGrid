@@ -437,6 +437,7 @@ _TESTNET_VERIFICATION_MODULES = [
     "binance_market_roundtrip_smoke",
     "binance_safety_sweep",
 ]
+_ENVIRONMENT_VERIFICATION_MODULES = _TESTNET_VERIFICATION_MODULES
 
 _TESTNET_VERIFICATION_LABELS = {
     "binance_check": "连接与账户检查",
@@ -451,6 +452,7 @@ _TESTNET_VERIFICATION_LABELS = {
     "binance_market_roundtrip_smoke": "市价开平仓烟测",
     "binance_safety_sweep": "安全清扫",
 }
+_ENVIRONMENT_VERIFICATION_LABELS = _TESTNET_VERIFICATION_LABELS
 
 _VERIFICATION_STATUS_LABELS = {
     "passed": "通过",
@@ -477,7 +479,7 @@ _MODULE_LABELS = {
     "binance_position_smoke": "持仓只读烟测",
     "binance_direct_order_diagnose": "直接 REST 诊断",
     "binance_market_roundtrip_smoke": "市价开平仓烟测",
-    "binance_safety_sweep": "测试网安全清扫",
+    "binance_safety_sweep": "当前环境安全清扫",
     "binance_loop": "Binance 循环",
     "grid_engine": "网格引擎",
     "force_close": "强制离场",
@@ -521,12 +523,17 @@ _MESSAGE_LABELS = {
     "Binance testnet listenKey smoke completed.": "Binance 测试网用户流密钥烟测完成。",
     "Binance testnet algo stop smoke completed.": "Binance 测试网条件止损单烟测完成。",
     "Binance testnet position smoke completed.": "Binance 测试网持仓只读烟测完成。",
+    "Binance current-environment position check completed.": "Binance 当前环境持仓只读检查完成。",
     "Binance testnet market roundtrip smoke completed.": "Binance 测试网市价开平仓烟测完成。",
     "Binance direct REST order endpoint diagnose completed.": "Binance 直接 REST 下单端点诊断完成。",
     "Binance testnet safety sweep completed.": "Binance 测试网安全清扫完成。",
     "Binance testnet safety sweep left residual exposure.": "Binance 测试网安全清扫后仍有残留暴露。",
     "Binance testnet bounded run completed.": "Binance 测试网有界运行完成。",
     "Binance testnet bounded run failed after cleanup.": "Binance 测试网有界运行失败，已执行清理。",
+    "Binance current-environment safety sweep completed.": "Binance 当前环境安全清扫完成。",
+    "Binance current-environment safety sweep left residual exposure.": "Binance 当前环境安全清扫后仍有残留暴露。",
+    "Binance current-environment bounded run completed.": "Binance 当前环境有界运行完成。",
+    "Binance current-environment bounded run failed after cleanup.": "Binance 当前环境有界运行失败，已执行清理。",
     "Binance loop bounded runtime reached; shutting down.": "Binance 循环达到有界运行时长，正在关闭。",
     "Console action requested.": "控制台动作已请求。",
     "Console action completed.": "控制台动作已完成。",
@@ -618,8 +625,8 @@ def render_dashboard(raw_config: dict) -> None:
     auth_token = str(raw_config.get("web", {}).get("auth_token") or "")
     _require_auth(auth_token)
 
-    streamlit.title("QuietGrid 测试网运维看板")
-    streamlit.caption("只读页面，仅展示运行配置、测试网验证、回测结果和最近数据库记录。")
+    streamlit.title("QuietGrid 当前环境运维看板")
+    streamlit.caption("只读页面，仅展示运行配置、当前环境验证、回测结果和最近数据库记录。")
 
     summary = repo.dashboard_summary()
     col1, col2, col3, col4 = streamlit.columns(4)
@@ -632,7 +639,7 @@ def render_dashboard(raw_config: dict) -> None:
     _render_order_status_panel(streamlit, repo)
     _render_commission_health_panel(streamlit, repo)
     _render_active_volatility_panel(streamlit, repo)
-    _render_testnet_verification_panel(streamlit, repo)
+    _render_environment_verification_panel(streamlit, repo)
     _render_backtest_report_panel(streamlit, Path("reports"))
     _render_alert_panel(streamlit, repo)
     _render_recent_data_panel(streamlit, repo)
@@ -791,10 +798,14 @@ def _render_active_volatility_panel(streamlit: Any, repo: Repository) -> None:
 
 
 def _render_testnet_verification_panel(streamlit: Any, repo: Repository) -> None:
-    streamlit.subheader("测试网验证状态")
+    _render_environment_verification_panel(streamlit, repo)
+
+
+def _render_environment_verification_panel(streamlit: Any, repo: Repository) -> None:
+    streamlit.subheader("当前环境验证状态")
     streamlit.caption("基于系统日志的只读汇总；刷新页面不会触发任何 Binance API 调用。")
-    latest_logs = repo.latest_system_logs_by_modules(_TESTNET_VERIFICATION_MODULES)
-    rows = _testnet_verification_rows(latest_logs)
+    latest_logs = repo.latest_system_logs_by_modules(_ENVIRONMENT_VERIFICATION_MODULES)
+    rows = _environment_verification_rows(latest_logs)
     counts = {status: sum(1 for row in rows if row["verification_status"] == status) for status in _VERIFICATION_STATUS_LABELS}
     col1, col2, col3, col4 = streamlit.columns(4)
     col1.metric("通过", counts["passed"])
@@ -873,17 +884,21 @@ def _render_backtest_report_panel(streamlit: Any, report_dir: Path) -> None:
 
 
 def _testnet_verification_rows(log_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return _environment_verification_rows(log_rows)
+
+
+def _environment_verification_rows(log_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     latest_by_module: dict[str, dict[str, Any]] = {}
     for row in log_rows:
         module = str(row.get("module"))
         latest_by_module.setdefault(module, row)
     rows = []
-    for module in _TESTNET_VERIFICATION_MODULES:
+    for module in _ENVIRONMENT_VERIFICATION_MODULES:
         log_row = latest_by_module.get(module)
         if log_row is None:
             rows.append(
                 {
-                    "verification_item": _TESTNET_VERIFICATION_LABELS[module],
+                    "verification_item": _ENVIRONMENT_VERIFICATION_LABELS[module],
                     "verification_status": "not_run",
                     "last_checked": "-",
                     "module": module,
@@ -895,7 +910,7 @@ def _testnet_verification_rows(log_rows: list[dict[str, Any]]) -> list[dict[str,
         detail = _parse_verification_detail(log_row.get("detail"))
         rows.append(
             {
-                "verification_item": _TESTNET_VERIFICATION_LABELS[module],
+                "verification_item": _ENVIRONMENT_VERIFICATION_LABELS[module],
                 "verification_status": _testnet_verification_status(module, log_row, detail),
                 "last_checked": log_row.get("log_time", "-") or "-",
                 "module": module,
@@ -1316,11 +1331,12 @@ def _format_metric(value: Any) -> str:
 
 def _compact_latest_message(message: Any) -> str:
     text = _localize_message(str(message or "")) or "-"
-    for prefix in ("Binance 测试网", "Binance "):
+    for prefix in ("Binance 测试网", "Binance 当前环境", "Binance "):
         if text.startswith(prefix):
             text = text.removeprefix(prefix)
     replacements = {
         "持仓只读烟测完成。": "持仓只读通过",
+        "持仓只读检查完成。": "持仓只读通过",
         "价格流烟测完成。": "价格流通过",
         "用户流密钥烟测完成。": "用户流密钥通过",
         "条件止损单烟测完成。": "条件止损通过",

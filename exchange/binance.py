@@ -15,6 +15,9 @@ class _HandlerError(Exception):
     pass
 
 
+STOP_WORKING_TYPE = "CONTRACT_PRICE"
+
+
 class BinanceFuturesClient(ExchangeClient):
     def __init__(
         self,
@@ -50,7 +53,7 @@ class BinanceFuturesClient(ExchangeClient):
         except ImportError as exc:
             raise RuntimeError("缺少 python-binance 依赖，请先安装 requirements.txt。") from exc
 
-        requests_params = _requests_params(proxy_config)
+        proxy_kwargs = _async_client_proxy_kwargs(AsyncClient, proxy_config)
         attempts = max(1, create_attempts)
         last_exc: Exception | None = None
         for attempt in range(attempts):
@@ -61,7 +64,7 @@ class BinanceFuturesClient(ExchangeClient):
                         api_key=api_key,
                         api_secret=api_secret,
                         testnet=True,
-                        requests_params=requests_params,
+                        **proxy_kwargs,
                     )
                     await client.futures_ping()
                     server_time = await client.futures_time()
@@ -71,7 +74,7 @@ class BinanceFuturesClient(ExchangeClient):
                         api_key=api_key,
                         api_secret=api_secret,
                         testnet=False,
-                        requests_params=requests_params,
+                        **proxy_kwargs,
                     )
                 return cls(
                     client,
@@ -130,6 +133,10 @@ class BinanceFuturesClient(ExchangeClient):
         response = await self._call(self.client.futures_account_balance)
         return _validate_account_balance_response(response)
 
+    async def get_account_summary(self) -> dict[str, Any]:
+        response = await self._call(self.client.futures_account)
+        return _validate_account_summary_response(response)
+
     async def get_position(self, symbol: str) -> dict[str, Any]:
         response = await self._call(self.client.futures_position_information, symbol=symbol)
         return _validate_position_response(response, symbol)
@@ -146,6 +153,14 @@ class BinanceFuturesClient(ExchangeClient):
             kwargs["orderId"] = order_id
         response = await self._call(self.client.futures_get_order, **kwargs)
         return _validate_order_lookup_response(response, symbol)
+
+    async def get_order_trades(self, symbol: str, order_id: str) -> list[dict[str, Any]]:
+        response = await self._call(
+            self.client.futures_account_trades,
+            symbol=symbol,
+            orderId=order_id,
+        )
+        return _validate_order_trades_response(response, symbol, order_id)
 
     async def place_limit_order_post_only(
         self,
@@ -285,6 +300,7 @@ class BinanceFuturesClient(ExchangeClient):
         client_id: str,
         close_position: bool = True,
     ) -> dict[str, Any]:
+        position_side: str | None = None
         try:
             response = await self._call(
                 self.client.futures_create_order,
@@ -297,14 +313,79 @@ class BinanceFuturesClient(ExchangeClient):
                 newClientOrderId=client_id,
             )
         except Exception as exc:
-            if close_position and _is_stop_market_requires_algo_order(exc):
+            if _is_position_side_mismatch(exc):
+                position_side = await self._close_position_side_for_stop_side(side)
+                try:
+                    response = await self._call(
+                        self.client.futures_create_order,
+                        retry_status_unknown=False,
+                        symbol=symbol,
+                        side=side,
+                        positionSide=position_side,
+                        type="STOP_MARKET",
+                        stopPrice=stop_price,
+                        closePosition=close_position,
+                        newClientOrderId=client_id,
+                    )
+                except Exception as retry_exc:
+                    if close_position and _is_stop_market_requires_algo_order(retry_exc):
+                        return await self._place_algo_close_position_stop_market_order(
+                            symbol,
+                            side,
+                            stop_price,
+                            client_id,
+                        )
+                    raise
+            elif close_position and _is_stop_market_requires_algo_order(exc):
                 return await self._place_algo_close_position_stop_market_order(
                     symbol,
                     side,
                     stop_price,
                     client_id,
                 )
-            raise
+            else:
+                raise
+        if isinstance(response, dict) and _non_empty_str_or_none(response.get("algoId")) is not None:
+            if not close_position:
+                raise ValueError("Binance algo stop response requires closePosition")
+            algo_position_side = position_side or await self._close_position_side_for_stop_side(side)
+            response_client_algo_id = _non_empty_str_or_none(response.get("clientAlgoId"))
+            if response_client_algo_id is not None and response_client_algo_id != client_id:
+                await self.cancel_algo_order(symbol, response["algoId"])
+                return await self._place_algo_close_position_stop_market_order(
+                    symbol,
+                    side,
+                    stop_price,
+                    client_id,
+                )
+            normalized_response = {
+                "symbol": symbol,
+                "side": side,
+                "positionSide": algo_position_side,
+                "type": "STOP_MARKET",
+                "algoType": "CONDITIONAL",
+                "triggerPrice": stop_price,
+                "closePosition": True,
+                "workingType": STOP_WORKING_TYPE,
+                "clientAlgoId": client_id,
+                **response,
+            }
+            validated = _validate_algo_close_position_order_response(
+                normalized_response,
+                symbol=symbol,
+                side=side,
+                position_side=algo_position_side,
+                trigger_price=stop_price,
+                client_algo_id=client_id,
+            )
+            return _standardize_algo_close_position_response(
+                validated,
+                symbol=symbol,
+                side=side,
+                position_side=algo_position_side,
+                trigger_price=stop_price,
+                client_algo_id=client_id,
+            )
         return _validate_create_order_response(
             response,
             symbol=symbol,
@@ -312,15 +393,17 @@ class BinanceFuturesClient(ExchangeClient):
             order_type="STOP_MARKET",
             client_id=client_id,
             close_position=close_position,
+            position_side=position_side,
         )
 
-    async def cancel_order(self, symbol: str, order_id: str) -> None:
+    async def cancel_order(self, symbol: str, order_id: str) -> dict[str, Any]:
         try:
             response = await self._call(self.client.futures_cancel_order, symbol=symbol, orderId=order_id)
-            _validate_cancel_order_response(response, symbol, order_id)
+            return _validate_cancel_order_response(response, symbol, order_id)
         except Exception as exc:
-            if await self._cancel_open_algo_order_if_present(symbol, order_id):
-                return
+            algo_response = await self._cancel_open_algo_order_if_present(symbol, order_id)
+            if algo_response is not None:
+                return algo_response
             raise exc
 
     async def cancel_all_orders(self, symbol: str) -> None:
@@ -401,7 +484,7 @@ class BinanceFuturesClient(ExchangeClient):
                 algoType="CONDITIONAL",
                 triggerPrice=trigger_price,
                 quantity=qty,
-                workingType="MARK_PRICE",
+                workingType=STOP_WORKING_TYPE,
                 clientAlgoId=client_algo_id,
                 newOrderRespType="ACK",
             )
@@ -442,7 +525,7 @@ class BinanceFuturesClient(ExchangeClient):
                 algoType="CONDITIONAL",
                 triggerPrice=trigger_price,
                 closePosition=True,
-                workingType="MARK_PRICE",
+                workingType=STOP_WORKING_TYPE,
                 clientAlgoId=client_algo_id,
                 newOrderRespType="ACK",
             )
@@ -509,16 +592,22 @@ class BinanceFuturesClient(ExchangeClient):
                 return order
         return None
 
-    async def _cancel_open_algo_order_if_present(self, symbol: str, order_id: str) -> bool:
+    async def _cancel_open_algo_order_if_present(self, symbol: str, order_id: str) -> dict[str, Any] | None:
         try:
             open_algo_orders = await self.get_open_algo_orders(symbol)
         except Exception:
-            return False
+            return None
         for order in open_algo_orders:
             if str(order.get("algoId", "")) == str(order_id):
-                await self.cancel_algo_order(symbol, order["algoId"])
-                return True
-        return False
+                response = await self.cancel_algo_order(symbol, order["algoId"])
+                return {
+                    **response,
+                    "symbol": symbol,
+                    "orderId": str(order_id),
+                    "executedQty": "0",
+                    "status": "CANCELED",
+                }
+        return None
 
     def on_order_filled(self, callback: Callable[[dict[str, Any]], None]) -> None:
         self._order_filled_callbacks.append(callback)
@@ -568,6 +657,23 @@ class BinanceFuturesClient(ExchangeClient):
         await self._run_socket_loop(
             socket_factory or (lambda: self._price_socket(symbols)),
             parse_price_update,
+            handler,
+            reconnect_delay_seconds,
+            max_reconnects,
+        )
+
+    async def run_kline_stream(
+        self,
+        symbols: list[str],
+        handler: Callable[[dict[str, Any]], Any],
+        interval: str = "1m",
+        socket_factory: Callable[[], Any] | None = None,
+        reconnect_delay_seconds: float = 5,
+        max_reconnects: int | None = None,
+    ) -> None:
+        await self._run_socket_loop(
+            socket_factory or (lambda: self._kline_socket(symbols, interval)),
+            parse_kline_update,
             handler,
             reconnect_delay_seconds,
             max_reconnects,
@@ -649,6 +755,17 @@ class BinanceFuturesClient(ExchangeClient):
             open_timeout=15,
         )
 
+    def _kline_socket(self, symbols: list[str], interval: str):
+        try:
+            import websockets
+        except ImportError as exc:
+            raise RuntimeError("缺少 websockets 依赖，请先安装 requirements.txt。") from exc
+        return websockets.connect(
+            _futures_kline_stream_url(self.futures_ws_base_url, symbols, interval),
+            proxy=self.websocket_proxy,
+            open_timeout=15,
+        )
+
     async def _call(self, func: Callable[..., Any], retry_status_unknown: bool = True, **kwargs) -> Any:
         attempts = max(1, self.retry_attempts)
         last_exc: Exception | None = None
@@ -685,6 +802,19 @@ def _requests_params(proxy_config: dict[str, Any] | None) -> dict[str, Any] | No
     return {"proxy": proxy}
 
 
+def _async_client_proxy_kwargs(async_client_cls: Any, proxy_config: dict[str, Any] | None) -> dict[str, Any]:
+    proxy = _proxy_url(proxy_config)
+    if proxy is None:
+        return {"requests_params": None}
+    try:
+        parameters = inspect.signature(async_client_cls.__init__).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+    if "https_proxy" in parameters:
+        return {"requests_params": None, "https_proxy": proxy}
+    return {"requests_params": {"proxy": proxy}}
+
+
 def _server_time_offset_ms(response: Any) -> int:
     if not isinstance(response, dict):
         raise ValueError("Binance futures time response must be an object")
@@ -715,6 +845,23 @@ def _futures_price_stream_url(base_url: str, symbols: list[str]) -> str:
     streams = [f"{str(symbol).strip().lower()}@ticker" for symbol in symbols if str(symbol).strip()]
     if not streams:
         raise ValueError("price stream requires at least one symbol")
+    clean_base_url = base_url.rstrip("/")
+    if len(streams) == 1:
+        return f"{clean_base_url}/ws/{streams[0]}"
+    return f"{clean_base_url}/stream?streams={'/'.join(streams)}"
+
+
+def _futures_kline_stream_url(base_url: str, symbols: list[str], interval: str = "1m") -> str:
+    normalized_interval = str(interval).strip()
+    if not normalized_interval:
+        raise ValueError("kline stream interval must not be empty")
+    streams = [
+        f"{str(symbol).strip().lower()}@kline_{normalized_interval}"
+        for symbol in symbols
+        if str(symbol).strip()
+    ]
+    if not streams:
+        raise ValueError("kline stream requires at least one symbol")
     clean_base_url = base_url.rstrip("/")
     if len(streams) == 1:
         return f"{clean_base_url}/ws/{streams[0]}"
@@ -759,6 +906,11 @@ def _is_order_create_status_unknown(exc: Exception) -> bool:
 def _is_stop_market_requires_algo_order(exc: Exception) -> bool:
     text = str(exc).lower()
     return "-4120" in text or "use the algo order api" in text
+
+
+def _is_position_side_mismatch(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "-4061" in text or "position side does not match" in text
 
 
 def _is_socket_exit_compat_error(exc: Exception) -> bool:
@@ -824,6 +976,52 @@ def _validate_account_balance_response(response: Any) -> float:
         if row.get("asset") == "USDT":
             return _required_float(row, ("availableBalance", "balance"), "USDT balance")
     return 0.0
+
+
+def _validate_account_summary_response(response: Any) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        raise ValueError("Binance account summary response must be an object")
+    positions = _account_summary_positions(response.get("positions", []))
+    return {
+        "asset": "USDT",
+        "balance": _optional_float(response, ("totalWalletBalance", "totalBalance"), "total wallet balance"),
+        "available_balance": _optional_float(response, ("availableBalance",), "available balance"),
+        "margin_balance": _optional_float(response, ("totalMarginBalance",), "total margin balance"),
+        "initial_margin": _optional_float(response, ("totalInitialMargin",), "total initial margin"),
+        "maintenance_margin": _optional_float(response, ("totalMaintMargin",), "total maintenance margin"),
+        "unrealized_pnl": _optional_float(response, ("totalUnrealizedProfit",), "total unrealized profit"),
+        "current_exposure": sum(abs(item["notional"]) for item in positions),
+        "positions": positions,
+    }
+
+
+def _account_summary_positions(raw_positions: Any) -> list[dict[str, Any]]:
+    if raw_positions in (None, ""):
+        return []
+    if not isinstance(raw_positions, list):
+        raise ValueError("Binance account summary positions must be a list")
+    positions: list[dict[str, Any]] = []
+    for row in raw_positions:
+        if not isinstance(row, dict):
+            raise ValueError("Binance account summary position row must be an object")
+        symbol = _non_empty_str_or_none(row.get("symbol"))
+        if symbol is None:
+            raise ValueError("Binance account summary position row missing symbol")
+        qty = _optional_float(row, ("positionAmt",), "position amount")
+        notional = _optional_float(row, ("notional",), "position notional")
+        if qty == 0 and notional == 0:
+            continue
+        positions.append(
+            {
+                "symbol": symbol,
+                "position_side": (_non_empty_str_or_none(row.get("positionSide")) or "BOTH").upper(),
+                "qty": qty,
+                "notional": notional,
+                "unrealized_pnl": _optional_float(row, ("unrealizedProfit",), "position unrealized profit"),
+                "initial_margin": _optional_float(row, ("initialMargin",), "position initial margin"),
+            }
+        )
+    return positions
 
 
 def _validate_funding_rate_response(response: Any, symbol: str) -> float:
@@ -911,6 +1109,23 @@ def _validate_order_lookup_response(response: Any, symbol: str) -> dict[str, Any
     return response
 
 
+def _validate_order_trades_response(response: Any, symbol: str, order_id: str) -> list[dict[str, Any]]:
+    if not isinstance(response, list):
+        raise ValueError("Binance order trades response must be a list")
+    validated = []
+    for trade in response:
+        if not isinstance(trade, dict):
+            raise ValueError("Binance order trade response must be an object")
+        echoed_symbol = _non_empty_str_or_none(trade.get("symbol"))
+        if echoed_symbol is not None and echoed_symbol != symbol:
+            raise ValueError("Binance order trade response symbol mismatch")
+        echoed_order_id = _non_empty_str_or_none(trade.get("orderId"))
+        if echoed_order_id is None or echoed_order_id != str(order_id):
+            raise ValueError("Binance order trade response order id mismatch")
+        validated.append(trade)
+    return validated
+
+
 def _validate_position_response(response: Any, symbol: str) -> dict[str, Any]:
     if not isinstance(response, list):
         raise ValueError("Binance position response must be a list")
@@ -952,7 +1167,7 @@ def _validate_position_response(response: Any, symbol: str) -> dict[str, Any]:
     }
 
 
-def _validate_cancel_order_response(response: Any, symbol: str, order_id: str) -> None:
+def _validate_cancel_order_response(response: Any, symbol: str, order_id: str) -> dict[str, Any]:
     if not isinstance(response, dict):
         raise ValueError("Binance cancel order response must be an object")
     _validate_optional_success_code(response, "Binance cancel order response")
@@ -962,6 +1177,8 @@ def _validate_cancel_order_response(response: Any, symbol: str, order_id: str) -
         raise ValueError("Binance cancel order response missing order id")
     if echoed_order_id != str(order_id):
         raise ValueError("Binance cancel order response order id mismatch")
+    _required_non_negative_float(response, ("executedQty",), "executedQty")
+    return response
 
 
 def _validate_cancel_all_orders_response(response: Any, symbol: str) -> None:
@@ -1097,7 +1314,7 @@ def _validate_algo_order_response(
     _require_optional_echo(response, "side", side, "side")
     _require_optional_echo(response, "positionSide", position_side, "positionSide")
     _require_optional_echo(response, "algoType", "CONDITIONAL", "algoType")
-    _require_optional_echo(response, "workingType", "MARK_PRICE", "workingType")
+    _require_optional_echo(response, "workingType", STOP_WORKING_TYPE, "workingType")
     _require_algo_order_type_echo(response, "STOP_MARKET")
     _require_required_echo(response, "clientAlgoId", client_algo_id, "client algo id")
     _require_required_number_echo(response, "triggerPrice", trigger_price, "triggerPrice")
@@ -1122,7 +1339,7 @@ def _validate_algo_close_position_order_response(
     _require_optional_echo(response, "side", side, "side")
     _require_optional_echo(response, "positionSide", position_side, "positionSide")
     _require_optional_echo(response, "algoType", "CONDITIONAL", "algoType")
-    _require_optional_echo(response, "workingType", "MARK_PRICE", "workingType")
+    _require_optional_echo(response, "workingType", STOP_WORKING_TYPE, "workingType")
     _require_algo_order_type_echo(response, "STOP_MARKET")
     _require_required_echo(response, "clientAlgoId", client_algo_id, "client algo id")
     _require_required_number_echo(response, "triggerPrice", trigger_price, "triggerPrice")
@@ -1289,8 +1506,8 @@ def parse_order_trade_update(message: dict[str, Any]) -> dict[str, Any] | None:
     if status not in {"FILLED", "PARTIALLY_FILLED"}:
         return None
 
-    qty = _order_fill_qty(order)
-    price = _order_fill_price(order)
+    qty = _order_fill_qty(order, cumulative=status == "FILLED")
+    price = _order_fill_price(order, cumulative=status == "FILLED")
     if qty <= 0 or price <= 0:
         return None
     symbol = _non_empty_str_or_none(order.get("s"))
@@ -1307,6 +1524,8 @@ def parse_order_trade_update(message: dict[str, Any]) -> dict[str, Any] | None:
         "status": status,
         "price": price,
         "qty": qty,
+        "fee": _optional_non_negative_float(order, ("n",), "commission"),
+        "realized_pnl": _optional_float(order, ("rp",), "realized pnl"),
         "trade_id": str(order.get("t", "")),
         "trade_time": _event_time(message),
     }
@@ -1334,6 +1553,8 @@ def parse_price_update(message: dict[str, Any]) -> dict[str, Any] | None:
         return {
             "symbol": symbol,
             "price": (bid + ask) / 2,
+            "bid_price": bid,
+            "ask_price": ask,
             "event_time": _event_time(message),
         }
     if event_type == "24hrTicker":
@@ -1344,9 +1565,47 @@ def parse_price_update(message: dict[str, Any]) -> dict[str, Any] | None:
         return {
             "symbol": symbol,
             "price": price,
+            "bid_price": _positive_float_or_none(message.get("b")),
+            "ask_price": _positive_float_or_none(message.get("a")),
             "event_time": _event_time(message),
         }
     return None
+
+
+def parse_kline_update(message: dict[str, Any]) -> dict[str, Any] | None:
+    message = _event_payload(message)
+    if message.get("e") != "kline":
+        return None
+    kline = message.get("k")
+    if not isinstance(kline, dict):
+        return None
+    symbol = _non_empty_str_or_none(message.get("s") or kline.get("s"))
+    interval = _non_empty_str_or_none(kline.get("i"))
+    if symbol is None or interval is None:
+        return None
+    close_time = _timestamp_ms(kline.get("T"))
+    if close_time is None:
+        return None
+    return {
+        "symbol": symbol,
+        "interval": interval,
+        "closed": bool(kline.get("x")),
+        "open": _positive_float_or_none(kline.get("o")),
+        "high": _positive_float_or_none(kline.get("h")),
+        "low": _positive_float_or_none(kline.get("l")),
+        "close": _positive_float_or_none(kline.get("c")),
+        "close_time": close_time,
+        "event_time": _event_time(message),
+    }
+
+
+def _timestamp_ms(value: Any):
+    from datetime import datetime, timezone
+
+    try:
+        return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def _event_payload(message: Any) -> dict[str, Any]:
@@ -1502,7 +1761,9 @@ def _optional_non_negative_float(data: dict[str, Any], keys: tuple[str, ...], la
     return value
 
 
-def _order_fill_price(order: dict[str, Any]) -> float:
+def _order_fill_price(order: dict[str, Any], *, cumulative: bool = False) -> float:
+    if cumulative and order.get("ap") not in (None, "", "0", 0):
+        return _positive_field_or_zero(order, "ap")
     if order.get("l") not in (None, "", "0", 0):
         if order.get("L") not in (None, ""):
             return _positive_field_or_zero(order, "L")
@@ -1510,7 +1771,9 @@ def _order_fill_price(order: dict[str, Any]) -> float:
     return _first_float(order, ("ap", "L", "p"))
 
 
-def _order_fill_qty(order: dict[str, Any]) -> float:
+def _order_fill_qty(order: dict[str, Any], *, cumulative: bool = False) -> float:
+    if cumulative and order.get("z") not in (None, ""):
+        return _positive_field_or_zero(order, "z")
     if order.get("l") not in (None, ""):
         return _positive_field_or_zero(order, "l")
     return _first_float(order, ("z", "q"))

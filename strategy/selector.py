@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from math import isfinite
 from typing import Any
@@ -10,6 +11,7 @@ from exchange.base import ExchangeClient
 @dataclass(frozen=True)
 class SelectionConfig:
     max_concurrent: int = 3
+    scan_candidate_count: int = 0
     symbol_blacklist: tuple[str, ...] = ()
     symbol_allowlist: tuple[str, ...] = ()
     volume_weight: float = 0.7
@@ -25,6 +27,9 @@ class SelectionScore:
     depth_score: float
     volume_24h: float
     depth_usdt: float
+    bid_price: float
+    ask_price: float
+    spread_pct: float
 
 
 class Selector:
@@ -35,17 +40,17 @@ class Selector:
         self.config = config
 
     async def select(self, max_concurrent: int | None = None) -> list[SelectionScore]:
+        scored = await self.score_candidates()
+        limit = self.config.max_concurrent if max_concurrent is None else max(1, int(max_concurrent))
+        return scored[:limit]
+
+    async def score_candidates(self) -> list[SelectionScore]:
         candidates = await self.candidate_symbols()
-        snapshots: list[tuple[str, float, float]] = []
-        for symbol in candidates:
-            try:
-                ticker = await self.exchange.get_24h_ticker(symbol)
-                orderbook = await self.exchange.get_orderbook_depth(symbol, self.config.depth_levels)
-                volume = _ticker_volume(ticker)
-                depth = _depth_usdt(orderbook, self.config.depth_levels)
-            except ValueError:
-                continue
-            snapshots.append((symbol, volume, depth))
+        snapshots = [
+            snapshot
+            for snapshot in await asyncio.gather(*(self._liquidity_snapshot(symbol) for symbol in candidates))
+            if snapshot is not None
+        ]
 
         if not snapshots:
             return []
@@ -55,7 +60,7 @@ class Selector:
         weight_sum = self.config.volume_weight + self.config.depth_weight
 
         scored = []
-        for symbol, volume, depth in snapshots:
+        for symbol, volume, depth, bid_price, ask_price, spread_pct in snapshots:
             volume_score = volume / max_volume
             depth_score = depth / max_depth
             score = (
@@ -69,11 +74,27 @@ class Selector:
                     depth_score=depth_score,
                     volume_24h=volume,
                     depth_usdt=depth,
+                    bid_price=bid_price,
+                    ask_price=ask_price,
+                    spread_pct=spread_pct,
                 )
             )
 
-        limit = self.config.max_concurrent if max_concurrent is None else max(1, int(max_concurrent))
-        return sorted(scored, key=lambda item: item.score, reverse=True)[:limit]
+        return sorted(scored, key=lambda item: item.score, reverse=True)
+
+    async def _liquidity_snapshot(self, symbol: str) -> tuple[str, float, float, float, float, float] | None:
+        try:
+            ticker, orderbook = await asyncio.gather(
+                self.exchange.get_24h_ticker(symbol),
+                self.exchange.get_orderbook_depth(symbol, self.config.depth_levels),
+            )
+            volume = _ticker_volume(ticker)
+            depth = _depth_usdt(orderbook, self.config.depth_levels)
+            bid_price, ask_price = _best_bid_ask(orderbook)
+            spread_pct = (ask_price - bid_price) / ((ask_price + bid_price) / 2)
+        except ValueError:
+            return None
+        return symbol, volume, depth, bid_price, ask_price, spread_pct
 
     async def candidate_symbols(self) -> list[str]:
         blacklist = _normalized_symbols(self.config.symbol_blacklist)
@@ -120,6 +141,18 @@ def _depth_usdt(orderbook: dict[str, Any], levels: int) -> float:
         for price, qty, *_ in orderbook.get(side, [])[:levels]:
             total += _positive_float(price, f"{side}.price") * _non_negative_float(qty, f"{side}.qty")
     return total
+
+
+def _best_bid_ask(orderbook: dict[str, Any]) -> tuple[float, float]:
+    bids = orderbook.get("bids", [])
+    asks = orderbook.get("asks", [])
+    if not bids or not asks:
+        raise ValueError("orderbook must include bids and asks")
+    bid = _positive_float(bids[0][0], "best_bid")
+    ask = _positive_float(asks[0][0], "best_ask")
+    if bid > ask:
+        raise ValueError("invalid orderbook spread")
+    return bid, ask
 
 
 def _positive_float(value: Any, label: str) -> float:

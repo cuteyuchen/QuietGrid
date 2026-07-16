@@ -13,3 +13,5 @@ reports/*.json
 dist/
 frontend/dist/
 build/
+logs
+.playwright-cli

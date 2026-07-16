@@ -20,6 +20,7 @@ class GridConfig:
     quantile_upper: float = 0.95
     quantile_lower: float = 0.05
     min_step_pct: float = 0.0015
+    min_tradable_range_pct: float = 0.0015
     safety_multiplier: float = 3.5
     max_grid_num: int = 20
     max_range_pct: float = 0.05
@@ -65,6 +66,8 @@ def calculate_grid_params(
 
     range_pct = (upper - lower) / lower
     min_step_pct = max(abs(funding_rate) * config.safety_multiplier, config.min_step_pct)
+    if range_pct < config.min_tradable_range_pct:
+        raise GridCalculationError("区间宽度低于最小可交易波动阈值。")
     if range_pct < min_step_pct:
         raise GridCalculationError("区间宽度小于最小每格价差。")
     if range_pct > config.max_range_pct:
@@ -134,6 +137,7 @@ def _validate_kline_price_relationships(highs: list[float], lows: list[float], c
 def _validate_grid_config(config: GridConfig) -> None:
     _positive_value(config.std_k, "std_k")
     _positive_value(config.min_step_pct, "min_step_pct")
+    _positive_value(config.min_tradable_range_pct, "min_tradable_range_pct")
     _non_negative_value(config.safety_multiplier, "safety_multiplier")
     _positive_value(config.max_range_pct, "max_range_pct")
     if config.max_grid_num < 1:

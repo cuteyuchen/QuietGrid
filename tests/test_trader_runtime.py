@@ -339,7 +339,7 @@ def test_main_runs_binance_mode_for_all_accounts(monkeypatch, tmp_path) -> None:
         captured["runner_accounts"].append((config_arg.account_id, max_seconds))
         return {"account": config_arg.account_id, "seconds": max_seconds}
 
-    monkeypatch.setattr(sys, "argv", ["trader.py", "--all-accounts", "--binance-test-run", "--loop-seconds", "45"])
+    monkeypatch.setattr(sys, "argv", ["trader.py", "--all-accounts", "--binance-bounded-run", "--loop-seconds", "45"])
     monkeypatch.setattr("trader.load_config", lambda: base_config)
     monkeypatch.setattr("trader.select_all_accounts", lambda config_arg: account_configs)
     monkeypatch.setattr("trader.setup_logging", lambda raw: None)
@@ -417,7 +417,7 @@ def test_main_forwards_loop_seconds_to_binance_test_run(monkeypatch, tmp_path) -
         captured["max_seconds"] = max_seconds
         return {"test_run_ok": True}
 
-    monkeypatch.setattr(sys, "argv", ["trader.py", "--binance-test-run", "--loop-seconds", "30"])
+    monkeypatch.setattr(sys, "argv", ["trader.py", "--binance-bounded-run", "--loop-seconds", "30"])
     monkeypatch.setattr("trader.load_config", lambda: config)
     monkeypatch.setattr("trader.setup_logging", lambda raw: None)
     monkeypatch.setattr("trader.init_db", lambda path: None)
@@ -451,7 +451,33 @@ def test_main_binance_test_run_uses_safe_default_seconds(monkeypatch, tmp_path) 
 
     main()
 
-    assert captured == {"max_seconds": 600.0}
+    assert captured == {"max_seconds": 60.0}
+
+
+def test_main_binance_bounded_run_uses_safe_default_seconds(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "trader.db"
+    config = SimpleNamespace(
+        binance_api_key="key",
+        binance_api_secret="secret",
+        binance_testnet=True,
+        database_path=db_path,
+        raw={"logging": {}, "database": {"path": str(db_path)}},
+    )
+    captured = {}
+
+    async def fake_run_binance_test_run(config_arg, max_seconds=60.0):
+        captured["max_seconds"] = max_seconds
+        return {"test_run_ok": True}
+
+    monkeypatch.setattr(sys, "argv", ["trader.py", "--binance-bounded-run"])
+    monkeypatch.setattr("trader.load_config", lambda: config)
+    monkeypatch.setattr("trader.setup_logging", lambda raw: None)
+    monkeypatch.setattr("trader.init_db", lambda path: None)
+    monkeypatch.setattr("trader._run_binance_test_run", fake_run_binance_test_run)
+
+    main()
+
+    assert captured == {"max_seconds": 60.0}
 
 
 class FakeController:
@@ -1192,10 +1218,7 @@ def test_binance_entrypoints_require_testnet(monkeypatch, tmp_path) -> None:
         for runner in (
             _run_binance_once,
             _run_binance_check,
-            _run_binance_loop,
             _run_binance_signed_write_health,
-            _run_binance_position_smoke,
-            _run_binance_safety_sweep,
             _run_binance_market_roundtrip_smoke,
         ):
             try:
@@ -1630,7 +1653,7 @@ def test_binance_loop_shutdown_cleanup_timeout_uses_safety_sweep_fallback(monkey
         assert result == ["loop_timeout"]
         assert fallback_calls == [(exchange, controller.repository, ("AAPLUSDT",))]
         assert "Binance loop shutdown cleanup failed; running safety sweep fallback." in messages
-        assert "Binance testnet safety sweep completed." in messages
+        assert "Binance current-environment safety sweep completed." in messages
         assert exchange.closed is True
 
     asyncio.run(run())
@@ -2576,7 +2599,7 @@ def test_binance_position_smoke_reports_positions_and_open_orders(monkeypatch, t
         assert exchange.closed is True
         log = Repository(db_path).recent_rows("system_logs", limit=1)[0]
         assert log["module"] == "binance_position_smoke"
-        assert log["message"] == "Binance testnet position smoke completed."
+        assert log["message"] == "Binance current-environment position check completed."
 
     asyncio.run(run())
 
@@ -2668,7 +2691,7 @@ def test_binance_safety_sweep_cancels_orders_and_closes_positions(monkeypatch, t
         detail = json.loads(log["detail"])
         assert log["level"] == "INFO"
         assert log["module"] == "binance_safety_sweep"
-        assert log["message"] == "Binance testnet safety sweep completed."
+        assert log["message"] == "Binance current-environment safety sweep completed."
         assert detail["symbols"][0]["symbol"] == "BTCUSDT"
         assert detail["symbols"][0]["closed_positions"] == [{"side": "BUY", "qty": 0.25, "position_side": None}]
         assert detail["closed_sessions"] == [{"session_id": session_id, "symbol": "BTCUSDT", "from_state": "RUNNING"}]

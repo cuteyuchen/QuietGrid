@@ -1388,6 +1388,31 @@ def test_grid_engine_sync_reports_partially_filled_orders() -> None:
     asyncio.run(run())
 
 
+def test_grid_engine_sync_detects_partial_fill_while_order_remains_open() -> None:
+    async def run() -> None:
+        exchange = MockExchangeClient()
+        session = _session()
+        engine = GridEngine(exchange)
+
+        await engine.start(session, current_price=100.0)
+        partial_order = session.orders[0]
+        raw_order = next(
+            order for order in exchange.orders["AAPLUSDT"] if order["client_id"] == partial_order.client_id
+        )
+        raw_order["status"] = "PARTIALLY_FILLED"
+        raw_order["executedQty"] = partial_order.qty / 2
+        raw_order["avgPrice"] = partial_order.price
+
+        sync_result = await engine.sync_orders(session)
+
+        assert sync_result.filled == []
+        assert len(sync_result.partially_filled) == 1
+        assert sync_result.partially_filled[0].order is partial_order
+        assert sync_result.partially_filled[0].qty == partial_order.qty / 2
+
+    asyncio.run(run())
+
+
 def test_grid_engine_sync_reports_underfilled_filled_orders_as_partial() -> None:
     async def run() -> None:
         exchange = UnderfilledFilledOrderExchange()

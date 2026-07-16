@@ -9,7 +9,8 @@ from core.models import GridState
 ALLOWED_TRANSITIONS: dict[GridState, set[GridState]] = {
     GridState.IDLE: {GridState.OBSERVING, GridState.STOPPED},
     GridState.OBSERVING: {GridState.RUNNING, GridState.CLOSING, GridState.STOPPED},
-    GridState.RUNNING: {GridState.COOLDOWN, GridState.CLOSING, GridState.STOPPED},
+    GridState.RUNNING: {GridState.PAUSED, GridState.COOLDOWN, GridState.CLOSING, GridState.STOPPED},
+    GridState.PAUSED: {GridState.RUNNING, GridState.CLOSING, GridState.STOPPED},
     GridState.COOLDOWN: {GridState.OBSERVING, GridState.CLOSING, GridState.STOPPED},
     GridState.CLOSING: {GridState.STOPPED},
     GridState.STOPPED: {GridState.IDLE, GridState.OBSERVING},
@@ -62,4 +63,3 @@ class StateMachine:
             )
         )
         return to_state
-

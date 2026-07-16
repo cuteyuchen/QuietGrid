@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from core.models import GridState, OrderStatus
+from core.models import GridState, OrderStatus, RiskAction
 from db.database import init_db
 from db.repository import Repository
 from exchange.mock import MockExchangeClient
@@ -159,6 +159,50 @@ class RequiresPositionStopExchange(MockExchangeClient):
                 "APIError(code=-4509): Time in Force (TIF) GTE can only be used with open positions. Please ensure that positions are available."
             )
         return await super().place_stop_market_order(symbol, side, stop_price, client_id, close_position)
+
+
+class CancelRacePartialFillExchange(RequiresPositionStopExchange):
+    def __init__(self, initial_qty: float, final_qty: float) -> None:
+        super().__init__()
+        self.initial_qty = initial_qty
+        self.final_qty = final_qty
+        self.cancelled = False
+        self.trade_lookup_calls = 0
+
+    async def get_order_trades(self, symbol: str, order_id: str):
+        self.trade_lookup_calls += 1
+        trades = [
+            {
+                "symbol": symbol,
+                "orderId": order_id,
+                "side": "BUY",
+                "price": "99.5",
+                "qty": str(self.initial_qty),
+                "commission": "0.02",
+                "realizedPnl": "0",
+                "time": 1780000001000,
+            }
+        ]
+        if self.cancelled and self.trade_lookup_calls >= 3:
+            trades.append(
+                {
+                    "symbol": symbol,
+                    "orderId": order_id,
+                    "side": "BUY",
+                    "price": "99.6",
+                    "qty": str(self.final_qty - self.initial_qty),
+                    "commission": "0.01",
+                    "realizedPnl": "0",
+                    "time": 1780000001100,
+                }
+            )
+        return trades
+
+    async def cancel_order(self, symbol: str, order_id: str):
+        response = await super().cancel_order(symbol, order_id)
+        self.cancelled = True
+        self.positions[symbol] = self.final_qty
+        return {**response, "executedQty": str(self.final_qty), "avgPrice": "99.52462121212121"}
 
 
 class FailingDelayedStopProtectionExchange(RequiresPositionStopExchange):
@@ -379,6 +423,69 @@ class MissingUntrackedMarketOrderIdExchange(MockExchangeClient):
         return {"symbol": symbol, "side": side, "qty": qty, "status": "filled"}
 
 
+class AccountingMarketCloseExchange(MockExchangeClient):
+    async def place_market_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        reduce_only: bool = True,
+        position_side: str | None = None,
+        client_id: str | None = None,
+    ):
+        response = await super().place_market_order(
+            symbol, side, qty, reduce_only, position_side, client_id
+        )
+        order_id = str(response["orderId"])
+        self.order_trades[(symbol, order_id)] = [
+            {
+                "symbol": symbol,
+                "orderId": order_id,
+                "side": side,
+                "price": "99.0",
+                "qty": str(qty),
+                "commission": "0.04",
+                "realizedPnl": "-0.10",
+                "time": 1780000002000,
+            }
+        ]
+        return response
+
+
+class FilledDuringRoundStartFailureExchange(AccountingMarketCloseExchange):
+    def __init__(self) -> None:
+        super().__init__()
+        self.injected_fill = False
+
+    async def place_stop_market_order(
+        self,
+        symbol: str,
+        side: str,
+        stop_price: float,
+        client_id: str,
+        close_position: bool = True,
+    ):
+        if not self.injected_fill:
+            self.injected_fill = True
+            order = next(item for item in self.orders[symbol] if item["side"] == "BUY")
+            order_id = str(order.get("orderId", order["client_id"]))
+            fill_qty = 0.5
+            self.positions[symbol] = fill_qty
+            self.order_trades[(symbol, order_id)] = [
+                {
+                    "symbol": symbol,
+                    "orderId": order_id,
+                    "side": "BUY",
+                    "price": "99.5",
+                    "qty": str(fill_qty),
+                    "commission": "0.02",
+                    "realizedPnl": "0",
+                    "time": 1780000001000,
+                }
+            ]
+        raise RuntimeError("stop protection rejected after entry fill")
+
+
 class DelayedUntrackedMarketOrderLookupExchange(MockExchangeClient):
     def __init__(self) -> None:
         super().__init__()
@@ -473,6 +580,38 @@ def test_controller_run_once_starts_mock_grid_and_persists_state(tmp_path) -> No
         selection_detail = json.loads(selection_log["detail"])
         assert selection_detail[0]["symbol"] == "AAPLUSDT"
         assert "score" in selection_detail[0]
+
+    asyncio.run(run())
+
+
+def test_controller_scans_configured_candidates_before_applying_trade_limit(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, scan_candidate_count=3),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        result = await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+
+        sessions = Repository(db_path).recent_rows("sessions", limit=10)
+        assert result.selected_symbols == ["AAPLUSDT", "MSFTUSDT", "TSLAPREUSDT"]
+        assert result.started_symbols == ["AAPLUSDT"]
+        assert len(sessions) == 3
+        assert sum(row["state"] == "RUNNING" for row in sessions) == 1
+        assert sum(row["close_reason"] == "eligible_but_concurrency_limit_reached" for row in sessions) == 2
 
     asyncio.run(run())
 
@@ -585,6 +724,52 @@ def test_controller_poll_applies_session_stop_request(tmp_path) -> None:
         assert row is not None
         assert row["state"] == "STOPPED"
         assert row["close_reason"] == "控制台手动停止网格：网页停止"
+
+    asyncio.run(run())
+
+
+def test_controller_poll_pauses_and_resumes_grid_without_closing_position(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        exchange = MockExchangeClient()
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+        await controller.run_once(now)
+        session = controller.active_sessions["AAPLUSDT"]
+        exchange.positions["AAPLUSDT"] = 0.0
+        stop_orders_before = list(exchange.stop_orders["AAPLUSDT"])
+        repo.request_session_control(session.session_id, session.symbol, "pause", "观察行情", "pause-1", now)
+
+        pause_actions = await controller.poll_active_sessions_once(now + timedelta(seconds=10))
+
+        assert pause_actions == [("AAPLUSDT", "paused")]
+        assert session.state.value == "PAUSED"
+        assert exchange.orders["AAPLUSDT"] == []
+        assert exchange.stop_orders["AAPLUSDT"] == stop_orders_before
+        repo.request_session_control(session.session_id, session.symbol, "resume", "恢复交易", "resume-1", now)
+
+        resume_actions = await controller.poll_active_sessions_once(now + timedelta(seconds=20))
+
+        assert resume_actions == [("AAPLUSDT", "resumed")]
+        assert session.state.value == "RUNNING"
+        assert exchange.orders["AAPLUSDT"]
+        assert exchange.stop_orders["AAPLUSDT"] == stop_orders_before
 
     asyncio.run(run())
 
@@ -1632,7 +1817,7 @@ def test_controller_aborts_when_force_close_triggers_during_observation(tmp_path
     asyncio.run(run())
 
 
-def test_controller_aborted_second_observation_closes_started_sessions(tmp_path) -> None:
+def test_controller_aborted_parallel_observation_closes_entire_round(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"
         init_db(db_path)
@@ -1686,15 +1871,15 @@ def test_controller_aborted_second_observation_closes_started_sessions(tmp_path)
         triggers = {row["trigger"] for row in repo.recent_rows("state_logs", limit=20)}
 
         assert result.status == "observation_aborted"
-        assert result.started_symbols == ["AAPLUSDT"]
+        assert result.started_symbols == []
         assert controller.active_sessions == {}
-        assert exchange.orders["AAPLUSDT"] == []
-        assert exchange.stop_orders["AAPLUSDT"] == []
+        assert exchange.orders.get("AAPLUSDT", []) == []
+        assert exchange.stop_orders.get("AAPLUSDT", []) == []
         assert by_symbol["AAPLUSDT"]["state"] == "STOPPED"
         assert by_symbol["AAPLUSDT"]["close_reason"] == "observation_aborted_force_close"
         assert by_symbol["MSFTUSDT"]["state"] == "STOPPED"
         assert by_symbol["MSFTUSDT"]["close_reason"] == "observation_aborted_force_close"
-        assert "session_stopped" in triggers
+        assert "observation_aborted" in triggers
 
     asyncio.run(run())
 
@@ -2352,6 +2537,69 @@ def test_controller_fill_event_closes_session_after_unexpected_refill_failure(tm
     asyncio.run(run())
 
 
+def test_controller_partial_fill_cancel_race_uses_final_cumulative_qty(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller-partial-cancel-race.db"
+        init_db(db_path)
+        initial_qty = 0.199
+        final_qty = 0.264
+        exchange = CancelRacePartialFillExchange(initial_qty, final_qty)
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        buy_order = next(order for order in session.orders if order.side.value == "BUY")
+        exchange.positions["AAPLUSDT"] = initial_qty
+
+        await controller.handle_order_filled_event(
+            {
+                "symbol": "AAPLUSDT",
+                "client_id": buy_order.client_id,
+                "status": "PARTIALLY_FILLED",
+                "price": 99.5,
+                "qty": initial_qty,
+                "fee": 0.02,
+                "realized_pnl": 0.0,
+                "order_id": buy_order.order_id,
+                "side": "BUY",
+                "trade_time": datetime(2026, 7, 4, 10, 1, tzinfo=NY),
+            }
+        )
+
+        repo = Repository(db_path)
+        trades = repo.recent_rows("trades", limit=10)
+        refill = next(order for order in session.orders if order.entry_price is not None)
+
+        assert controller.active_sessions["AAPLUSDT"].state == GridState.RUNNING
+        assert buy_order.status == OrderStatus.FILLED
+        assert buy_order.qty == final_qty
+        assert len(trades) == 1
+        assert trades[0]["order_id"] == buy_order.order_id
+        assert trades[0]["qty"] == final_qty
+        assert trades[0]["fee"] == 0.03
+        assert refill.side.value == "SELL"
+        assert refill.qty == final_qty
+        assert exchange.trade_lookup_calls >= 3
+        assert exchange.stop_orders["AAPLUSDT"][-1]["side"] == "SELL"
+        assert session.stop_protection_sides == {"long"}
+
+    asyncio.run(run())
+
+
 def test_controller_partial_fill_event_closes_session_safely(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"
@@ -2409,7 +2657,7 @@ def test_controller_partial_fill_event_closes_session_safely(tmp_path) -> None:
         assert trade["grid_index"] == buy_order.grid_index
         assert trade["grid_pnl"] is None
         assert session_row["state"] == "STOPPED"
-        assert session_row["close_reason"] == "检测到部分成交，当前版本不支持部分成交网格补单，执行安全平仓。"
+        assert session_row["close_reason"] == "部分成交撤单或累计成交对账失败，执行安全平仓。"
         assert system_log["module"] == "partial_fill"
 
     asyncio.run(run())
@@ -2470,7 +2718,7 @@ def test_controller_invalid_partial_fill_details_close_session_without_trade(tmp
             assert exchange.positions["AAPLUSDT"] == 0.0
             assert trades == []
             assert session_row["state"] == "STOPPED"
-            assert session_row["close_reason"] == "检测到部分成交，当前版本不支持部分成交网格补单，执行安全平仓。"
+            assert session_row["close_reason"] == "部分成交数据异常，执行安全平仓。"
 
     asyncio.run(run())
 
@@ -2528,7 +2776,7 @@ def test_controller_overfilled_partial_fill_closes_without_recording_trade(tmp_p
         assert exchange.positions["AAPLUSDT"] == 0.0
         assert trades == []
         assert session_row["state"] == "STOPPED"
-        assert session_row["close_reason"] == "检测到部分成交，当前版本不支持部分成交网格补单，执行安全平仓。"
+        assert session_row["close_reason"] == "部分成交数据异常，执行安全平仓。"
         assert "partial fill qty exceeds local order qty" in error_log["detail"]
 
     asyncio.run(run())
@@ -2700,7 +2948,7 @@ def test_controller_reconciles_missing_open_order_as_partial_fill_and_closes_ses
         assert trade["grid_index"] == buy_order.grid_index
         assert trade["grid_pnl"] is None
         assert session_row["state"] == "STOPPED"
-        assert session_row["close_reason"] == "检测到部分成交，当前版本不支持部分成交网格补单，执行安全平仓。"
+        assert session_row["close_reason"] == "部分成交撤单或累计成交对账失败，执行安全平仓。"
         assert any(log["module"] == "order_reconciliation" for log in logs)
         assert any(log["module"] == "partial_fill" for log in logs)
 
@@ -2751,7 +2999,7 @@ def test_controller_reconciles_underfilled_filled_order_as_partial_fill(tmp_path
         assert trade["grid_pnl"] is None
         assert order_row["status"] == "cancelled"
         assert session_row["state"] == "STOPPED"
-        assert session_row["close_reason"] == "检测到部分成交，当前版本不支持部分成交网格补单，执行安全平仓。"
+        assert session_row["close_reason"] == "部分成交撤单或累计成交对账失败，执行安全平仓。"
 
     asyncio.run(run())
 
@@ -2797,6 +3045,62 @@ def test_controller_stops_poll_after_partial_fill_close_failure(tmp_path) -> Non
         assert exchange.positions["AAPLUSDT"] == 0.0
         assert session_row["state"] == "CLOSING"
         assert session_row["close_time"] is None
+
+    asyncio.run(run())
+
+
+def test_controller_records_force_close_trade_fee_and_realized_pnl(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller-force-close-accounting.db"
+        init_db(db_path)
+        exchange = AccountingMarketCloseExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        buy_order = next(order for order in session.orders if order.side.value == "BUY")
+        partial_qty = buy_order.qty / 2
+        exchange.positions["AAPLUSDT"] = partial_qty
+
+        await controller.handle_order_filled_event(
+            {
+                "symbol": "AAPLUSDT",
+                "client_id": buy_order.client_id,
+                "status": "PARTIALLY_FILLED",
+                "price": buy_order.price,
+                "qty": partial_qty,
+                "fee": 0.02,
+                "realized_pnl": 0.0,
+                "order_id": buy_order.order_id,
+                "side": "BUY",
+                "trade_time": datetime(2026, 7, 4, 10, 1, tzinfo=NY),
+            }
+        )
+
+        repo = Repository(db_path)
+        trades = sorted(repo.recent_rows("trades", limit=10), key=lambda row: row["id"])
+        session_row = repo.recent_rows("sessions", limit=1)[0]
+
+        assert len(trades) == 2
+        assert trades[0]["fee"] == 0.02
+        assert trades[1]["side"] == "SELL"
+        assert trades[1]["grid_pnl"] == -0.10
+        assert trades[1]["fee"] == 0.04
+        assert session_row["realized_pnl"] == -0.16
 
     asyncio.run(run())
 
@@ -2849,7 +3153,7 @@ def test_controller_duplicate_partial_fill_event_does_not_duplicate_trade(tmp_pa
         session_row = repo.recent_rows("sessions", limit=1)[0]
 
         assert len(trades) == 1
-        assert trades[0]["order_id"] == f"{buy_order.order_id}:trade-1"
+        assert trades[0]["order_id"] == buy_order.order_id
         assert "AAPLUSDT" not in controller.active_sessions
         assert session_row["state"] == "STOPPED"
 
@@ -4320,10 +4624,13 @@ def test_controller_run_loop_starts_then_polls_active_sessions(tmp_path) -> None
         async def fake_sleep(seconds: float) -> None:
             sleeps.append(seconds)
 
+        repo = Repository(db_path)
+        repo.register_runtime("runtime-1", datetime(2026, 7, 4, 9, 59, tzinfo=NY))
+        repo.request_round_start("网页启动", "round-1", datetime(2026, 7, 4, 10, 0, tzinfo=NY))
         controller = TradingController(
             exchange=MockExchangeClient(),
             scheduler=FakeScheduler(),  # type: ignore[arg-type]
-            repository=Repository(db_path),
+            repository=repo,
             selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
             observer_config=ObserverConfig(observe_hours=1, min_samples=30),
             grid_config=GridConfig(),
@@ -4344,6 +4651,329 @@ def test_controller_run_loop_starts_then_polls_active_sessions(tmp_path) -> None
         assert sleeps == [3, 3]
         assert list(controller.active_sessions) == ["AAPLUSDT"]
         assert len(Repository(db_path).recent_rows("windows")) == 1
+        request = repo.round_start_request(include_terminal=True)
+        assert request is not None
+        assert request["status"] == "running"
+
+    asyncio.run(run())
+
+
+def test_controller_run_loop_waits_for_explicit_round_start(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+                loop_interval_seconds=3,
+            ),
+        )
+
+        statuses = await controller.run_loop(max_iterations=1, sleep_fn=fake_sleep)
+
+        assert statuses == ["idle_waiting_start"]
+        assert sleeps == [3]
+        assert controller.active_sessions == {}
+        assert Repository(db_path).recent_rows("windows") == []
+
+    asyncio.run(run())
+
+
+def test_round_start_failure_records_fill_and_closes_position_immediately(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller-round-start-failure-fill.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        exchange = FilledDuringRoundStartFailureExchange()
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        repo.register_runtime("runtime-start-failure", now)
+        repo.request_round_start("启动", "round-start-failure", now)
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(
+                max_concurrent=1,
+                scan_candidate_count=1,
+                symbol_blacklist=("TSLAPREUSDT",),
+            ),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000),
+        )
+
+        result = await controller.start_round(now)
+
+        trades = sorted(repo.recent_rows("trades", limit=10), key=lambda row: row["id"])
+        session = repo.recent_rows("sessions", limit=1)[0]
+        candidate = repo.round_candidates(controller.current_window_id)[0]
+        assert result.started_symbols == []
+        assert controller.active_sessions == {}
+        assert exchange.positions["AAPLUSDT"] == 0.0
+        assert exchange.orders["AAPLUSDT"] == []
+        assert len(trades) == 2
+        assert trades[0]["side"] == "BUY"
+        assert trades[0]["qty"] == 0.5
+        assert trades[0]["fee"] == 0.02
+        assert trades[1]["side"] == "SELL"
+        assert trades[1]["qty"] == 0.5
+        assert trades[1]["grid_pnl"] == -0.10
+        assert trades[1]["fee"] == 0.04
+        assert session["state"] == "STOPPED"
+        assert session["close_reason"] == "grid_start_failed"
+        assert session["realized_pnl"] == -0.16
+        assert candidate["stage"] == "stopped"
+
+    asyncio.run(run())
+
+
+def test_session_pause_and_resume_update_round_candidate_stage_immediately(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller-session-pause-stage.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        repo.register_runtime("runtime-session-pause", now)
+        repo.request_round_start("启动", "round-session-pause", now)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, scan_candidate_count=1),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000),
+        )
+        await controller.start_round(now)
+        session = controller.active_sessions["AAPLUSDT"]
+        repo.request_session_control(session.session_id, session.symbol, "pause", "暂停", "pause-stage", now)
+
+        await controller.poll_active_sessions_once(now + timedelta(seconds=10))
+
+        assert repo.round_candidates(controller.current_window_id)[0]["stage"] == "paused"
+        repo.request_session_control(session.session_id, session.symbol, "resume", "恢复", "resume-stage", now)
+        await controller.poll_active_sessions_once(now + timedelta(seconds=20))
+
+        candidate = repo.round_candidates(controller.current_window_id)[0]
+        assert session.state == GridState.RUNNING
+        assert candidate["stage"] == "trading"
+
+    asyncio.run(run())
+
+
+def test_round_pause_keeps_scanning_and_resume_starts_eligible_symbol(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller-round-pause-resume.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        repo.register_runtime("runtime-paused-scan", now)
+        repo.request_round_start("启动", "round-paused-scan", now)
+        repo.set_control_state("new_entries_paused", True, now)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, scan_candidate_count=1),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000),
+        )
+
+        first = await controller.start_round(now)
+
+        assert first.started_symbols == []
+        assert controller.active_sessions == {}
+        candidate = repo.round_candidates(controller.current_window_id)[0]
+        assert candidate["threshold_met"] == 1
+        assert candidate["stage"] == "eligible"
+        assert candidate["error"] == "新开仓已暂停"
+
+        repo.set_control_state("new_entries_paused", False, now + timedelta(seconds=30))
+        second = await controller.scan_round_once(now + timedelta(minutes=1))
+
+        assert second.started_symbols == ["AAPLUSDT"]
+        assert list(controller.active_sessions) == ["AAPLUSDT"]
+
+    asyncio.run(run())
+
+
+def test_active_round_candidate_volatility_updates_on_next_scan(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller-active-candidate-volatility.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        repo.register_runtime("runtime-active-volatility", now)
+        repo.request_round_start("启动", "round-active-volatility", now)
+        controller = TradingController(
+            exchange=CountingVolatilityExchange(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, scan_candidate_count=1),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000),
+        )
+        await controller.start_round(now)
+        candidate = repo.round_candidates(controller.current_window_id)[0]
+        assert candidate["calculated_at"] == now.isoformat()
+
+        scanned_at = now + timedelta(minutes=1)
+        await controller.scan_round_once(scanned_at)
+
+        candidate = repo.round_candidates(controller.current_window_id)[0]
+        session = repo.get_session(controller.active_sessions["AAPLUSDT"].session_id)
+        assert candidate["stage"] == "trading"
+        assert candidate["calculated_at"] == scanned_at.isoformat()
+        assert candidate["volatility_value"] is not None
+        assert session["volatility_current_at"] == scanned_at.isoformat()
+
+    asyncio.run(run())
+
+
+def test_round_without_eligible_symbol_stays_scanning_without_pseudo_sessions(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        repo.register_runtime("runtime-scan", now)
+        repo.request_round_start("网页启动", "round-scan", now)
+        controller = TradingController(
+            exchange=InvalidRangeExchange(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, scan_candidate_count=2, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000, loop_interval_seconds=1),
+        )
+
+        statuses = await controller.run_loop(max_iterations=1, sleep_fn=lambda _seconds: asyncio.sleep(0))
+
+        assert statuses == ["scanning"]
+        assert controller.round_active is True
+        assert controller.active_sessions == {}
+        assert repo.recent_rows("sessions") == []
+        window = repo.recent_rows("windows", limit=1)[0]
+        assert window["status"] == "SCANNING"
+        candidates = repo.round_candidates(int(window["id"]))
+        assert candidates
+        assert {row["stage"] for row in candidates} == {"below_threshold"}
+
+    asyncio.run(run())
+
+
+def test_round_start_immediately_calculates_from_historical_one_minute_klines(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        exchange = CountingVolatilityExchange()
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        repo.register_runtime("runtime-history", now)
+        repo.request_round_start("网页启动", "round-history", now)
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, scan_candidate_count=1),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30, live_observation=True),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000),
+        )
+
+        result = await controller.start_round(now)
+
+        assert result.status == "started"
+        assert exchange.kline_calls == [("AAPLUSDT", "1m", 60)]
+        candidate = repo.round_candidates(controller.current_window_id)[0]
+        assert candidate["calculated_at"] == now.isoformat()
+
+    asyncio.run(run())
+
+
+def test_closed_one_minute_kline_is_processed_once(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        window_id = repo.create_window(now)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000),
+        )
+        controller.current_window_id = window_id
+        controller.round_active = True
+        controller.round_candidate_symbols.add("AAPLUSDT")
+        repo.upsert_round_candidate(window_id, "AAPLUSDT", now, stage="scanning")
+        calls = 0
+
+        async def fake_scan(_now=None):
+            nonlocal calls
+            calls += 1
+            return None
+
+        controller.scan_round_once = fake_scan  # type: ignore[method-assign]
+        event = {"symbol": "AAPLUSDT", "closed": True, "close_time": now}
+
+        assert await controller.handle_kline_closed_event(event) == "scanned"
+        assert await controller.handle_kline_closed_event(event) is None
+        assert await controller.handle_kline_closed_event({**event, "closed": False}) is None
+        assert calls == 1
+
+    asyncio.run(run())
+
+
+def test_stopped_symbol_is_not_restarted_and_next_candidate_fills_slot(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        repo.register_runtime("runtime-fill", now)
+        repo.request_round_start("网页启动", "round-fill", now)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, scan_candidate_count=2, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000),
+        )
+
+        first = await controller.start_round(now)
+        assert first.started_symbols == ["AAPLUSDT"]
+        await controller._close_session(controller.active_sessions["AAPLUSDT"], "手动停止", now)
+        second = await controller.scan_round_once(now + timedelta(minutes=1))
+
+        assert second.started_symbols == ["MSFTUSDT"]
+        assert set(controller.active_sessions) == {"MSFTUSDT"}
+        assert "AAPLUSDT" in controller.round_stopped_symbols
+        assert [row["symbol"] for row in repo.recent_rows("sessions", limit=10)] == ["MSFTUSDT", "AAPLUSDT"]
 
     asyncio.run(run())
 
@@ -4452,6 +5082,112 @@ def test_controller_poll_applies_runtime_maker_fee_limit_draft(tmp_path) -> None
         assert health is not None
         assert health["status"] == "warn"
         assert health["symbols"][0]["max_maker_fee_rate"] == 0
+
+    asyncio.run(run())
+
+
+def test_controller_marks_session_closing_before_force_close_io(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller-closing-before-io.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000),
+        )
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+
+        async def force_close(_session, _reason):
+            assert session.state == GridState.CLOSING
+            assert repo.recent_rows("sessions", limit=1)[0]["state"] == "CLOSING"
+            return []
+
+        controller.engine.force_close = force_close  # type: ignore[method-assign]
+
+        assert await controller._close_session(session, "test close", datetime(2026, 7, 4, 10, 1, tzinfo=NY))
+        assert repo.recent_rows("sessions", limit=1)[0]["state"] == "STOPPED"
+
+    asyncio.run(run())
+
+
+def test_controller_risk_decision_ignores_closing_and_stopped_sessions(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller-risk-terminal-state.db"
+        init_db(db_path)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000),
+        )
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        calls: list[str] = []
+
+        async def enter_cooldown(_session, _reason, _at):
+            calls.append("cooldown")
+
+        controller._enter_cooldown = enter_cooldown  # type: ignore[method-assign]
+        session.state = GridState.CLOSING
+        await controller._apply_risk_decision(
+            session,
+            RiskAction.COOLDOWN,
+            "closing",
+            datetime(2026, 7, 4, 10, 1, tzinfo=NY),
+        )
+        session.state = GridState.STOPPED
+        await controller._apply_risk_decision(
+            session,
+            RiskAction.COOLDOWN,
+            "stopped",
+            datetime(2026, 7, 4, 10, 2, tzinfo=NY),
+        )
+
+        assert calls == []
+
+    asyncio.run(run())
+
+
+def test_controller_cooldown_records_force_close_trade(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller-cooldown-accounting.db"
+        init_db(db_path)
+        exchange = AccountingMarketCloseExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000),
+        )
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        exchange.positions["AAPLUSDT"] = 0.5
+
+        await controller._enter_cooldown(
+            session,
+            "range break",
+            datetime(2026, 7, 4, 10, 1, tzinfo=NY),
+        )
+
+        trade = Repository(db_path).recent_rows("trades", limit=1)[0]
+        assert session.state == GridState.COOLDOWN
+        assert trade["side"] == "SELL"
+        assert trade["qty"] == 0.5
+        assert trade["fee"] == 0.04
+        assert trade["grid_pnl"] == -0.10
+        assert session.realized_pnl == -0.14
 
     asyncio.run(run())
 

@@ -7,10 +7,13 @@ from typing import Any
 
 from exchange.binance import (
     BinanceFuturesClient,
+    _async_client_proxy_kwargs,
+    _futures_kline_stream_url,
     _futures_price_stream_url,
     _requests_params,
     _server_time_offset_ms,
     parse_order_trade_update,
+    parse_kline_update,
     parse_price_update,
     symbol_rules_from_exchange_info,
 )
@@ -44,6 +47,42 @@ class FakeBinanceAsyncClient:
     async def futures_account_balance(self) -> list[dict[str, str]]:
         return [{"asset": "USDT", "availableBalance": "123.45"}]
 
+    async def futures_account(self) -> dict[str, Any]:
+        return {
+            "totalWalletBalance": "1000.50",
+            "availableBalance": "820.25",
+            "totalMarginBalance": "1012.75",
+            "totalInitialMargin": "180.00",
+            "totalMaintMargin": "18.50",
+            "totalUnrealizedProfit": "12.25",
+            "positions": [
+                {
+                    "symbol": "BTCUSDT",
+                    "positionSide": "LONG",
+                    "positionAmt": "0.010",
+                    "notional": "650.00",
+                    "unrealizedProfit": "4.50",
+                    "initialMargin": "65.00",
+                },
+                {
+                    "symbol": "ETHUSDT",
+                    "positionSide": "SHORT",
+                    "positionAmt": "-0.100",
+                    "notional": "-320.00",
+                    "unrealizedProfit": "-1.25",
+                    "initialMargin": "32.00",
+                },
+                {
+                    "symbol": "BCHUSDT",
+                    "positionSide": "BOTH",
+                    "positionAmt": "0",
+                    "notional": "0",
+                    "unrealizedProfit": "0",
+                    "initialMargin": "0",
+                },
+            ],
+        }
+
     async def futures_position_information(self, symbol: str) -> list[dict[str, str]]:
         return [{"symbol": symbol, "positionAmt": "2.5"}]
 
@@ -52,6 +91,20 @@ class FakeBinanceAsyncClient:
 
     async def futures_get_order(self, **kwargs) -> dict[str, Any]:
         return {"symbol": kwargs["symbol"], "orderId": kwargs.get("orderId", "123"), "origClientOrderId": kwargs.get("origClientOrderId", ""), "status": "FILLED"}
+
+    async def futures_account_trades(self, **kwargs) -> list[dict[str, Any]]:
+        return [
+            {
+                "symbol": kwargs["symbol"],
+                "orderId": kwargs["orderId"],
+                "side": "SELL",
+                "price": "100.0",
+                "qty": "1.0",
+                "commission": "0.04",
+                "realizedPnl": "-0.10",
+                "time": 1,
+            }
+        ]
 
     async def futures_create_order(self, **kwargs) -> dict[str, Any]:
         self.created_orders.append(kwargs)
@@ -87,7 +140,7 @@ class FakeBinanceAsyncClient:
         return {"symbol": symbol}
 
     async def futures_cancel_order(self, symbol: str, orderId: str) -> dict[str, Any]:
-        return {"symbol": symbol, "orderId": orderId}
+        return {"symbol": symbol, "orderId": orderId, "executedQty": "0.25"}
 
     async def futures_klines(self, symbol: str, interval: str, limit: int) -> list[list[Any]]:
         return [[1, "100", "101", "99", "100.5", "10", 2] for _ in range(limit)]
@@ -171,6 +224,37 @@ def test_futures_price_stream_url_uses_raw_single_and_combined_multi_streams() -
     assert _futures_price_stream_url("wss://stream.binancefuture.com", ["BTCUSDT", "ETHUSDT"]) == (
         "wss://stream.binancefuture.com/stream?streams=btcusdt@ticker/ethusdt@ticker"
     )
+
+
+def test_futures_kline_stream_url_uses_closed_one_minute_streams() -> None:
+    assert _futures_kline_stream_url("wss://fstream.binance.com", ["BTCUSDT"], "1m") == (
+        "wss://fstream.binance.com/ws/btcusdt@kline_1m"
+    )
+
+
+def test_parse_kline_update_reports_closed_candle() -> None:
+    event = parse_kline_update(
+        {
+            "e": "kline",
+            "E": 1780000000000,
+            "s": "BTCUSDT",
+            "k": {
+                "i": "1m",
+                "T": 1780000059999,
+                "x": True,
+                "o": "100",
+                "h": "102",
+                "l": "99",
+                "c": "101",
+            },
+        }
+    )
+
+    assert event is not None
+    assert event["symbol"] == "BTCUSDT"
+    assert event["interval"] == "1m"
+    assert event["closed"] is True
+    assert event["close"] == 101.0
 
 
 class FlakyBalanceClient(FakeBinanceAsyncClient):
@@ -353,6 +437,49 @@ class RejectPostOnlyClient(FakeBinanceAsyncClient):
 class UnsupportedStopMarketClient(FakeBinanceAsyncClient):
     async def futures_create_order(self, **kwargs) -> dict[str, Any]:
         self.created_orders.append(kwargs)
+        if kwargs.get("type") == "STOP_MARKET":
+            raise RuntimeError(
+                "APIError(code=-4120): Order type not supported for this endpoint. Please use the Algo Order API endpoints instead."
+            )
+        return {"orderId": "123", **kwargs}
+
+
+class PositionSideMismatchStopMarketClient(FakeBinanceAsyncClient):
+    async def futures_create_order(self, **kwargs) -> dict[str, Any]:
+        self.created_orders.append(kwargs)
+        if kwargs.get("type") == "STOP_MARKET" and "positionSide" not in kwargs:
+            raise RuntimeError("APIError(code=-4061): Order's position side does not match user's setting.")
+        return {"orderId": "123", "status": "NEW", **kwargs}
+
+
+class DirectAlgoStopMarketClient(FakeBinanceAsyncClient):
+    async def futures_create_order(self, **kwargs) -> dict[str, Any]:
+        self.created_orders.append(kwargs)
+        if kwargs.get("type") == "STOP_MARKET":
+            return {"algoId": 789, "algoStatus": "NEW"}
+        return {"orderId": "123", **kwargs}
+
+
+class DirectAlgoMismatchedClientIdStopMarketClient(DirectAlgoStopMarketClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancelled_algo_ids: list[int] = []
+
+    async def futures_create_order(self, **kwargs) -> dict[str, Any]:
+        self.created_orders.append(kwargs)
+        return {"algoId": 789, "algoStatus": "NEW", "clientAlgoId": "autoclose-generated"}
+
+    async def _request_futures_api(self, method: str, path: str, signed: bool, data: dict[str, Any]) -> Any:
+        if method == "delete" and path == "algoOrder" and signed:
+            self.cancelled_algo_ids.append(int(data["algoId"]))
+        return await super()._request_futures_api(method, path, signed, data)
+
+
+class PositionSideMismatchThenUnsupportedStopMarketClient(UnsupportedStopMarketClient):
+    async def futures_create_order(self, **kwargs) -> dict[str, Any]:
+        self.created_orders.append(kwargs)
+        if kwargs.get("type") == "STOP_MARKET" and "positionSide" not in kwargs:
+            raise RuntimeError("APIError(code=-4061): Order's position side does not match user's setting.")
         if kwargs.get("type") == "STOP_MARKET":
             raise RuntimeError(
                 "APIError(code=-4120): Order type not supported for this endpoint. Please use the Algo Order API endpoints instead."
@@ -558,8 +685,14 @@ def test_binance_adapter_maps_core_calls() -> None:
             "min_notional": 5.0,
         }
         assert await client.get_account_balance() == 123.45
+        account_summary = await client.get_account_summary()
+        assert account_summary["available_balance"] == 820.25
+        assert account_summary["current_exposure"] == 970.0
         assert (await client.get_position("AAPLUSDT"))["qty"] == 2.5
         assert (await client.get_order("AAPLUSDT", "123", "cid"))["status"] == "FILLED"
+        order_trades = await client.get_order_trades("AAPLUSDT", "123")
+        assert order_trades[0]["orderId"] == "123"
+        assert order_trades[0]["commission"] == "0.04"
         assert len(await client.get_klines("AAPLUSDT", "1m", 2)) == 2
         assert await client.get_funding_rate("AAPLUSDT") == 0.0001
         assert await client.get_commission_rate("AAPLUSDT") == {"maker": 0.0, "taker": 0.0005}
@@ -567,7 +700,7 @@ def test_binance_adapter_maps_core_calls() -> None:
         await client.place_limit_order_post_only("AAPLUSDT", "BUY", 100.0, 1.0, "cid")
         await client.place_market_order("AAPLUSDT", "SELL", 1.0)
         await client.place_stop_market_order("AAPLUSDT", "SELL", 98.0, "stop-cid")
-        await client.cancel_order("AAPLUSDT", "123")
+        cancel_response = await client.cancel_order("AAPLUSDT", "123")
 
         assert raw.created_orders[0]["timeInForce"] == "GTX"
         assert raw.created_orders[0]["newClientOrderId"] == "cid"
@@ -576,6 +709,7 @@ def test_binance_adapter_maps_core_calls() -> None:
         assert raw.created_orders[2]["type"] == "STOP_MARKET"
         assert raw.created_orders[2]["stopPrice"] == 98.0
         assert raw.created_orders[2]["closePosition"] is True
+        assert cancel_response["executedQty"] == "0.25"
 
     asyncio.run(run())
 
@@ -590,6 +724,22 @@ def test_requests_params_uses_aiohttp_proxy_argument() -> None:
     )
 
     assert params == {"proxy": "http://127.0.0.1:7897"}
+
+
+def test_async_client_proxy_kwargs_uses_https_proxy_when_supported() -> None:
+    class NewAsyncClient:
+        def __init__(self, *, requests_params=None, https_proxy=None):
+            pass
+
+    kwargs = _async_client_proxy_kwargs(
+        NewAsyncClient,
+        {
+            "enabled": True,
+            "https": "http://127.0.0.1:7897",
+        },
+    )
+
+    assert kwargs == {"requests_params": None, "https_proxy": "http://127.0.0.1:7897"}
 
 
 def test_binance_adapter_parses_hedge_mode_positions() -> None:
@@ -731,6 +881,27 @@ def test_binance_adapter_tests_market_and_stop_orders_without_creating_order() -
     asyncio.run(run())
 
 
+def test_binance_adapter_maps_account_summary_positions() -> None:
+    async def run() -> None:
+        client = BinanceFuturesClient(FakeBinanceAsyncClient())
+
+        summary = await client.get_account_summary()
+
+        assert summary["asset"] == "USDT"
+        assert summary["balance"] == 1000.50
+        assert summary["available_balance"] == 820.25
+        assert summary["margin_balance"] == 1012.75
+        assert summary["initial_margin"] == 180.00
+        assert summary["maintenance_margin"] == 18.50
+        assert summary["unrealized_pnl"] == 12.25
+        assert summary["current_exposure"] == 970.00
+        assert [row["symbol"] for row in summary["positions"]] == ["BTCUSDT", "ETHUSDT"]
+        assert summary["positions"][0]["position_side"] == "LONG"
+        assert summary["positions"][1]["notional"] == -320.00
+
+    asyncio.run(run())
+
+
 def test_binance_adapter_manages_futures_listen_key() -> None:
     async def run() -> None:
         client = BinanceFuturesClient(FakeBinanceAsyncClient())
@@ -773,7 +944,7 @@ def test_binance_adapter_manages_algo_stop_market_orders() -> None:
             "algoType": "CONDITIONAL",
             "triggerPrice": 90.0,
             "quantity": 1.0,
-            "workingType": "MARK_PRICE",
+            "workingType": "CONTRACT_PRICE",
             "clientAlgoId": "algo-cid",
             "newOrderRespType": "ACK",
         }
@@ -836,11 +1007,72 @@ def test_binance_adapter_falls_back_to_algo_close_position_stop_market_order() -
                 "algoType": "CONDITIONAL",
                 "triggerPrice": 90.0,
                 "closePosition": True,
-                "workingType": "MARK_PRICE",
+                "workingType": "CONTRACT_PRICE",
                 "clientAlgoId": "stop-cid",
                 "newOrderRespType": "ACK",
             },
         ]
+
+    asyncio.run(run())
+
+
+def test_binance_adapter_retries_stop_market_with_hedge_position_side() -> None:
+    async def run() -> None:
+        raw = PositionSideMismatchStopMarketClient()
+        client = BinanceFuturesClient(raw, retry_attempts=1)
+
+        order = await client.place_stop_market_order("BTCUSDT", "SELL", 90.0, "stop-cid", close_position=True)
+
+        assert order["positionSide"] == "LONG"
+        assert len(raw.created_orders) == 2
+        assert "positionSide" not in raw.created_orders[0]
+        assert raw.created_orders[1]["positionSide"] == "LONG"
+
+    asyncio.run(run())
+
+
+def test_binance_adapter_standardizes_direct_algo_stop_market_response() -> None:
+    async def run() -> None:
+        raw = DirectAlgoStopMarketClient()
+        client = BinanceFuturesClient(raw, retry_attempts=1)
+
+        order = await client.place_stop_market_order("BTCUSDT", "SELL", 90.0, "stop-cid", close_position=True)
+
+        assert order["orderId"] == "789"
+        assert order["algoId"] == 789
+        assert order["clientOrderId"] == "stop-cid"
+        assert order["positionSide"] == "LONG"
+        assert order["triggerPrice"] == 90.0
+
+    asyncio.run(run())
+
+
+def test_binance_adapter_replaces_untrackable_direct_algo_stop_response() -> None:
+    async def run() -> None:
+        raw = DirectAlgoMismatchedClientIdStopMarketClient()
+        client = BinanceFuturesClient(raw, retry_attempts=1)
+
+        order = await client.place_stop_market_order("BTCUSDT", "SELL", 90.0, "stop-cid", close_position=True)
+
+        assert raw.cancelled_algo_ids == [789]
+        assert order["algoId"] == 456
+        assert order["clientAlgoId"] == "stop-cid"
+        assert order["clientOrderId"] == "stop-cid"
+
+    asyncio.run(run())
+
+
+def test_binance_adapter_falls_back_to_algo_after_position_side_retry() -> None:
+    async def run() -> None:
+        raw = PositionSideMismatchThenUnsupportedStopMarketClient()
+        client = BinanceFuturesClient(raw, retry_attempts=1)
+
+        order = await client.place_stop_market_order("BTCUSDT", "SELL", 90.0, "stop-cid", close_position=True)
+
+        assert order["orderId"] == "456"
+        assert order["positionSide"] == "LONG"
+        assert len(raw.created_orders) == 3
+        assert raw.created_orders[-1]["algo"] is True
 
     asyncio.run(run())
 
@@ -1221,6 +1453,8 @@ def test_binance_adapter_rejects_invalid_cancel_order_response() -> None:
             ({"symbol": "MSFTUSDT", "orderId": "1"}, "symbol"),
             ({"symbol": "AAPLUSDT"}, "order id"),
             ({"symbol": "AAPLUSDT", "orderId": "2"}, "order id"),
+            ({"symbol": "AAPLUSDT", "orderId": "1"}, "executedQty"),
+            ({"symbol": "AAPLUSDT", "orderId": "1", "executedQty": "-0.1"}, "executedQty"),
         ]
 
         for response, label in cases:
@@ -1518,7 +1752,7 @@ def test_binance_adapter_rejects_mismatched_algo_order_response_fields() -> None
             ({"positionSide": "LONG"}, "positionSide"),
             ({"orderType": "LIMIT"}, "type"),
             ({"algoType": "TRAILING_STOP_MARKET"}, "algoType"),
-            ({"workingType": "CONTRACT_PRICE"}, "workingType"),
+            ({"workingType": "MARK_PRICE"}, "workingType"),
             ({"triggerPrice": "91.0"}, "triggerPrice"),
             ({"quantity": "2.0"}, "quantity"),
         ]
@@ -1608,6 +1842,8 @@ def test_parse_order_trade_update_only_returns_filled_orders() -> None:
             "X": "FILLED",
             "ap": "100.25",
             "z": "0.5",
+            "n": "0.02",
+            "rp": "-0.10",
         },
     }
 
@@ -1621,6 +1857,8 @@ def test_parse_order_trade_update_only_returns_filled_orders() -> None:
     assert event["status"] == "FILLED"
     assert event["price"] == 100.25
     assert event["qty"] == 0.5
+    assert event["fee"] == 0.02
+    assert event["realized_pnl"] == -0.10
 
 
 def test_parse_order_trade_update_returns_partial_fill_events() -> None:
@@ -1647,7 +1885,7 @@ def test_parse_order_trade_update_returns_partial_fill_events() -> None:
     assert event["qty"] == 0.2
 
 
-def test_parse_order_trade_update_prefers_last_fill_qty_over_cumulative_qty() -> None:
+def test_parse_order_trade_update_uses_cumulative_qty_for_filled_order() -> None:
     event = parse_order_trade_update(
         {
             "e": "ORDER_TRADE_UPDATE",
@@ -1666,10 +1904,10 @@ def test_parse_order_trade_update_prefers_last_fill_qty_over_cumulative_qty() ->
     )
 
     assert event is not None
-    assert event["qty"] == 0.2
+    assert event["qty"] == 0.5
 
 
-def test_parse_order_trade_update_pairs_last_fill_qty_with_last_fill_price() -> None:
+def test_parse_order_trade_update_pairs_cumulative_qty_with_average_price() -> None:
     event = parse_order_trade_update(
         {
             "e": "ORDER_TRADE_UPDATE",
@@ -1689,8 +1927,8 @@ def test_parse_order_trade_update_pairs_last_fill_qty_with_last_fill_price() -> 
     )
 
     assert event is not None
-    assert event["qty"] == 0.2
-    assert event["price"] == 100.75
+    assert event["qty"] == 0.5
+    assert event["price"] == 100.25
 
 
 def test_parse_order_trade_update_does_not_fallback_when_last_fill_fields_are_invalid() -> None:
@@ -1699,7 +1937,7 @@ def test_parse_order_trade_update_does_not_fallback_when_last_fill_fields_are_in
         "c": "qg-1-2-buy",
         "i": 123,
         "S": "BUY",
-        "X": "FILLED",
+        "X": "PARTIALLY_FILLED",
         "ap": "100.25",
         "z": "0.5",
     }

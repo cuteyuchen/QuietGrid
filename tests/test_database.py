@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from core.models import GridOrder, OrderSide, OrderStatus
 from db.database import connect, init_db
@@ -519,3 +519,29 @@ def test_trade_create_is_idempotent_by_session_and_order_id(tmp_path) -> None:
     trades = repo.recent_rows("trades")
     assert len(trades) == 1
     assert trades[0]["order_id"] == "order-1"
+
+
+def test_round_candidate_is_marked_stale_after_ninety_seconds_without_market_update(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    repo.upsert_round_candidate(
+        window_id,
+        "BTCUSDT",
+        now,
+        price=62000.0,
+        market_updated_at=now.isoformat(),
+        stage="scanning",
+        data_stale=False,
+    )
+
+    changed = repo.mark_round_candidates_stale(
+        window_id,
+        now + timedelta(seconds=90),
+        now + timedelta(seconds=91),
+    )
+
+    assert changed == 1
+    assert repo.round_candidates(window_id)[0]["data_stale"] == 1

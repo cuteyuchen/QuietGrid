@@ -13,6 +13,10 @@ from db.database import connect
 
 SystemLogNotifier = Callable[[str, str, str, str | None, datetime], None]
 
+
+class RoundStartConflict(RuntimeError):
+    pass
+
 ORDER_UPSERT_SQL = """
 INSERT INTO orders
     (session_id, symbol, order_id, client_id, grid_index, side, price, qty,
@@ -50,19 +54,93 @@ def _order_upsert_params(session_id: int, order: GridOrder) -> tuple[Any, ...]:
     )
 
 
+def _control_value(conn: sqlite3.Connection, key: str) -> Any:
+    row = conn.execute("SELECT value FROM control_state WHERE key = ?", (key,)).fetchone()
+    if row is None:
+        return None
+    try:
+        return json.loads(str(row["value"]))
+    except json.JSONDecodeError:
+        return row["value"]
+
+
+def _upsert_control_value(conn: sqlite3.Connection, key: str, value: Any, updated_at: datetime) -> None:
+    conn.execute(
+        """
+        INSERT INTO control_state (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        """,
+        (key, json.dumps(value, ensure_ascii=False), updated_at.isoformat()),
+    )
+
+
 class Repository:
     def __init__(self, db_path: str | Path, notifier: SystemLogNotifier | None = None) -> None:
         self.db_path = db_path
         self.notifier = notifier
 
-    def create_window(self, window_start: datetime) -> int:
+    def create_window(
+        self,
+        window_start: datetime,
+        runtime_id: str | None = None,
+        status: str = "open",
+    ) -> int:
         with connect(self.db_path) as conn:
             cur = conn.execute(
-                "INSERT INTO windows (window_start) VALUES (?)",
-                (window_start.isoformat(),),
+                "INSERT INTO windows (runtime_id, window_start, status) VALUES (?, ?, ?)",
+                (runtime_id, window_start.isoformat(), status),
             )
             conn.commit()
             return int(cur.lastrowid)
+
+    def claim_round_window(self, runtime_id: str, window_start: datetime) -> int:
+        normalized_runtime_id = str(runtime_id).strip()
+        if not normalized_runtime_id:
+            raise RoundStartConflict("交易服务尚未注册本次运行实例。")
+        with connect(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            runtime = _control_value(conn, "trader_runtime")
+            if not isinstance(runtime, dict) or str(runtime.get("runtime_id") or "") != normalized_runtime_id:
+                raise RoundStartConflict("交易服务运行实例已变化，请刷新页面后重试。")
+            round_runtime = _control_value(conn, "round_runtime")
+            if (
+                isinstance(round_runtime, dict)
+                and str(round_runtime.get("runtime_id") or "") == normalized_runtime_id
+                and str(round_runtime.get("round_state") or "IDLE").upper() not in {"IDLE", "STOPPED"}
+            ):
+                raise RoundStartConflict("当前已有正在运行的网格轮次。")
+            request = _control_value(conn, "round_start_request")
+            if not isinstance(request, dict) or str(request.get("runtime_id") or "") != normalized_runtime_id:
+                raise RoundStartConflict("当前运行实例没有待处理的启动请求。")
+            cur = conn.execute(
+                "INSERT INTO windows (runtime_id, window_start, status) VALUES (?, ?, 'SCANNING')",
+                (normalized_runtime_id, window_start.isoformat()),
+            )
+            window_id = int(cur.lastrowid)
+            request.update(
+                {
+                    "status": "running",
+                    "window_id": window_id,
+                    "updated_at": window_start.isoformat(),
+                }
+            )
+            _upsert_control_value(conn, "round_start_request", request, window_start)
+            _upsert_control_value(
+                conn,
+                "round_runtime",
+                {
+                    "runtime_id": normalized_runtime_id,
+                    "current_round_id": window_id,
+                    "round_state": "SCANNING",
+                    "round_started_at": window_start.isoformat(),
+                    "last_scan_at": "",
+                    "next_scan_at": window_start.isoformat(),
+                },
+                window_start,
+            )
+            conn.commit()
+            return window_id
 
     def close_window(self, window_id: int, window_end: datetime, status: str = "closed") -> None:
         with connect(self.db_path) as conn:
@@ -79,6 +157,24 @@ class Repository:
                 (window_end.isoformat(), status, total_pnl, window_id),
             )
             conn.commit()
+
+    def close_unfinished_windows(self, closed_at: datetime, status: str = "STOPPED") -> list[int]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT id FROM windows WHERE window_end IS NULL AND UPPER(status) IN ('OPEN', 'SCANNING', 'RUNNING', 'STOPPING')"
+            ).fetchall()
+            window_ids = [int(row["id"]) for row in rows]
+            for window_id in window_ids:
+                total_pnl = conn.execute(
+                    "SELECT COALESCE(SUM(realized_pnl), 0) AS value FROM sessions WHERE window_id = ?",
+                    (window_id,),
+                ).fetchone()["value"]
+                conn.execute(
+                    "UPDATE windows SET window_end = ?, status = ?, total_pnl = ? WHERE id = ?",
+                    (closed_at.isoformat(), status, total_pnl, window_id),
+                )
+            conn.commit()
+            return window_ids
 
     def create_session(
         self,
@@ -369,6 +465,361 @@ class Repository:
             result[str(row["key"])] = {"value": value, "updated_at": row["updated_at"]}
         return result
 
+    def register_runtime(self, runtime_id: str, started_at: datetime) -> dict[str, Any]:
+        normalized_runtime_id = str(runtime_id).strip()
+        if not normalized_runtime_id:
+            raise ValueError("runtime_id must not be empty")
+        with connect(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            current = _control_value(conn, "trader_runtime")
+            if isinstance(current, dict) and str(current.get("runtime_id") or "") == normalized_runtime_id:
+                conn.commit()
+                return dict(current)
+            runtime = {
+                "runtime_id": normalized_runtime_id,
+                "started_at": started_at.isoformat(),
+            }
+            _upsert_control_value(conn, "trader_runtime", runtime, started_at)
+            conn.execute("DELETE FROM control_state WHERE key IN ('round_start_request', 'round_stop_request', 'round_runtime')")
+            conn.commit()
+            return runtime
+
+    def runtime_state(self) -> dict[str, Any]:
+        state = self.get_control_state()
+        runtime_entry = state.get("trader_runtime")
+        runtime = runtime_entry.get("value") if isinstance(runtime_entry, dict) else None
+        round_entry = state.get("round_runtime")
+        round_runtime = round_entry.get("value") if isinstance(round_entry, dict) else None
+        runtime_id = str(runtime.get("runtime_id") or "") if isinstance(runtime, dict) else ""
+        current_round_id = None
+        round_state = "IDLE"
+        round_started_at = ""
+        last_scan_at = ""
+        next_scan_at = ""
+        if isinstance(round_runtime, dict) and str(round_runtime.get("runtime_id") or "") == runtime_id:
+            current_round_id = round_runtime.get("current_round_id")
+            round_state = str(round_runtime.get("round_state") or "IDLE")
+            round_started_at = str(round_runtime.get("round_started_at") or "")
+            last_scan_at = str(round_runtime.get("last_scan_at") or "")
+            next_scan_at = str(round_runtime.get("next_scan_at") or "")
+        request = self.round_start_request(include_terminal=True)
+        request_busy = bool(
+            request
+            and str(request.get("runtime_id") or "") == runtime_id
+            and str(request.get("status") or "") in {"requested", "running"}
+        )
+        if request_busy and current_round_id is None:
+            round_state = "REQUESTED"
+            round_started_at = str(request.get("requested_at") or "")
+        if round_state == "STOPPED":
+            request_busy = False
+        return {
+            "runtime_id": runtime_id,
+            "runtime_started_at": str(runtime.get("started_at") or "") if isinstance(runtime, dict) else "",
+            "round_start_available": bool(runtime_id)
+            and not request_busy
+            and (current_round_id is None or round_state in {"IDLE", "STOPPED"}),
+            "current_round_id": current_round_id,
+            "round_state": round_state,
+            "round_started_at": round_started_at,
+            "last_scan_at": last_scan_at,
+            "next_scan_at": next_scan_at,
+        }
+
+    def request_round_start(
+        self,
+        reason: str,
+        request_id: str,
+        requested_at: datetime,
+    ) -> dict[str, Any]:
+        with connect(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            runtime = _control_value(conn, "trader_runtime")
+            runtime_id = str(runtime.get("runtime_id") or "") if isinstance(runtime, dict) else ""
+            if not runtime_id:
+                raise RoundStartConflict("交易服务尚未启动，当前不能创建网格轮次。")
+            round_runtime = _control_value(conn, "round_runtime")
+            if (
+                isinstance(round_runtime, dict)
+                and str(round_runtime.get("runtime_id") or "") == runtime_id
+                and str(round_runtime.get("round_state") or "IDLE").upper() not in {"IDLE", "STOPPED"}
+            ):
+                raise RoundStartConflict("当前已有正在运行的网格轮次，请先暂停操作或停止本轮。")
+            current = _control_value(conn, "round_start_request")
+            if (
+                isinstance(current, dict)
+                and str(current.get("runtime_id") or "") == runtime_id
+                and str(current.get("status") or "") in {"requested", "running"}
+                and not (
+                    isinstance(round_runtime, dict)
+                    and str(round_runtime.get("round_state") or "").upper() == "STOPPED"
+                )
+            ):
+                raise RoundStartConflict("当前交易服务运行实例的网格轮次已经提交。")
+            request = {
+                "runtime_id": runtime_id,
+                "reason": str(reason),
+                "request_id": str(request_id),
+                "status": "requested",
+                "requested_at": requested_at.isoformat(),
+                "updated_at": requested_at.isoformat(),
+            }
+            _upsert_control_value(conn, "round_start_request", request, requested_at)
+            conn.commit()
+            return request
+
+    def round_start_request(self, include_terminal: bool = False) -> dict[str, Any] | None:
+        state = self.get_control_state().get("round_start_request")
+        if not isinstance(state, dict) or not isinstance(state.get("value"), dict):
+            return None
+        request = dict(state["value"])
+        status = str(request.get("status") or "")
+        if not include_terminal and status in {"completed", "failed", "cancelled"}:
+            return None
+        return request
+
+    def update_round_start_request(
+        self,
+        status: str,
+        detail: Any,
+        updated_at: datetime,
+    ) -> None:
+        request = self.round_start_request(include_terminal=True)
+        if request is None:
+            return
+        request["status"] = str(status)
+        request["detail"] = detail
+        request["updated_at"] = updated_at.isoformat()
+        self.set_control_state("round_start_request", request, updated_at)
+
+    def set_round_runtime_state(
+        self,
+        window_id: int,
+        state: str,
+        updated_at: datetime,
+        *,
+        last_scan_at: datetime | None = None,
+        next_scan_at: datetime | None = None,
+    ) -> None:
+        runtime = self.runtime_state()
+        payload = {
+            "runtime_id": runtime["runtime_id"],
+            "current_round_id": int(window_id),
+            "round_state": str(state).upper(),
+            "round_started_at": runtime.get("round_started_at") or updated_at.isoformat(),
+            "last_scan_at": last_scan_at.isoformat() if last_scan_at else runtime.get("last_scan_at", ""),
+            "next_scan_at": next_scan_at.isoformat() if next_scan_at else runtime.get("next_scan_at", ""),
+        }
+        with connect(self.db_path) as conn:
+            conn.execute("UPDATE windows SET status = ? WHERE id = ?", (payload["round_state"], int(window_id)))
+            _upsert_control_value(conn, "round_runtime", payload, updated_at)
+            conn.commit()
+
+    def request_round_stop(self, reason: str, request_id: str, requested_at: datetime) -> dict[str, Any]:
+        runtime = self.runtime_state()
+        window_id = runtime.get("current_round_id")
+        if not window_id or str(runtime.get("round_state") or "") in {"IDLE", "STOPPED"}:
+            raise RoundStartConflict("当前没有正在运行的网格轮次。")
+        request = {
+            "runtime_id": runtime["runtime_id"],
+            "window_id": int(window_id),
+            "reason": str(reason),
+            "request_id": str(request_id),
+            "status": "requested",
+            "requested_at": requested_at.isoformat(),
+            "updated_at": requested_at.isoformat(),
+        }
+        self.set_control_state("round_stop_request", request, requested_at)
+        return request
+
+    def round_stop_request(self) -> dict[str, Any] | None:
+        entry = self.get_control_state().get("round_stop_request")
+        value = entry.get("value") if isinstance(entry, dict) else None
+        if not isinstance(value, dict) or str(value.get("status") or "") in {"completed", "failed", "cancelled"}:
+            return None
+        return dict(value)
+
+    def update_round_stop_request(self, status: str, detail: Any, updated_at: datetime) -> None:
+        request = self.round_stop_request()
+        if request is None:
+            return
+        request.update({"status": str(status), "detail": detail, "updated_at": updated_at.isoformat()})
+        self.set_control_state("round_stop_request", request, updated_at)
+
+    def upsert_round_candidate(self, window_id: int, symbol: str, updated_at: datetime, **values: Any) -> None:
+        columns = {
+            "liquidity_rank", "score", "volume_score", "depth_score", "volume_24h", "depth_usdt",
+            "price", "bid_price", "ask_price", "spread_pct", "volatility_method", "volatility_value",
+            "volatility_window", "range_lower", "range_upper", "range_width_pct", "threshold_met",
+            "session_id", "stage", "error", "last_kline_close_at", "market_updated_at", "calculated_at",
+            "data_stale",
+        }
+        normalized = {key: value for key, value in values.items() if key in columns}
+        if "threshold_met" in normalized:
+            normalized["threshold_met"] = int(bool(normalized["threshold_met"]))
+        if "data_stale" in normalized:
+            normalized["data_stale"] = int(bool(normalized["data_stale"]))
+        normalized["updated_at"] = updated_at.isoformat()
+        names = ["window_id", "symbol", *normalized.keys()]
+        placeholders = ", ".join("?" for _ in names)
+        updates = ", ".join(f"{name}=excluded.{name}" for name in normalized)
+        params = [int(window_id), str(symbol).strip().upper(), *normalized.values()]
+        with connect(self.db_path) as conn:
+            conn.execute(
+                f"INSERT INTO round_candidates ({', '.join(names)}) VALUES ({placeholders}) "
+                f"ON CONFLICT(window_id, symbol) DO UPDATE SET {updates}",
+                params,
+            )
+            conn.commit()
+
+    def update_round_candidate_market(
+        self,
+        window_id: int,
+        symbol: str,
+        price: float,
+        updated_at: datetime,
+        *,
+        bid_price: float | None = None,
+        ask_price: float | None = None,
+    ) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE round_candidates
+                SET price = ?, bid_price = COALESCE(?, bid_price), ask_price = COALESCE(?, ask_price),
+                    market_updated_at = ?, data_stale = 0, updated_at = ?
+                WHERE window_id = ? AND symbol = ?
+                """,
+                (
+                    price, bid_price, ask_price, updated_at.isoformat(), updated_at.isoformat(),
+                    int(window_id), str(symbol).strip().upper(),
+                ),
+            )
+            conn.commit()
+
+    def round_candidates(self, window_id: int) -> list[dict[str, Any]]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM round_candidates
+                WHERE window_id = ?
+                ORDER BY COALESCE(liquidity_rank, 2147483647), symbol
+                """,
+                (int(window_id),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def mark_round_candidates_stale(self, window_id: int, stale_before: datetime, updated_at: datetime) -> int:
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                UPDATE round_candidates
+                SET data_stale = 1, updated_at = ?
+                WHERE window_id = ?
+                  AND (market_updated_at IS NULL OR market_updated_at < ?)
+                  AND data_stale = 0
+                """,
+                (updated_at.isoformat(), int(window_id), stale_before.isoformat()),
+            )
+            conn.commit()
+            return int(cur.rowcount)
+
+    def mark_round_candidate_stage(
+        self,
+        window_id: int,
+        symbol: str,
+        stage: str,
+        updated_at: datetime,
+        session_id: int | None = None,
+    ) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE round_candidates
+                SET stage = ?, session_id = COALESCE(?, session_id), updated_at = ?
+                WHERE window_id = ? AND symbol = ?
+                """,
+                (stage, session_id, updated_at.isoformat(), int(window_id), str(symbol).strip().upper()),
+            )
+            conn.commit()
+
+    def request_session_control(
+        self,
+        session_id: int,
+        symbol: str,
+        action: str,
+        reason: str,
+        request_id: str,
+        requested_at: datetime,
+    ) -> dict[str, Any]:
+        normalized_action = str(action).strip().lower()
+        if normalized_action not in {"pause", "resume"}:
+            raise ValueError("session control action must be pause or resume")
+        requests = self.session_control_requests(include_terminal=True)
+        key = str(int(session_id))
+        request = {
+            "session_id": int(session_id),
+            "symbol": str(symbol).strip().upper(),
+            "action": normalized_action,
+            "reason": str(reason),
+            "request_id": str(request_id),
+            "status": "requested",
+            "requested_at": requested_at.isoformat(),
+            "updated_at": requested_at.isoformat(),
+        }
+        requests[key] = request
+        self.set_control_state("session_control_requests", requests, requested_at)
+        return request
+
+    def session_control_requests(self, include_terminal: bool = False) -> dict[str, dict[str, Any]]:
+        state = self.get_control_state().get("session_control_requests")
+        if not isinstance(state, dict) or not isinstance(state.get("value"), dict):
+            return {}
+        requests: dict[str, dict[str, Any]] = {}
+        for key, raw_request in state["value"].items():
+            if not isinstance(raw_request, dict):
+                continue
+            status = str(raw_request.get("status") or "requested")
+            if not include_terminal and status in {"completed", "failed", "cancelled", "not_found"}:
+                continue
+            try:
+                session_id = int(raw_request.get("session_id") or key)
+            except (TypeError, ValueError):
+                continue
+            requests[str(session_id)] = {
+                **raw_request,
+                "session_id": session_id,
+                "symbol": str(raw_request.get("symbol") or "").strip().upper(),
+                "action": str(raw_request.get("action") or "").strip().lower(),
+                "status": status,
+            }
+        return requests
+
+    def pending_session_control_requests(self) -> dict[int, dict[str, Any]]:
+        return {
+            int(request["session_id"]): request
+            for request in self.session_control_requests().values()
+            if str(request.get("status")) == "requested"
+        }
+
+    def update_session_control_request(
+        self,
+        session_id: int,
+        status: str,
+        detail: str | None,
+        updated_at: datetime,
+    ) -> None:
+        requests = self.session_control_requests(include_terminal=True)
+        key = str(int(session_id))
+        request = requests.get(key)
+        if request is None:
+            return
+        request["status"] = str(status)
+        request["detail"] = detail
+        request["updated_at"] = updated_at.isoformat()
+        requests[key] = request
+        self.set_control_state("session_control_requests", requests, updated_at)
+
     def new_entries_paused(self) -> bool:
         state = self.get_control_state().get("new_entries_paused")
         if not isinstance(state, dict):
@@ -489,8 +940,79 @@ class Repository:
         self.set_control_state("strategy_config_draft", normalized, updated_at)
         return normalized
 
+    def save_selection_candidates(
+        self,
+        account_id: str,
+        environment: str,
+        rows: list[dict[str, Any]],
+        snapshot_at: datetime,
+    ) -> None:
+        normalized_account = str(account_id or "default").strip() or "default"
+        normalized_environment = str(environment or "testnet").strip() or "testnet"
+        with connect(self.db_path) as conn:
+            conn.execute(
+                "DELETE FROM selection_candidates WHERE account_id = ? AND environment = ?",
+                (normalized_account, normalized_environment),
+            )
+            conn.executemany(
+                """
+                INSERT INTO selection_candidates
+                    (account_id, environment, snapshot_at, rank, symbol, score, volume_score,
+                     depth_score, volume_24h, depth_usdt, bid_price, ask_price, spread_pct,
+                     selected, disabled, status, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        normalized_account,
+                        normalized_environment,
+                        snapshot_at.isoformat(),
+                        int(row.get("rank") or 0),
+                        str(row.get("symbol") or "").strip().upper(),
+                        row.get("score"),
+                        row.get("volume_score"),
+                        row.get("depth_score"),
+                        row.get("volume_24h"),
+                        row.get("depth_usdt"),
+                        row.get("bid_price"),
+                        row.get("ask_price"),
+                        row.get("spread_pct"),
+                        1 if row.get("selected") else 0,
+                        1 if row.get("disabled") else 0,
+                        str(row.get("status") or "ok"),
+                        str(row.get("error") or ""),
+                    )
+                    for row in rows
+                    if str(row.get("symbol") or "").strip()
+                ],
+            )
+            conn.commit()
+
+    def latest_selection_candidates(self, account_id: str, environment: str, limit: int = 50) -> list[dict[str, Any]]:
+        normalized_account = str(account_id or "default").strip() or "default"
+        normalized_environment = str(environment or "testnet").strip() or "testnet"
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM selection_candidates
+                WHERE account_id = ?
+                  AND environment = ?
+                ORDER BY rank ASC, id ASC
+                LIMIT ?
+                """,
+                (normalized_account, normalized_environment, int(limit)),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["selected"] = bool(item.get("selected"))
+            item["disabled"] = bool(item.get("disabled"))
+            result.append(item)
+        return result
+
     def recent_rows(self, table: str, limit: int = 50) -> list[dict[str, Any]]:
-        if table not in {"windows", "sessions", "orders", "trades", "state_logs", "system_logs"}:
+        if table not in {"windows", "sessions", "orders", "trades", "state_logs", "system_logs", "selection_candidates"}:
             raise ValueError(f"不支持查询表: {table}")
         with connect(self.db_path) as conn:
             rows = conn.execute(f"SELECT * FROM {table} ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
@@ -623,11 +1145,50 @@ class Repository:
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def console_sessions(self, active_only: bool = True, limit: int = 50) -> list[dict[str, Any]]:
-        where = ""
+    def console_grid_rounds(self) -> list[dict[str, Any]]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    windows.id AS window_id,
+                    windows.window_start,
+                    windows.window_end,
+                    windows.status,
+                    windows.total_pnl,
+                    COUNT(sessions.id) AS session_count,
+                    SUM(
+                        CASE
+                            WHEN sessions.close_time IS NULL AND sessions.state != 'STOPPED' THEN 1
+                            ELSE 0
+                        END
+                    ) AS active_session_count
+                FROM windows
+                LEFT JOIN sessions ON sessions.window_id = windows.id
+                GROUP BY
+                    windows.id,
+                    windows.window_start,
+                    windows.window_end,
+                    windows.status,
+                    windows.total_pnl
+                ORDER BY windows.id DESC
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def console_sessions(
+        self,
+        active_only: bool = True,
+        limit: int = 50,
+        window_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
         params: list[Any] = []
         if active_only:
-            where = "WHERE sessions.close_time IS NULL AND sessions.state != 'STOPPED'"
+            clauses.append("sessions.close_time IS NULL AND sessions.state != 'STOPPED'")
+        if window_id is not None:
+            clauses.append("sessions.window_id = ?")
+            params.append(int(window_id))
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(max(1, min(int(limit), 200)))
         with connect(self.db_path) as conn:
             rows = conn.execute(

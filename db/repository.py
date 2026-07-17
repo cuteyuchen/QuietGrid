@@ -1844,6 +1844,7 @@ class Repository:
         data_provider: str | None = None,
         window_mode: str | None = None,
         dataset_schema_version: int | None = None,
+        window_count: int | None = None,
     ) -> int:
         with connect(self.db_path) as conn:
             cur = conn.execute(
@@ -1852,8 +1853,8 @@ class Repository:
                     (run_id, symbol, started_at, fill_model, parameter_version,
                      code_commit, status, config_json, dataset_id,
                      dataset_checksum, data_provider, window_mode,
-                     dataset_schema_version)
-                VALUES (?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?, ?, ?)
+                     dataset_schema_version, window_count)
+                VALUES (?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -1868,6 +1869,7 @@ class Repository:
                     data_provider,
                     window_mode,
                     dataset_schema_version,
+                    window_count,
                 ),
             )
             conn.commit()
@@ -2227,6 +2229,75 @@ class Repository:
                 (error, now, dataset_id, self.account_id),
             )
             conn.commit()
+
+    def replace_backtest_dataset_windows(
+        self,
+        dataset_id: str,
+        windows: list[dict[str, Any]],
+    ) -> None:
+        now = datetime.now().astimezone().isoformat()
+        with connect(self.db_path) as conn:
+            dataset = conn.execute(
+                "SELECT 1 FROM backtest_datasets WHERE dataset_id = ? AND account_id = ?",
+                (dataset_id, self.account_id),
+            ).fetchone()
+            if dataset is None:
+                raise ValueError(f"冻结回测数据集不存在: {dataset_id}")
+            conn.execute(
+                "DELETE FROM backtest_dataset_windows WHERE dataset_id = ?",
+                (dataset_id,),
+            )
+            for window in windows:
+                conn.execute(
+                    """
+                    INSERT INTO backtest_dataset_windows
+                        (dataset_id, window_id, market_close, force_close_at,
+                         row_start_index, row_end_index, row_count,
+                         observation_rows, tradable_rows, status, warning,
+                         skip_reason, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        dataset_id,
+                        window["window_id"],
+                        window["market_close"],
+                        window["force_close_at"],
+                        window.get("row_start_index"),
+                        window.get("row_end_index"),
+                        int(window.get("row_count") or 0),
+                        int(window.get("observation_rows") or 0),
+                        int(window.get("tradable_rows") or 0),
+                        str(window.get("status") or "DISCOVERED"),
+                        window.get("warning"),
+                        window.get("skip_reason"),
+                        now,
+                    ),
+                )
+            conn.execute(
+                """
+                UPDATE backtest_datasets
+                SET window_count = ?, updated_at = ?
+                WHERE dataset_id = ? AND account_id = ?
+                """,
+                (len(windows), now, dataset_id, self.account_id),
+            )
+            conn.commit()
+
+    def backtest_dataset_windows(self, dataset_id: str) -> list[dict[str, Any]]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT window_id, market_close, force_close_at,
+                       row_start_index, row_end_index, row_count,
+                       observation_rows, tradable_rows, status, warning,
+                       skip_reason, created_at
+                FROM backtest_dataset_windows
+                WHERE dataset_id = ?
+                ORDER BY market_close
+                """,
+                (dataset_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def get_backtest_run(self, run_id: str) -> dict[str, Any] | None:
         with connect(self.db_path) as conn:

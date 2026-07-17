@@ -16,10 +16,11 @@ from data_sources.base import DataSourceError, HistoricalDataSource
 from data_sources.csv_source import CsvHistoricalDataSource, INTERVAL_MILLISECONDS
 from data_sources.models import DatasetPreview, DatasetRequest, DatasetStatus, NormalizedKline
 from data_sources.normalizer import validate_and_normalize_klines
+from data_sources.window_slicer import NyseWindowSlicer, normalized_klines_from_mappings
 from db.repository import Repository
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 FROZEN_CSV_FIELDS = (
     "open_time",
     "close_time",
@@ -46,6 +47,7 @@ class BacktestDatasetService:
         staging_root: str | Path,
         source_factory: Callable[[str], HistoricalDataSource],
         validation_config: dict[str, Any] | None = None,
+        windowing_config: dict[str, Any] | None = None,
         max_range_days_1m: int = 180,
     ) -> None:
         self.repo = repo
@@ -53,6 +55,11 @@ class BacktestDatasetService:
         self.staging_root = Path(staging_root).resolve()
         self.source_factory = source_factory
         self.validation_config = validation_config or {}
+        windowing = windowing_config or {}
+        self.window_slicer = NyseWindowSlicer(
+            force_close_minutes=int(windowing.get("force_close_minutes", 120)),
+            minimum_tradable_rows=int(windowing.get("minimum_tradable_rows", 30)),
+        )
         self.max_range_days_1m = max(1, int(max_range_days_1m))
 
     async def preview(self, request: DatasetRequest) -> DatasetPreview:
@@ -73,6 +80,15 @@ class BacktestDatasetService:
                 requested_end=request.end_time,
                 window_mode=request.window_mode,
             )
+            warnings = list(preview.warnings)
+            window_count = preview.window_count
+            if request.window_mode == "NYSE_CLOSED_ONLY":
+                window_count = self.window_slicer.estimate_window_count(
+                    request.start_time,
+                    request.end_time,
+                )
+                if window_count == 0:
+                    warnings.append("所选范围未覆盖完整或部分 NYSE 休市窗口。")
             return DatasetPreview(
                 provider=preview.provider,
                 symbol=preview.symbol,
@@ -83,8 +99,8 @@ class BacktestDatasetService:
                 estimated_pages=preview.estimated_pages,
                 estimated_size_bytes=preview.estimated_size_bytes,
                 cache_hit=cached is not None,
-                window_count=preview.window_count,
-                warnings=preview.warnings,
+                window_count=window_count,
+                warnings=tuple(warnings),
             )
         finally:
             await _close_source(source)
@@ -201,11 +217,13 @@ class BacktestDatasetService:
             dataset_id = _dataset_id(request, normalized, checksum)
             cached = self.repo.get_backtest_dataset(dataset_id)
             if cached is not None:
-                return cached
+                self._persist_windows(dataset_id, normalized, request.window_mode)
+                return self.repo.get_backtest_dataset(dataset_id) or cached
             final_path = (self.dataset_root / f"{dataset_id}.csv").resolve()
             if not final_path.is_relative_to(self.dataset_root):
                 raise DataSourceError("冻结数据集路径越界。")
             os.replace(staging_path, final_path)
+            window_count = self._window_count(normalized, request.window_mode)
             self.repo.save_backtest_dataset(
                 {
                     "dataset_id": dataset_id,
@@ -226,10 +244,11 @@ class BacktestDatasetService:
                     "quality_status": quality.status.value,
                     "quality_report": quality.to_mapping(),
                     "window_mode": request.window_mode,
-                    "window_count": None,
+                    "window_count": window_count,
                     "status": quality.status.value,
                 }
             )
+            self._persist_windows(dataset_id, normalized, request.window_mode)
             dataset = self.repo.get_backtest_dataset(dataset_id)
             if dataset is None:
                 raise DataSourceError("上传数据集冻结失败。")
@@ -312,7 +331,7 @@ class BacktestDatasetService:
             self.repo.update_backtest_dataset_job(
                 job_id,
                 status="VALIDATING",
-                stage="VALIDATING",
+                stage="WINDOWING",
                 progress=0.9,
             )
             if not normalized:
@@ -329,6 +348,7 @@ class BacktestDatasetService:
                 raise DataSourceError("冻结数据集路径越界。")
             os.replace(staging_path, final_path)
             status = quality.status.value
+            window_count = self._window_count(normalized, request.window_mode)
             self.repo.save_backtest_dataset(
                 {
                     "dataset_id": dataset_id,
@@ -349,10 +369,11 @@ class BacktestDatasetService:
                     "quality_status": quality.status.value,
                     "quality_report": quality.to_mapping(),
                     "window_mode": request.window_mode,
-                    "window_count": None,
+                    "window_count": window_count,
                     "status": status,
                 }
             )
+            self._persist_windows(dataset_id, normalized, request.window_mode)
             completed_at = datetime.now(timezone.utc).isoformat()
             self.repo.update_backtest_dataset_job(
                 job_id,
@@ -410,12 +431,49 @@ class BacktestDatasetService:
             "actual_end": dataset["actual_end"],
             "schema_version": int(dataset["schema_version"]),
         }
+        if int(dataset["schema_version"]) >= 2:
+            metadata["window_mode"] = str(dataset.get("window_mode") or "RAW_RANGE")
         actual_checksum = _dataset_checksum(path, metadata)
         if actual_checksum != dataset["checksum"]:
             message = "冻结回测数据集校验和不匹配，文件可能已被修改。"
             self.repo.mark_backtest_dataset_corrupted(dataset_id, message)
             raise DataSourceError(message)
+        if (
+            str(dataset.get("window_mode") or "RAW_RANGE") == "NYSE_CLOSED_ONLY"
+            and not self.repo.backtest_dataset_windows(dataset_id)
+        ):
+            with path.open("r", encoding="utf-8-sig", newline="") as fh:
+                mappings = list(csv.DictReader(fh))
+            rows = normalized_klines_from_mappings(
+                mappings,
+                interval_ms=INTERVAL_MILLISECONDS[str(dataset["interval"])],
+            )
+            self._persist_windows(dataset_id, rows, "NYSE_CLOSED_ONLY")
+            dataset = self.repo.get_backtest_dataset(dataset_id) or dataset
         return path, dataset
+
+    def _window_count(
+        self,
+        rows: list[NormalizedKline],
+        window_mode: str,
+    ) -> int:
+        if window_mode != "NYSE_CLOSED_ONLY":
+            return 1 if rows else 0
+        return len(self.window_slicer.slice(rows, observation_rows=0))
+
+    def _persist_windows(
+        self,
+        dataset_id: str,
+        rows: list[NormalizedKline],
+        window_mode: str,
+    ) -> None:
+        if window_mode != "NYSE_CLOSED_ONLY":
+            return
+        windows = self.window_slicer.slice(rows, observation_rows=0)
+        self.repo.replace_backtest_dataset_windows(
+            dataset_id,
+            [window.to_metadata() for window in windows],
+        )
 
     def _ensure_not_cancelled(self, job_id: str) -> None:
         job = self.repo.get_backtest_dataset_job(job_id)
@@ -459,7 +517,7 @@ def _checksum_metadata(
     request: DatasetRequest,
     rows: list[NormalizedKline],
 ) -> dict[str, Any]:
-    return {
+    metadata = {
         "provider": request.provider,
         "symbol": request.symbol,
         "interval": request.interval,
@@ -469,6 +527,9 @@ def _checksum_metadata(
         "actual_end": rows[-1].open_datetime.isoformat(),
         "schema_version": SCHEMA_VERSION,
     }
+    if SCHEMA_VERSION >= 2:
+        metadata["window_mode"] = request.window_mode
+    return metadata
 
 
 def _dataset_checksum(path: Path, metadata: dict[str, Any]) -> str:

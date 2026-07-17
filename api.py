@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import json
 import inspect
-from math import isfinite
+from math import isfinite, sqrt
 import platform
 import shlex
 from pathlib import Path
@@ -25,12 +25,16 @@ from pydantic import BaseModel, Field, model_validator
 import web as legacy_web
 from core.config import AppConfig, load_config, select_account
 from data_sources import (
+    BacktestWindow,
     BinanceHistoricalDataSource,
     DataSourceError,
     DatasetRequest,
     HistoricalDataSource,
     HistoricalDataSourceRegistry,
+    NyseWindowSlicer,
+    normalized_klines_from_mappings,
 )
+from data_sources.csv_source import INTERVAL_MILLISECONDS
 from data_sources.dataset_service import BacktestDatasetService
 from db.database import init_db
 from db.repository import Repository, RoundStartConflict
@@ -855,7 +859,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         dataset = ctx.repo.get_backtest_dataset(dataset_id)
         if dataset is None:
             raise HTTPException(status_code=404, detail="冻结回测数据集不存在。")
-        return _v2_dataset_payload(dataset)
+        payload = _v2_dataset_payload(dataset)
+        payload["windows"] = ctx.repo.backtest_dataset_windows(dataset_id)
+        return payload
 
     @app.delete("/api/v2/backtests/datasets/{dataset_id}")
     def v2_delete_backtest_dataset(
@@ -931,6 +937,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             dataset_schema_version=(
                 int(dataset_metadata["schema_version"])
                 if dataset_metadata.get("schema_version") is not None
+                else None
+            ),
+            window_count=(
+                int(dataset_metadata["window_count"])
+                if dataset_metadata.get("window_count") is not None
                 else None
             ),
         )
@@ -1241,6 +1252,7 @@ def _backtest_dataset_service(
         staging_root=_backtest_staging_root(config),
         source_factory=lambda provider: _build_historical_data_source(config, provider),
         validation_config=backtest.get("validation", {}),
+        windowing_config=backtest.get("windowing", {}),
         max_range_days_1m=int(online.get("max_range_days_1m", 180)),
     )
 
@@ -1382,24 +1394,331 @@ def _execute_v2_backtest(
             "monte_carlo_loss_multiplier": request.monte_carlo_loss_multiplier,
         }
     )
+    dataset_metadata = dataset_metadata or {}
+    window_mode = str(dataset_metadata.get("window_mode") or "RAW_RANGE")
+    if window_mode == "NYSE_CLOSED_ONLY":
+        raw["backtest"]["force_close_at_end"] = True
     runtime_config = SimpleNamespace(raw=raw)
     rows = _read_backtest_csv(dataset_path)
-    summary = _run_backtest_csv(
-        runtime_config,
-        dataset_path,
-        request.observe_rows,
-        request.symbol.upper(),
-        0.0,
-        report_path,
-    )
+    window_backtests: list[dict[str, Any]] | None = None
+    validation_rows = rows
+    if window_mode == "NYSE_CLOSED_ONLY":
+        interval = str(dataset_metadata.get("interval") or "1m")
+        try:
+            interval_ms = INTERVAL_MILLISECONDS[interval]
+        except KeyError as exc:
+            raise RuntimeError(f"数据集周期不支持休市窗口切分: {interval}") from exc
+        windowing = raw.get("backtest", {}).get("windowing", {})
+        slicer = NyseWindowSlicer(
+            force_close_minutes=int(windowing.get("force_close_minutes", 120)),
+            minimum_tradable_rows=int(windowing.get("minimum_tradable_rows", 30)),
+        )
+        normalized_rows = normalized_klines_from_mappings(
+            rows,
+            interval_ms=interval_ms,
+        )
+        windows = slicer.slice(normalized_rows, request.observe_rows)
+        summary, report, window_backtests = _run_nyse_window_backtests(
+            runtime_config,
+            request,
+            windows,
+        )
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        validation_rows = [
+            row.to_mapping()
+            for window in windows
+            if window.status == "READY"
+            for row in window.rows
+        ]
+    else:
+        summary = _run_backtest_csv(
+            runtime_config,
+            dataset_path,
+            request.observe_rows,
+            request.symbol.upper(),
+            0.0,
+            report_path,
+        )
     _append_v2_backtest_validation(
         runtime_config,
         request,
-        rows,
+        validation_rows,
         report_path,
-        dataset_metadata or {},
+        dataset_metadata,
+        window_backtests=window_backtests,
     )
-    return summary, rows
+    return summary, validation_rows
+
+
+def _run_nyse_window_backtests(
+    runtime_config: SimpleNamespace,
+    request: "V2BacktestRunRequest",
+    windows: list[BacktestWindow],
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    from strategy.backtest import backtest_config_from_mapping, run_grid_backtest
+    from strategy.grid_calculator import calculate_grid_params
+    from trader import _backtest_report, _backtest_summary, _grid_config_from_raw
+
+    if not windows:
+        raise RuntimeError("所选数据范围没有覆盖 NYSE 休市窗口。")
+    grid_config = _grid_config_from_raw(runtime_config.raw)
+    run_config = backtest_config_from_mapping(runtime_config.raw)
+    entries: list[dict[str, Any]] = []
+    completed: list[dict[str, Any]] = []
+    for window in windows:
+        metadata = window.to_metadata()
+        if window.status != "READY":
+            entries.append({"window": metadata, "status": "SKIPPED"})
+            continue
+        mappings = [row.to_mapping() for row in window.rows]
+        observe = mappings[: request.observe_rows]
+        test = mappings[request.observe_rows :]
+        try:
+            current_price = float(observe[-1]["close"])
+            params = calculate_grid_params(
+                symbol=request.symbol.upper(),
+                klines=observe,
+                current_price=current_price,
+                funding_rate=0.0,
+                config=grid_config,
+            )
+            result = run_grid_backtest(
+                params,
+                test,
+                current_price=current_price,
+                config=run_config,
+            )
+            summary = _backtest_summary(result, request.observe_rows, len(test))
+            report = _backtest_report(result, params, summary)
+            entry = {
+                "window": metadata,
+                "status": "COMPLETED",
+                "summary": summary,
+                "report": report,
+            }
+            completed.append(entry)
+            entries.append(entry)
+        except Exception as exc:
+            entries.append(
+                {
+                    "window": metadata,
+                    "status": "FAILED",
+                    "error": str(exc),
+                }
+            )
+    if not completed:
+        reasons = [
+            item.get("window", {}).get("warning") or item.get("error")
+            for item in entries
+        ]
+        message = "；".join(str(reason) for reason in reasons if reason)
+        raise RuntimeError(message or "没有可执行的 NYSE 休市回测窗口。")
+    summary, report = _aggregate_window_backtests(entries, completed)
+    return summary, report, entries
+
+
+def _aggregate_window_backtests(
+    entries: list[dict[str, Any]],
+    completed: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    fills: list[dict[str, Any]] = []
+    equity_curve: list[dict[str, Any]] = []
+    window_summaries: list[dict[str, Any]] = []
+    cumulative_pnl = 0.0
+    max_equity = 0.0
+    max_drawdown = 0.0
+    global_bar_index = 0
+    for entry in completed:
+        window = entry["window"]
+        summary = entry["summary"]
+        report = entry["report"]
+        base_pnl = cumulative_pnl
+        for fill in report.get("fills", []):
+            item = dict(fill)
+            item["window_id"] = window["window_id"]
+            item["window_bar_index"] = item.get("bar_index")
+            item["bar_index"] = global_bar_index + int(item.get("bar_index") or 0)
+            item["realized_pnl_after"] = base_pnl + float(
+                item.get("realized_pnl_after") or 0.0
+            )
+            fills.append(item)
+        local_curve = report.get("equity_curve", [])
+        for point in local_curve:
+            item = dict(point)
+            equity = base_pnl + float(item.get("equity") or 0.0)
+            max_equity = max(max_equity, equity)
+            drawdown = max(0.0, max_equity - equity)
+            max_drawdown = max(max_drawdown, drawdown)
+            item.update(
+                {
+                    "window_id": window["window_id"],
+                    "window_bar_index": item.get("bar_index"),
+                    "bar_index": global_bar_index + int(item.get("bar_index") or 0),
+                    "equity": equity,
+                    "realized_pnl": base_pnl
+                    + float(item.get("realized_pnl") or 0.0),
+                    "drawdown": drawdown,
+                }
+            )
+            equity_curve.append(item)
+        cumulative_pnl += float(summary.get("total_pnl") or 0.0)
+        global_bar_index += len(local_curve)
+        window_summaries.append(
+            {
+                **window,
+                "status": "COMPLETED",
+                "total_pnl": float(summary.get("total_pnl") or 0.0),
+                "max_drawdown": float(summary.get("max_drawdown") or 0.0),
+                "fills": int(summary.get("fills") or 0),
+                "stopped_reason": summary.get("stopped_reason"),
+                "max_inventory_utilization": float(
+                    summary.get("max_inventory_utilization") or 0.0
+                ),
+            }
+        )
+    for entry in entries:
+        if entry.get("status") == "COMPLETED":
+            continue
+        window_summaries.append(
+            {
+                **entry.get("window", {}),
+                "status": entry.get("status"),
+                "error": entry.get("error"),
+            }
+        )
+    window_summaries.sort(key=lambda item: str(item.get("market_close") or ""))
+    summary = _aggregate_window_summary(completed, fills, equity_curve, max_drawdown)
+    report = {
+        "summary": summary,
+        "grid_params": completed[0]["report"].get("grid_params", {}),
+        "window_grid_params": [
+            {
+                "window_id": entry["window"]["window_id"],
+                **entry["report"].get("grid_params", {}),
+            }
+            for entry in completed
+        ],
+        "fills": fills,
+        "equity_curve": equity_curve,
+        "windows": window_summaries,
+    }
+    return summary, report
+
+
+def _aggregate_window_summary(
+    completed: list[dict[str, Any]],
+    fills: list[dict[str, Any]],
+    equity_curve: list[dict[str, Any]],
+    max_drawdown: float,
+) -> dict[str, Any]:
+    summaries = [entry["summary"] for entry in completed]
+    total_pnl = sum(float(item.get("total_pnl") or 0.0) for item in summaries)
+    changes = [
+        float(equity_curve[index].get("equity") or 0.0)
+        - float(equity_curve[index - 1].get("equity") or 0.0)
+        for index in range(1, len(equity_curve))
+    ]
+    closed_pnls = [
+        float(fill["grid_pnl"])
+        for fill in fills
+        if fill.get("grid_pnl") is not None
+    ]
+    gross_profit = sum(value for value in closed_pnls if value > 0)
+    gross_loss = abs(sum(value for value in closed_pnls if value < 0))
+    inventory = [
+        float(point.get("inventory_utilization") or 0.0)
+        for point in equity_curve
+    ]
+    grid_trade_count = sum(int(item.get("grid_trade_count") or 0) for item in summaries)
+    winning = sum(int(item.get("winning_grid_trades") or 0) for item in summaries)
+    backtest_rows = sum(int(item.get("backtest_rows") or 0) for item in summaries)
+    return {
+        "symbol": str(summaries[0].get("symbol") or ""),
+        "observe_rows": int(summaries[0].get("observe_rows") or 0),
+        "backtest_rows": backtest_rows,
+        "window_count": len(completed),
+        "fills": len(fills),
+        "fills_per_bar": len(fills) / backtest_rows if backtest_rows else 0.0,
+        "grid_trade_count": grid_trade_count,
+        "winning_grid_trades": winning,
+        "losing_grid_trades": sum(
+            int(item.get("losing_grid_trades") or 0) for item in summaries
+        ),
+        "break_even_grid_trades": sum(
+            int(item.get("break_even_grid_trades") or 0) for item in summaries
+        ),
+        "win_rate": winning / grid_trade_count if grid_trade_count else 0.0,
+        "avg_grid_pnl": sum(closed_pnls) / len(closed_pnls) if closed_pnls else 0.0,
+        "gross_grid_pnl": sum(float(item.get("gross_grid_pnl") or 0.0) for item in summaries),
+        "fees_paid": sum(float(item.get("fees_paid") or 0.0) for item in summaries),
+        "realized_pnl": total_pnl,
+        "unrealized_pnl": 0.0,
+        "total_pnl": total_pnl,
+        "max_equity": max((float(item.get("equity") or 0.0) for item in equity_curve), default=0.0),
+        "max_drawdown": max_drawdown,
+        "equity_sharpe": _series_sharpe(changes),
+        "sortino": _series_sortino(changes),
+        "calmar": total_pnl / max_drawdown if max_drawdown > 0 else 0.0,
+        "cvar_95": _series_cvar(changes),
+        "profit_factor": (
+            gross_profit / gross_loss
+            if gross_loss > 0
+            else (gross_profit if gross_profit > 0 else 0.0)
+        ),
+        "grid_fill_ratio": _ratio_sum(summaries, "fills", "attempted_fill_count"),
+        "pair_completion_ratio": _ratio_sum(summaries, "pair_completion_count", "fills"),
+        "inventory_p50": _numeric_quantile(inventory, 0.50),
+        "inventory_p95": _numeric_quantile(inventory, 0.95),
+        "inventory_p99": _numeric_quantile(inventory, 0.99),
+        "max_inventory_utilization": max(inventory, default=0.0),
+        "attempted_fill_count": sum(int(item.get("attempted_fill_count") or 0) for item in summaries),
+        "rejected_fill_count": sum(int(item.get("rejected_fill_count") or 0) for item in summaries),
+        "pair_completion_count": sum(int(item.get("pair_completion_count") or 0) for item in summaries),
+        "funding_paid": sum(float(item.get("funding_paid") or 0.0) for item in summaries),
+        "stop_exit_cost": sum(float(item.get("stop_exit_cost") or 0.0) for item in summaries),
+        "stop_exit_pnl": sum(float(item.get("stop_exit_pnl") or 0.0) for item in summaries),
+        "net_position_qty": 0.0,
+        "open_order_count": 0,
+        "stopped_reason": "window_batch_completed",
+        "stopped_at_index": None,
+        "stopped_at_price": None,
+        "last_price": float(summaries[-1].get("last_price") or 0.0),
+    }
+
+
+def _ratio_sum(items: list[dict[str, Any]], numerator: str, denominator: str) -> float:
+    upper = sum(float(item.get(numerator) or 0.0) for item in items)
+    lower = sum(float(item.get(denominator) or 0.0) for item in items)
+    return upper / lower if lower else 0.0
+
+
+def _series_sharpe(changes: list[float]) -> float:
+    if len(changes) < 2:
+        return 0.0
+    mean = sum(changes) / len(changes)
+    variance = sum((value - mean) ** 2 for value in changes) / (len(changes) - 1)
+    return mean / sqrt(variance) * sqrt(len(changes)) if variance > 0 else 0.0
+
+
+def _series_sortino(changes: list[float]) -> float:
+    if len(changes) < 2:
+        return 0.0
+    downside = [min(0.0, value) for value in changes]
+    variance = sum(value * value for value in downside) / len(downside)
+    return (sum(changes) / len(changes)) / sqrt(variance) * sqrt(len(changes)) if variance > 0 else 0.0
+
+
+def _series_cvar(changes: list[float]) -> float:
+    losses = sorted(-value for value in changes if value < 0)
+    if not losses:
+        return 0.0
+    tail_start = max(0, int(len(losses) * 0.95) - 1)
+    tail = losses[tail_start:]
+    return sum(tail) / len(tail)
 
 
 def _append_v2_backtest_validation(
@@ -1408,6 +1727,7 @@ def _append_v2_backtest_validation(
     rows: list[dict[str, Any]],
     report_path: Path,
     dataset_metadata: dict[str, Any] | None = None,
+    window_backtests: list[dict[str, Any]] | None = None,
 ) -> None:
     from strategy.backtest import (
         backtest_config_from_mapping,
@@ -1498,10 +1818,14 @@ def _append_v2_backtest_validation(
         grid_config,
         run_config,
     )
-    window_distribution = _backtest_window_distribution(
-        report.get("equity_curve", []),
-        request.distribution_window_rows,
-        0.0,
+    window_distribution = (
+        _nyse_window_distribution(window_backtests)
+        if window_backtests is not None
+        else _backtest_window_distribution(
+            report.get("equity_curve", []),
+            request.distribution_window_rows,
+            0.0,
+        )
     )
     report["validation"] = {
         "walk_forward": walk_forward,
@@ -1512,6 +1836,7 @@ def _append_v2_backtest_validation(
             "status": "NOT_AVAILABLE",
             "reason": "当前 CSV 未包含历史盘口深度与点差，未伪造 Regime 过滤结果。",
         },
+        "window_analysis": _window_analysis(window_backtests),
         "sample_label": request.sample_label,
         "parameters_frozen": request.parameters_frozen,
         "warning": (
@@ -1527,6 +1852,11 @@ def _append_v2_backtest_validation(
         "dataset_checksum": dataset_metadata.get("checksum"),
         "data_provider": dataset_metadata.get("provider", "LEGACY_CSV"),
         "window_mode": dataset_metadata.get("window_mode", "RAW_RANGE"),
+        "window_count": (
+            len(window_backtests)
+            if window_backtests is not None
+            else dataset_metadata.get("window_count")
+        ),
         "dataset_schema_version": dataset_metadata.get("schema_version"),
         "sample_label": request.sample_label,
         "parameters_frozen": request.parameters_frozen,
@@ -1661,6 +1991,7 @@ def _backtest_window_distribution(
     if not isinstance(equity_curve, list) or not equity_curve:
         return {
             "status": "EMPTY",
+            "source": "FIXED_ROWS",
             "window_rows": window_rows,
             "window_count": 0,
             "values": [],
@@ -1676,6 +2007,7 @@ def _backtest_window_distribution(
         previous_equity = end_equity
     return {
         "status": "COMPLETED",
+        "source": "FIXED_ROWS",
         "window_rows": window_rows,
         "window_count": len(values),
         "positive_ratio": (
@@ -1689,6 +2021,114 @@ def _backtest_window_distribution(
         "worst": min(values, default=0.0),
         "best": max(values, default=0.0),
         "values": values,
+    }
+
+
+def _nyse_window_distribution(
+    window_backtests: list[dict[str, Any]],
+) -> dict[str, Any]:
+    completed = [
+        item
+        for item in window_backtests
+        if item.get("status") == "COMPLETED"
+        and isinstance(item.get("summary"), dict)
+    ]
+    values = [
+        float(item["summary"].get("total_pnl") or 0.0)
+        for item in completed
+    ]
+    skipped_count = sum(
+        1 for item in window_backtests if item.get("status") == "SKIPPED"
+    )
+    failed_count = sum(
+        1 for item in window_backtests if item.get("status") == "FAILED"
+    )
+    return {
+        "status": "COMPLETED" if values else "EMPTY",
+        "source": "NYSE_WINDOWS",
+        "window_rows": None,
+        "window_count": len(values),
+        "total_window_count": len(window_backtests),
+        "skipped_count": skipped_count,
+        "failed_count": failed_count,
+        "positive_ratio": (
+            sum(1 for value in values if value > 0) / len(values)
+            if values
+            else 0.0
+        ),
+        "p05": _numeric_quantile(values, 0.05),
+        "p50": _numeric_quantile(values, 0.50),
+        "p95": _numeric_quantile(values, 0.95),
+        "worst": min(values, default=0.0),
+        "best": max(values, default=0.0),
+        "values": values,
+    }
+
+
+def _window_analysis(
+    window_backtests: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    if window_backtests is None:
+        return {
+            "status": "NOT_APPLICABLE",
+            "source": "RAW_RANGE",
+            "total_count": 0,
+            "completed_count": 0,
+            "skipped_count": 0,
+            "failed_count": 0,
+            "reason_counts": {},
+            "windows": [],
+        }
+
+    windows: list[dict[str, Any]] = []
+    reason_counts: dict[str, int] = {}
+    for entry in window_backtests:
+        window = entry.get("window")
+        window = window if isinstance(window, dict) else {}
+        summary = entry.get("summary")
+        summary = summary if isinstance(summary, dict) else {}
+        status = str(entry.get("status") or window.get("status") or "UNKNOWN")
+        reason = str(
+            window.get("skip_reason")
+            or entry.get("error")
+            or window.get("warning")
+            or ""
+        )
+        if reason:
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        windows.append(
+            {
+                "window_id": window.get("window_id"),
+                "market_close": window.get("market_close"),
+                "force_close_at": window.get("force_close_at"),
+                "row_count": int(window.get("row_count") or 0),
+                "observation_rows": int(window.get("observation_rows") or 0),
+                "tradable_rows": int(window.get("tradable_rows") or 0),
+                "status": status,
+                "skip_reason": window.get("skip_reason"),
+                "reason": window.get("warning") or entry.get("error"),
+                "total_pnl": summary.get("total_pnl"),
+                "max_drawdown": summary.get("max_drawdown"),
+                "fills": summary.get("fills"),
+                "stopped_reason": summary.get("stopped_reason"),
+            }
+        )
+
+    completed_count = sum(1 for item in windows if item["status"] == "COMPLETED")
+    skipped_count = sum(1 for item in windows if item["status"] == "SKIPPED")
+    failed_count = sum(1 for item in windows if item["status"] == "FAILED")
+    status = "COMPLETED"
+    if failed_count or skipped_count:
+        status = "COMPLETED_WITH_EXCLUSIONS" if completed_count else "NO_VALID_WINDOWS"
+    return {
+        "status": status,
+        "source": "NYSE_WINDOWS",
+        "total_count": len(windows),
+        "completed_count": completed_count,
+        "skipped_count": skipped_count,
+        "failed_count": failed_count,
+        "reason_counts": reason_counts,
+        "windows": windows,
     }
 
 
@@ -1873,6 +2313,7 @@ def _v2_backtest_payload(
         "dataset_checksum": str(row.get("dataset_checksum") or ""),
         "data_provider": str(row.get("data_provider") or ""),
         "window_mode": str(row.get("window_mode") or ""),
+        "window_count": row.get("window_count"),
         "dataset_schema_version": row.get("dataset_schema_version"),
         "report_path": str(row.get("report_path") or ""),
         "config": row.get("config") if isinstance(row.get("config"), dict) else {},
@@ -1929,6 +2370,8 @@ def _normalize_backtest_report(
         return report
     previous = validation.get("window_distribution")
     previous = previous if isinstance(previous, dict) else {}
+    if previous.get("source") == "NYSE_WINDOWS":
+        return report
     try:
         window_rows = max(
             1,

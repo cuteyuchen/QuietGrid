@@ -423,6 +423,22 @@ export type V2BacktestDetail = V2BacktestRun & {
   report: {
     summary?: Record<string, number | string | null>
     grid_params?: Record<string, unknown>
+    windows?: Array<{
+      window_id?: string
+      market_close?: string
+      force_close_at?: string
+      row_count?: number
+      observation_rows?: number
+      tradable_rows?: number
+      status?: string
+      skip_reason?: string | null
+      warning?: string | null
+      error?: string | null
+      total_pnl?: number
+      max_drawdown?: number
+      fills?: number
+      stopped_reason?: string | null
+    }>
     fills?: Array<Record<string, unknown>>
     equity_curve?: Array<{
       bar_index?: number
@@ -477,8 +493,12 @@ export type V2BacktestDetail = V2BacktestRun & {
       }
       window_distribution?: {
         status?: string
+        source?: 'FIXED_ROWS' | 'NYSE_WINDOWS'
         window_rows?: number
         window_count?: number
+        total_window_count?: number
+        skipped_count?: number
+        failed_count?: number
         positive_ratio?: number
         p05?: number
         p50?: number
@@ -486,6 +506,30 @@ export type V2BacktestDetail = V2BacktestRun & {
         worst?: number
         best?: number
         values?: number[]
+      }
+      window_analysis?: {
+        status?: string
+        source?: 'RAW_RANGE' | 'NYSE_WINDOWS'
+        total_count?: number
+        completed_count?: number
+        skipped_count?: number
+        failed_count?: number
+        reason_counts?: Record<string, number>
+        windows?: Array<{
+          window_id?: string
+          market_close?: string
+          force_close_at?: string
+          row_count?: number
+          observation_rows?: number
+          tradable_rows?: number
+          status?: string
+          skip_reason?: string | null
+          reason?: string | null
+          total_pnl?: number | null
+          max_drawdown?: number | null
+          fills?: number | null
+          stopped_reason?: string | null
+        }>
       }
       regime_diagnostics?: {
         status?: string

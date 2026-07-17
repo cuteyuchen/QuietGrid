@@ -12,10 +12,16 @@ from data_sources.models import (
     NormalizedKline,
 )
 from data_sources.registry import HistoricalDataSourceRegistry
+from data_sources.window_slicer import (
+    BacktestWindow,
+    NyseWindowSlicer,
+    normalized_klines_from_mappings,
+)
 
 __all__ = [
     "CsvHistoricalDataSource",
     "BinanceHistoricalDataSource",
+    "BacktestWindow",
     "DataSourceError",
     "DatasetPreview",
     "DatasetQualityReport",
@@ -25,5 +31,7 @@ __all__ = [
     "HistoricalDataSourceRegistry",
     "HistoricalSymbol",
     "NormalizedKline",
+    "NyseWindowSlicer",
+    "normalized_klines_from_mappings",
     "read_legacy_backtest_csv",
 ]

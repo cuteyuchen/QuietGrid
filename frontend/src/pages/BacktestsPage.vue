@@ -81,6 +81,9 @@ const monteCarloValues = computed(() => [
 const sensitivity = computed(() => validation.value?.cost_sensitivity)
 const windowDistribution = computed(() => validation.value?.window_distribution)
 const windowValues = computed(() => windowDistribution.value?.values || [])
+const windowAnalysis = computed(() => validation.value?.window_analysis)
+const analyzedWindows = computed(() => windowAnalysis.value?.windows || [])
+const usesNyseWindows = computed(() => windowDistribution.value?.source === 'NYSE_WINDOWS')
 const selectedDataset = computed(() => datasets.value.find((item) => (
   form.value.datasetId
     ? item.datasetId === form.value.datasetId
@@ -215,6 +218,24 @@ function pct(value: number, digits = 1) {
 function number(value: unknown, digits = 2) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed.toFixed(digits) : '—'
+}
+
+function windowStatus(value: unknown) {
+  const labels: Record<string, string> = {
+    COMPLETED: '已完成',
+    SKIPPED: '已跳过',
+    FAILED: '失败',
+  }
+  return labels[String(value || '')] || String(value || '未知')
+}
+
+function windowReason(value: unknown) {
+  const labels: Record<string, string> = {
+    NO_DATA: '窗口内没有可用 K 线',
+    INSUFFICIENT_OBSERVATION_ROWS: 'K 线不足以完成观察期',
+    INSUFFICIENT_TRADABLE_ROWS: '观察期后可交易 K 线不足',
+  }
+  return labels[String(value || '')] || String(value || '—')
 }
 
 function time(value: string | number | null | undefined) {
@@ -424,7 +445,7 @@ function downloadReport() {
             </span>
             <small>{{ sampleLabel(run.config.sample_label) }} · {{ time(run.startedAt) }}</small>
             <small v-if="run.datasetId" class="run-dataset-ref">Dataset {{ run.datasetId.slice(0, 24) }}… · {{ run.dataProvider || '—' }}</small>
-            <small v-if="run.datasetChecksum" class="mono">Hash {{ run.datasetChecksum.slice(0, 12) }}… · {{ run.windowMode || 'RAW_RANGE' }}</small>
+            <small v-if="run.datasetChecksum" class="mono">Hash {{ run.datasetChecksum.slice(0, 12) }}… · {{ run.windowMode || 'RAW_RANGE' }} · {{ run.windowCount ?? '—' }} 窗口</small>
             <small>{{ run.fillModel }} · DD {{ money(Number(run.metrics.max_drawdown || 0)) }}</small>
             <b :class="Number(run.metrics.total_pnl || 0) >= 0 ? 'positive' : 'negative'">
               {{ money(Number(run.metrics.total_pnl || 0)) }}
@@ -487,6 +508,7 @@ function downloadReport() {
               <div><dt>Dataset ID</dt><dd class="mono">{{ metadata?.dataset_id || selected.datasetId || '旧版 CSV' }}</dd></div>
               <div><dt>数据哈希</dt><dd class="mono">{{ metadata?.dataset_checksum || selected.datasetChecksum || '—' }}</dd></div>
               <div><dt>Provider / 窗口</dt><dd>{{ metadata?.data_provider || selected.dataProvider || 'local' }} · {{ metadata?.window_mode || selected.windowMode || 'RAW_RANGE' }}</dd></div>
+              <div><dt>休市窗口</dt><dd>{{ metadata?.window_count ?? selected.windowCount ?? '—' }} 个</dd></div>
               <div><dt>数据区间</dt><dd>{{ time(metadata?.data_start) }} – {{ time(metadata?.data_end) }}</dd></div>
               <div><dt>总行数 / 执行行数</dt><dd>{{ metadata?.row_count || '—' }} / {{ metadata?.execution_rows || '—' }}</dd></div>
               <div><dt>代码提交</dt><dd class="mono">{{ metadata?.code_commit || selected.codeCommit || '—' }}</dd></div>
@@ -547,16 +569,60 @@ function downloadReport() {
 
             <section class="chart-block">
               <div class="panel__header">
-                <div><h3>固定窗口收益分布</h3><p>每 {{ windowDistribution?.window_rows || 0 }} 根 K 线一个窗口</p></div>
+                <div>
+                  <h3>{{ usesNyseWindows ? 'NYSE 休市窗口收益分布' : '固定窗口收益分布' }}</h3>
+                  <p v-if="usesNyseWindows">{{ windowDistribution?.window_count || 0 }} 个已执行窗口 / {{ windowDistribution?.total_window_count || 0 }} 个识别窗口</p>
+                  <p v-else>每 {{ windowDistribution?.window_rows || 0 }} 根 K 线一个窗口</p>
+                </div>
                 <StatusBadge :tone="Number(windowDistribution?.positive_ratio || 0) >= 0.5 ? 'good' : 'warning'" :label="`盈利窗口 ${pct(Number(windowDistribution?.positive_ratio || 0))}`" />
               </div>
-              <MiniLineChart :values="windowValues" label="固定窗口收益序列" :tone="Number(windowDistribution?.worst || 0) < 0 ? 'danger' : 'good'" />
+              <MiniLineChart :values="windowValues" :label="usesNyseWindows ? 'NYSE 休市窗口收益序列' : '固定窗口收益序列'" :tone="Number(windowDistribution?.worst || 0) < 0 ? 'danger' : 'good'" />
               <dl class="metadata-grid metadata-grid--wide">
                 <div><dt>P05</dt><dd>{{ money(Number(windowDistribution?.p05 || 0)) }}</dd></div>
                 <div><dt>P50</dt><dd>{{ money(Number(windowDistribution?.p50 || 0)) }}</dd></div>
                 <div><dt>P95</dt><dd>{{ money(Number(windowDistribution?.p95 || 0)) }}</dd></div>
                 <div><dt>最差 / 最好</dt><dd>{{ money(Number(windowDistribution?.worst || 0)) }} / {{ money(Number(windowDistribution?.best || 0)) }}</dd></div>
               </dl>
+            </section>
+
+            <section v-if="windowAnalysis?.source === 'NYSE_WINDOWS'" class="chart-block">
+              <div class="panel__header">
+                <div>
+                  <h3>休市窗口执行明细</h3>
+                  <p>每个窗口独立观察、建网格，并在盘前缓冲点强制平仓。</p>
+                </div>
+                <StatusBadge
+                  :tone="Number(windowAnalysis.failed_count || 0) > 0 ? 'danger' : Number(windowAnalysis.skipped_count || 0) > 0 ? 'warning' : 'good'"
+                  :label="`${windowAnalysis.completed_count || 0}/${windowAnalysis.total_count || 0} 已完成`"
+                />
+              </div>
+              <dl class="metadata-grid metadata-grid--wide">
+                <div><dt>识别窗口</dt><dd>{{ windowAnalysis.total_count || 0 }}</dd></div>
+                <div><dt>完成</dt><dd>{{ windowAnalysis.completed_count || 0 }}</dd></div>
+                <div><dt>跳过</dt><dd>{{ windowAnalysis.skipped_count || 0 }}</dd></div>
+                <div><dt>失败</dt><dd>{{ windowAnalysis.failed_count || 0 }}</dd></div>
+              </dl>
+              <details class="disclosure">
+                <summary><BarChart3 :size="18" />查看 {{ analyzedWindows.length }} 个窗口</summary>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>NYSE 收盘</th><th>强平边界</th><th>状态</th><th>行数</th><th>可交易</th><th>净收益</th><th>回撤</th><th>成交</th><th>说明</th></tr></thead>
+                    <tbody>
+                      <tr v-for="item in analyzedWindows" :key="item.window_id">
+                        <td>{{ time(item.market_close) }}</td>
+                        <td>{{ time(item.force_close_at) }}</td>
+                        <td><strong>{{ windowStatus(item.status) }}</strong></td>
+                        <td>{{ item.row_count || 0 }}</td>
+                        <td>{{ item.tradable_rows || 0 }}</td>
+                        <td :class="Number(item.total_pnl || 0) >= 0 ? 'positive' : 'negative'">{{ item.total_pnl == null ? '—' : money(Number(item.total_pnl)) }}</td>
+                        <td>{{ item.max_drawdown == null ? '—' : money(Number(item.max_drawdown)) }}</td>
+                        <td>{{ item.fills ?? '—' }}</td>
+                        <td>{{ item.reason || windowReason(item.skip_reason) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             </section>
 
             <section class="chart-block">
@@ -583,7 +649,7 @@ function downloadReport() {
               </div>
             </section>
 
-            <details class="disclosure" open>
+            <details class="disclosure">
               <summary><BarChart3 :size="18" />查看 {{ walkForwardFolds.length }} 个 Walk-Forward 折</summary>
               <div class="table-wrap">
                 <table>

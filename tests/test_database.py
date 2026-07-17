@@ -624,3 +624,59 @@ def test_v2_schema_is_idempotent_and_session_grid_metadata_is_persisted(tmp_path
     assert row["regime_score"] == 86
     assert row["grid_mode"] == "adaptive_v2"
     assert row["parameter_version"] == "adaptive-grid-v2"
+
+
+def test_repository_persists_frozen_dataset_windows(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 17, tzinfo=timezone.utc).isoformat()
+    repo.save_backtest_dataset(
+        {
+            "dataset_id": "dataset-window-test",
+            "provider": "csv",
+            "market": "LOCAL",
+            "symbol": "BTCUSDT",
+            "interval": "1m",
+            "requested_start": now,
+            "requested_end": now,
+            "actual_start": now,
+            "actual_end": now,
+            "row_count": 100,
+            "file_path": "dataset-window-test.csv",
+            "checksum": "abc123",
+            "schema_version": 2,
+            "quality_status": "READY",
+            "quality_report": {},
+            "window_mode": "NYSE_CLOSED_ONLY",
+            "window_count": 0,
+            "status": "READY",
+        }
+    )
+
+    repo.replace_backtest_dataset_windows(
+        "dataset-window-test",
+        [
+            {
+                "window_id": "nyse_20260717T200000Z",
+                "market_close": "2026-07-17T20:00:00+00:00",
+                "force_close_at": "2026-07-20T06:00:00+00:00",
+                "row_start_index": 10,
+                "row_end_index": 80,
+                "row_count": 70,
+                "observation_rows": 30,
+                "tradable_rows": 40,
+                "status": "READY",
+                "warning": None,
+                "skip_reason": None,
+            }
+        ],
+    )
+
+    windows = repo.backtest_dataset_windows("dataset-window-test")
+    dataset = repo.get_backtest_dataset("dataset-window-test")
+    assert len(windows) == 1
+    assert windows[0]["row_start_index"] == 10
+    assert windows[0]["tradable_rows"] == 40
+    assert dataset is not None
+    assert dataset["window_count"] == 1

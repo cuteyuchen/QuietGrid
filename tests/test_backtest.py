@@ -229,6 +229,36 @@ def test_conservative_stop_liquidates_inventory_with_slippage_and_taker_fee() ->
     assert result.unrealized_pnl == 0
 
 
+def test_window_force_close_liquidates_inventory_and_clears_orders() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [{"high": 100.2, "low": 98.98, "close": 99.5, "timestamp": "window-end"}],
+        current_price=101.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            maker_fill_probability=1,
+            max_fills_per_bar=1,
+            taker_fee_rate=0.001,
+            stop_slippage_bps=10,
+            stop_on_range_break=False,
+            force_close_at_end=True,
+        ),
+    )
+
+    assert [fill.side for fill in result.fills] == ["BUY"]
+    assert result.stopped_reason == "window_force_close"
+    assert result.stopped_at_index == 1
+    assert result.open_order_count == 0
+    assert result.net_position_qty == 0
+    assert result.unrealized_pnl == 0
+    assert result.stop_exit_pnl < 0
+    assert result.stop_exit_cost > 0
+    assert result.equity_curve[-1].inventory_utilization == 0
+
+
 def test_backtest_rejects_future_available_data_and_reverse_time() -> None:
     future_row = {
         "high": 100.0,

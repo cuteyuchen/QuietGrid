@@ -28,6 +28,7 @@ class BacktestConfig:
     taker_fee_rate: float = 0.0
     stop_slippage_bps: float = 0.0
     funding_rate_per_bar: float = 0.0
+    force_close_at_end: bool = False
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,7 @@ def backtest_config_from_mapping(raw: dict[str, Any]) -> BacktestConfig:
         taker_fee_rate=float(backtest.get("taker_fee_rate", 0.0005)),
         stop_slippage_bps=float(backtest.get("stop_slippage_bps", 10.0)),
         funding_rate_per_bar=float(backtest.get("funding_rate_per_bar", 0.0)),
+        force_close_at_end=bool(backtest.get("force_close_at_end", False)),
     )
 
 
@@ -284,6 +286,39 @@ def run_grid_backtest(
             bar_index,
             _bar_timestamp(row),
             close,
+            gross_grid_pnl - fees_paid - funding_paid,
+            long_lots,
+            short_lots,
+            max_equity,
+            max_drawdown,
+            config.capital * config.leverage,
+            max_inventory_utilization,
+        )
+
+    if config.force_close_at_end and stopped_reason is None:
+        stop_exit_pnl, stop_exit_cost = _close_all_lots_at_market(
+            long_lots,
+            short_lots,
+            last_price,
+            config.taker_fee_rate,
+            config.stop_slippage_bps,
+        )
+        gross_grid_pnl += stop_exit_pnl
+        fees_paid += stop_exit_cost
+        stopped_reason = "window_force_close"
+        stopped_at_index = len(klines)
+        stopped_at_price = last_price
+        open_orders.clear()
+        (
+            _equity,
+            max_equity,
+            max_drawdown,
+            max_inventory_utilization,
+        ) = _append_equity_point(
+            equity_curve,
+            len(klines),
+            _bar_timestamp(klines[-1]),
+            last_price,
             gross_grid_pnl - fees_paid - funding_paid,
             long_lots,
             short_lots,
@@ -514,6 +549,28 @@ def _close_all_lots(
     pnl += sum((lot.entry_price - exit_price) * lot.qty for lot in short_lots)
     closed_qty = sum(lot.qty for lot in long_lots) + sum(lot.qty for lot in short_lots)
     fee = exit_price * closed_qty * taker_fee_rate
+    long_lots.clear()
+    short_lots.clear()
+    return pnl, fee
+
+
+def _close_all_lots_at_market(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    mark_price: float,
+    taker_fee_rate: float,
+    slippage_bps: float,
+) -> tuple[float, float]:
+    slippage = max(0.0, slippage_bps) / 10_000
+    long_exit = mark_price * (1 - slippage)
+    short_exit = mark_price * (1 + slippage)
+    pnl = sum((long_exit - lot.entry_price) * lot.qty for lot in long_lots)
+    pnl += sum((lot.entry_price - short_exit) * lot.qty for lot in short_lots)
+    long_qty = sum(lot.qty for lot in long_lots)
+    short_qty = sum(lot.qty for lot in short_lots)
+    fee = (
+        long_exit * long_qty + short_exit * short_qty
+    ) * taker_fee_rate
     long_lots.clear()
     short_lots.clear()
     return pnl, fee

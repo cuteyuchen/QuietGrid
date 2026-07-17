@@ -363,11 +363,14 @@ CREATE TABLE IF NOT EXISTS backtest_dataset_windows (
     window_id           TEXT NOT NULL,
     market_close        DATETIME NOT NULL,
     force_close_at      DATETIME NOT NULL,
+    row_start_index     INTEGER,
+    row_end_index       INTEGER,
     row_count           INTEGER NOT NULL,
     observation_rows    INTEGER NOT NULL,
     tradable_rows       INTEGER NOT NULL,
     status              TEXT NOT NULL,
     warning             TEXT,
+    skip_reason         TEXT,
     created_at          DATETIME NOT NULL,
     UNIQUE(dataset_id, window_id)
 );
@@ -463,6 +466,13 @@ BACKTEST_RUN_COLUMN_MIGRATIONS = {
     "data_provider": "TEXT",
     "window_mode": "TEXT",
     "dataset_schema_version": "INTEGER",
+    "window_count": "INTEGER",
+}
+
+BACKTEST_DATASET_WINDOW_COLUMN_MIGRATIONS = {
+    "row_start_index": "INTEGER",
+    "row_end_index": "INTEGER",
+    "skip_reason": "TEXT",
 }
 
 
@@ -484,6 +494,11 @@ def init_db(db_path: str | Path) -> None:
         _ensure_columns(conn, "windows", WINDOW_COLUMN_MIGRATIONS)
         _ensure_session_columns(conn)
         _ensure_columns(conn, "backtest_runs", BACKTEST_RUN_COLUMN_MIGRATIONS)
+        _ensure_columns(
+            conn,
+            "backtest_dataset_windows",
+            BACKTEST_DATASET_WINDOW_COLUMN_MIGRATIONS,
+        )
         conn.executescript(INDEX_SCHEMA_SQL)
         conn.commit()
 

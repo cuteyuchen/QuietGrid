@@ -1625,6 +1625,92 @@ def test_v2_upload_csv_validates_and_freezes_dataset(tmp_path) -> None:
         assert [item["source_type"] for item in listed] == ["FROZEN_DATASET"]
 
 
+def test_v2_nyse_closed_dataset_runs_independent_windows(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid-v2-nyse-window.db"
+    dataset_root = tmp_path / "frozen-datasets"
+    report_root = tmp_path / "reports"
+    config = _test_config(db_path)
+    config.raw["backtest"] = {
+        "dataset_dir": str(dataset_root),
+        "staging_dir": str(tmp_path / "staging"),
+        "legacy_dataset_dir": str(tmp_path / "legacy"),
+        "report_dir": str(report_root),
+        "windowing": {
+            "force_close_minutes": 120,
+            "minimum_tradable_rows": 30,
+        },
+    }
+    config.raw["trading"] = {
+        "capital_per_symbol": 200,
+        "leverage": 1,
+        "max_maker_fee_rate": 0,
+        "stop_buffer_pct": 0.015,
+    }
+    start = datetime(2026, 7, 10, 19, 30, tzinfo=timezone.utc)
+    end = datetime(2026, 7, 13, 6, 5, tzinfo=timezone.utc)
+    rows = ["timestamp,open,high,low,close,volume"]
+    current = start
+    index = 0
+    while current < end:
+        close = 100 + ((index % 12) - 6) * 0.12
+        rows.append(
+            f"{current.isoformat()},{close},{close + 0.6},{close - 0.6},{close},12"
+        )
+        current += timedelta(minutes=5)
+        index += 1
+
+    with TestClient(create_app(config)) as client:
+        uploaded = client.post(
+            "/api/v2/backtest-data/upload",
+            params={
+                "file_name": "nyse-weekend.csv",
+                "symbol": "BTCUSDT",
+                "interval": "5m",
+                "window_mode": "NYSE_CLOSED_ONLY",
+            },
+            content="\n".join(rows).encode("utf-8"),
+            headers={"Content-Type": "text/csv"},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        dataset = uploaded.json()
+        assert dataset["window_count"] == 1
+        detail = client.get(
+            f"/api/v2/backtests/datasets/{dataset['dataset_id']}"
+        ).json()
+        assert detail["windows"][0]["market_close"] == "2026-07-10T20:00:00+00:00"
+        assert detail["windows"][0]["force_close_at"] == "2026-07-13T06:00:00+00:00"
+
+        response = client.post(
+            "/api/v2/backtests",
+            json={
+                "dataset_id": dataset["dataset_id"],
+                "symbol": "BTCUSDT",
+                "observe_rows": 30,
+                "capital": 200,
+                "leverage": 1,
+                "maker_fee_rate": 0,
+                "fill_model": "L0_CONSERVATIVE",
+                "walk_forward_test_rows": 60,
+                "monte_carlo_simulations": 100,
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        distribution = body["report"]["validation"]["window_distribution"]
+        analysis = body["report"]["validation"]["window_analysis"]
+        assert body["window_mode"] == "NYSE_CLOSED_ONLY"
+        assert distribution["source"] == "NYSE_WINDOWS"
+        assert distribution["window_count"] == 1
+        assert analysis["total_count"] == 1
+        assert analysis["completed_count"] == 1
+        assert analysis["windows"][0]["status"] == "COMPLETED"
+        assert body["report"]["windows"][0]["force_close_at"] == "2026-07-13T06:00:00+00:00"
+
+        loaded = client.get(f"/api/v2/backtests/{body['run_id']}").json()
+        assert loaded["report"]["validation"]["window_distribution"]["source"] == "NYSE_WINDOWS"
+
+
 def test_v2_upload_rejects_non_csv_and_invalid_rows(tmp_path) -> None:
     client = TestClient(create_app(_test_config(tmp_path / "upload-invalid.db")))
     rejected_extension = client.post(

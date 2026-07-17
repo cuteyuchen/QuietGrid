@@ -1839,14 +1839,21 @@ class Repository:
         config: dict[str, Any],
         parameter_version: str | None = None,
         code_commit: str | None = None,
+        dataset_id: str | None = None,
+        dataset_checksum: str | None = None,
+        data_provider: str | None = None,
+        window_mode: str | None = None,
+        dataset_schema_version: int | None = None,
     ) -> int:
         with connect(self.db_path) as conn:
             cur = conn.execute(
                 """
                 INSERT INTO backtest_runs
                     (run_id, symbol, started_at, fill_model, parameter_version,
-                     code_commit, status, config_json)
-                VALUES (?, ?, ?, ?, ?, ?, 'RUNNING', ?)
+                     code_commit, status, config_json, dataset_id,
+                     dataset_checksum, data_provider, window_mode,
+                     dataset_schema_version)
+                VALUES (?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -1856,6 +1863,11 @@ class Repository:
                     parameter_version,
                     code_commit,
                     _json(config),
+                    dataset_id,
+                    dataset_checksum,
+                    data_provider,
+                    window_mode,
+                    dataset_schema_version,
                 ),
             )
             conn.commit()
@@ -1956,6 +1968,265 @@ class Repository:
                 (max(1, min(int(limit), 500)),),
             ).fetchall()
             return [self._backtest_row(conn, row) for row in rows]
+
+    def create_backtest_dataset_job(
+        self,
+        *,
+        job_id: str,
+        provider: str,
+        symbol: str,
+        interval: str,
+        requested_start: datetime,
+        requested_end: datetime,
+        window_mode: str,
+        total_pages: int = 0,
+    ) -> int:
+        now = datetime.now(requested_start.tzinfo).isoformat()
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO backtest_dataset_jobs
+                    (job_id, account_id, provider, symbol, interval,
+                     requested_start, requested_end, window_mode, status,
+                     stage, total_pages, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', 'QUEUED', ?, ?, ?)
+                """,
+                (
+                    job_id,
+                    self.account_id,
+                    provider,
+                    symbol,
+                    interval,
+                    requested_start.isoformat(),
+                    requested_end.isoformat(),
+                    window_mode,
+                    max(0, int(total_pages)),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def update_backtest_dataset_job(self, job_id: str, **changes: Any) -> None:
+        allowed = {
+            "dataset_id",
+            "status",
+            "stage",
+            "progress",
+            "current_page",
+            "total_pages",
+            "downloaded_rows",
+            "cancel_requested",
+            "error",
+            "started_at",
+            "completed_at",
+        }
+        values = {key: value for key, value in changes.items() if key in allowed}
+        if not values:
+            return
+        values["updated_at"] = datetime.now().astimezone().isoformat()
+        assignments = ", ".join(f"{key} = ?" for key in values)
+        with connect(self.db_path) as conn:
+            conn.execute(
+                f"UPDATE backtest_dataset_jobs SET {assignments} WHERE job_id = ?",
+                (*values.values(), job_id),
+            )
+            conn.commit()
+
+    def get_backtest_dataset_job(self, job_id: str) -> dict[str, Any] | None:
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM backtest_dataset_jobs WHERE job_id = ? AND account_id = ?",
+                (job_id, self.account_id),
+            ).fetchone()
+            return _decoded_row(row)
+
+    def active_backtest_dataset_job_count(self) -> int:
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM backtest_dataset_jobs
+                WHERE account_id = ?
+                  AND status IN ('CREATED', 'DOWNLOADING', 'NORMALIZING', 'VALIDATING')
+                """,
+                (self.account_id,),
+            ).fetchone()
+            return int(row["count"] if row is not None else 0)
+
+    def request_backtest_dataset_job_cancel(self, job_id: str) -> bool:
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                UPDATE backtest_dataset_jobs
+                SET cancel_requested = 1, updated_at = ?
+                WHERE job_id = ? AND account_id = ?
+                  AND status IN ('CREATED', 'DOWNLOADING', 'NORMALIZING', 'VALIDATING')
+                """,
+                (datetime.now().astimezone().isoformat(), job_id, self.account_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def fail_interrupted_backtest_dataset_jobs(self) -> int:
+        now = datetime.now().astimezone().isoformat()
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                """
+                UPDATE backtest_dataset_jobs
+                SET status = 'FAILED', stage = 'INTERRUPTED',
+                    error = '服务重启，下载任务已中断，请重新创建任务。',
+                    completed_at = ?, updated_at = ?
+                WHERE account_id = ?
+                  AND status IN ('CREATED', 'DOWNLOADING', 'NORMALIZING', 'VALIDATING')
+                """,
+                (now, now, self.account_id),
+            )
+            conn.commit()
+            return cur.rowcount
+
+    def save_backtest_dataset(self, dataset: dict[str, Any]) -> int:
+        now = datetime.now().astimezone().isoformat()
+        columns = (
+            "dataset_id", "account_id", "provider", "market", "symbol", "interval",
+            "price_type", "requested_start", "requested_end", "actual_start", "actual_end",
+            "row_count", "file_format", "file_path", "checksum", "schema_version",
+            "quality_status", "quality_report_json", "window_mode", "window_count",
+            "status", "error", "created_at", "updated_at",
+        )
+        values = (
+            dataset["dataset_id"], self.account_id, dataset["provider"],
+            dataset.get("market", "USDS_M"), dataset["symbol"], dataset["interval"],
+            dataset.get("price_type", "CONTRACT"), dataset["requested_start"],
+            dataset["requested_end"], dataset.get("actual_start"), dataset.get("actual_end"),
+            int(dataset.get("row_count", 0)), dataset.get("file_format", "csv"),
+            dataset["file_path"], dataset["checksum"], int(dataset.get("schema_version", 1)),
+            dataset["quality_status"], _json(dataset.get("quality_report", {})),
+            dataset.get("window_mode", "NYSE_CLOSED_ONLY"), dataset.get("window_count"),
+            dataset["status"], dataset.get("error"), dataset.get("created_at", now), now,
+        )
+        with connect(self.db_path) as conn:
+            existing = conn.execute(
+                "SELECT id, account_id, status, checksum FROM backtest_datasets WHERE dataset_id = ?",
+                (dataset["dataset_id"],),
+            ).fetchone()
+            if existing is not None:
+                if str(existing["account_id"]) != self.account_id:
+                    raise ValueError("数据集标识已被其他账户占用。")
+                if str(existing["status"]) in {"READY", "READY_WITH_WARNINGS"}:
+                    if str(existing["checksum"]) == str(dataset["checksum"]):
+                        return int(existing["id"])
+                    raise ValueError("不可覆盖已就绪的冻结数据集。")
+                assignments = ", ".join(
+                    f"{column} = ?"
+                    for column in columns
+                    if column not in {"dataset_id", "account_id", "created_at"}
+                )
+                update_values = tuple(
+                    value
+                    for column, value in zip(columns, values)
+                    if column not in {"dataset_id", "account_id", "created_at"}
+                )
+                conn.execute(
+                    f"UPDATE backtest_datasets SET {assignments}, deleted_at = NULL WHERE id = ?",
+                    (*update_values, int(existing["id"])),
+                )
+                conn.commit()
+                return int(existing["id"])
+            cur = conn.execute(
+                f"INSERT INTO backtest_datasets ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                values,
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def get_backtest_dataset(self, dataset_id: str) -> dict[str, Any] | None:
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM backtest_datasets
+                WHERE dataset_id = ? AND account_id = ? AND deleted_at IS NULL
+                """,
+                (dataset_id, self.account_id),
+            ).fetchone()
+            return _decoded_row(row, "quality_report_json")
+
+    def find_backtest_dataset(
+        self,
+        *,
+        provider: str,
+        symbol: str,
+        interval: str,
+        requested_start: datetime,
+        requested_end: datetime,
+        window_mode: str,
+    ) -> dict[str, Any] | None:
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM backtest_datasets
+                WHERE account_id = ? AND provider = ? AND symbol = ? AND interval = ?
+                  AND requested_start = ? AND requested_end = ? AND window_mode = ?
+                  AND status IN ('READY', 'READY_WITH_WARNINGS') AND deleted_at IS NULL
+                ORDER BY id DESC LIMIT 1
+                """,
+                (
+                    self.account_id,
+                    provider,
+                    symbol,
+                    interval,
+                    requested_start.isoformat(),
+                    requested_end.isoformat(),
+                    window_mode,
+                ),
+            ).fetchone()
+            return _decoded_row(row, "quality_report_json")
+
+    def backtest_datasets(self, limit: int = 200) -> list[dict[str, Any]]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM backtest_datasets
+                WHERE account_id = ? AND deleted_at IS NULL
+                ORDER BY id DESC LIMIT ?
+                """,
+                (self.account_id, max(1, min(int(limit), 500))),
+            ).fetchall()
+            return [_decoded_row(row, "quality_report_json") or {} for row in rows]
+
+    def soft_delete_backtest_dataset(self, dataset_id: str) -> bool:
+        now = datetime.now().astimezone().isoformat()
+        with connect(self.db_path) as conn:
+            in_use = conn.execute(
+                "SELECT 1 FROM backtest_runs WHERE dataset_id = ? LIMIT 1",
+                (dataset_id,),
+            ).fetchone()
+            if in_use is not None:
+                raise ValueError("数据集已被回测报告引用，不能删除。")
+            cur = conn.execute(
+                """
+                UPDATE backtest_datasets
+                SET status = 'DELETED', deleted_at = ?, updated_at = ?
+                WHERE dataset_id = ? AND account_id = ? AND deleted_at IS NULL
+                """,
+                (now, now, dataset_id, self.account_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def mark_backtest_dataset_corrupted(self, dataset_id: str, error: str) -> None:
+        now = datetime.now().astimezone().isoformat()
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE backtest_datasets
+                SET status = 'CORRUPTED', error = ?, updated_at = ?
+                WHERE dataset_id = ? AND account_id = ?
+                """,
+                (error, now, dataset_id, self.account_id),
+            )
+            conn.commit()
 
     def get_backtest_run(self, run_id: str) -> dict[str, Any] | None:
         with connect(self.db_path) as conn:

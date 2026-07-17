@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
+from concurrent.futures import Future, ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import json
+import inspect
 from math import isfinite
 import platform
 import shlex
@@ -14,13 +17,21 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 import web as legacy_web
 from core.config import AppConfig, load_config, select_account
+from data_sources import (
+    BinanceHistoricalDataSource,
+    DataSourceError,
+    DatasetRequest,
+    HistoricalDataSource,
+    HistoricalDataSourceRegistry,
+)
+from data_sources.dataset_service import BacktestDatasetService
 from db.database import init_db
 from db.repository import Repository, RoundStartConflict
 from exchange.binance import BinanceFuturesClient
@@ -41,8 +52,38 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app_config = config or load_config()
     for account in app_config.accounts:
         init_db(account.database_path)
+        Repository(account.database_path, account_id=account.id).fail_interrupted_backtest_dataset_jobs()
     init_db(app_config.database_path)
-    app = FastAPI(title="QuietGrid Console API", version="0.1.0")
+    Repository(
+        app_config.database_path,
+        account_id=app_config.account_id,
+    ).fail_interrupted_backtest_dataset_jobs()
+    max_dataset_jobs = max(
+        1,
+        int(
+            app_config.raw.get("backtest", {})
+            .get("online_data", {})
+            .get("max_concurrent_jobs", 1)
+        ),
+    )
+    dataset_executor = ThreadPoolExecutor(
+        max_workers=max_dataset_jobs,
+        thread_name_prefix="quietgrid-dataset",
+    )
+    dataset_futures: set[Future[Any]] = set()
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        try:
+            yield
+        finally:
+            dataset_executor.shutdown(wait=False, cancel_futures=True)
+
+    app = FastAPI(
+        title="QuietGrid Console API",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -51,7 +92,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             "http://localhost:5173",
         ],
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["*"],
     )
 
@@ -628,16 +669,27 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     def v2_backtest_datasets(
         ctx: AccountRequestContext = Depends(get_account_context),
     ) -> dict[str, Any]:
-        root = _backtest_dataset_root(ctx.config)
+        frozen_items = [_v2_dataset_payload(item) for item in ctx.repo.backtest_datasets()]
+        root = _legacy_backtest_dataset_root(ctx.config)
         if not root.exists():
-            return {"items": []}
-        items = []
+            return {"items": frozen_items, "legacy_csv_items": []}
+        frozen_paths = (
+            {str(item.get("file_path") or "") for item in ctx.repo.backtest_datasets()}
+            if root == _backtest_dataset_root(ctx.config)
+            else set()
+        )
+        legacy_items = []
         for path in sorted(root.rglob("*.csv"), key=lambda item: item.name.lower()):
+            relative_path = path.relative_to(root).as_posix()
+            if relative_path in frozen_paths:
+                continue
             stat = path.stat()
-            items.append(
+            legacy_items.append(
                 {
+                    "dataset_id": None,
+                    "source_type": "LEGACY_CSV",
                     "name": path.name,
-                    "relative_path": path.relative_to(root).as_posix(),
+                    "relative_path": relative_path,
                     "size_bytes": stat.st_size,
                     "modified_at": datetime.fromtimestamp(
                         stat.st_mtime,
@@ -645,7 +697,130 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     ).isoformat(),
                 }
             )
-        return {"items": items}
+        # items 暂时保留旧 CSV，保证 v2.0 前端与第三方客户端无缝迁移。
+        return {
+            "items": [*frozen_items, *legacy_items],
+            "legacy_csv_items": legacy_items,
+        }
+
+    @app.get("/api/v2/backtest-data/providers")
+    def v2_backtest_data_providers() -> dict[str, Any]:
+        return {
+            "items": [
+                {
+                    "id": "binance",
+                    "label": "Binance USDⓈ-M Futures",
+                    "market": "USDS_M",
+                    "intervals": ["1m", "5m", "15m", "1h"],
+                    "price_types": ["CONTRACT"],
+                }
+            ]
+        }
+
+    @app.get("/api/v2/backtest-data/providers/binance/symbols")
+    async def v2_backtest_data_binance_symbols(
+        query: str = Query("", max_length=32),
+        market: str = Query("usds_m", pattern=r"^usds_m$"),
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        source = _build_historical_data_source(ctx.config, "binance")
+        try:
+            items = await source.list_symbols(query)
+            return {"items": [item.__dict__ for item in items], "market": market.upper()}
+        except DataSourceError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        finally:
+            await _close_historical_data_source(source)
+
+    @app.post("/api/v2/backtest-data/preview")
+    async def v2_backtest_data_preview(
+        request: V2BacktestDatasetRequest,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        service = _backtest_dataset_service(ctx.config, ctx.repo)
+        try:
+            preview = await service.preview(request.to_domain())
+            return _dataset_preview_payload(preview)
+        except (DataSourceError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post(
+        "/api/v2/backtest-data/jobs",
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    async def v2_create_backtest_data_job(
+        request: V2BacktestDatasetRequest,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        domain_request = request.to_domain()
+        service = _backtest_dataset_service(ctx.config, ctx.repo)
+        try:
+            job = await service.create_job(domain_request)
+        except (DataSourceError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if job.get("status") != "READY":
+            future = dataset_executor.submit(
+                _run_backtest_dataset_job,
+                ctx.config,
+                str(job["job_id"]),
+                domain_request,
+            )
+            dataset_futures.add(future)
+            future.add_done_callback(dataset_futures.discard)
+        return _dataset_job_payload(job)
+
+    @app.get("/api/v2/backtest-data/jobs/{job_id}")
+    def v2_backtest_data_job(
+        job_id: str,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        job = ctx.repo.get_backtest_dataset_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="数据集任务不存在。")
+        return _dataset_job_payload(job)
+
+    @app.post("/api/v2/backtest-data/jobs/{job_id}/cancel")
+    def v2_cancel_backtest_data_job(
+        job_id: str,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        if not ctx.repo.request_backtest_dataset_job_cancel(job_id):
+            job = ctx.repo.get_backtest_dataset_job(job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail="数据集任务不存在。")
+            raise HTTPException(status_code=409, detail="当前任务状态不能取消。")
+        return {"job_id": job_id, "cancel_requested": True}
+
+    @app.get("/api/v2/backtests/datasets/{dataset_id}")
+    def v2_backtest_dataset_detail(
+        dataset_id: str,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        dataset = ctx.repo.get_backtest_dataset(dataset_id)
+        if dataset is None:
+            raise HTTPException(status_code=404, detail="冻结回测数据集不存在。")
+        return _v2_dataset_payload(dataset)
+
+    @app.delete("/api/v2/backtests/datasets/{dataset_id}")
+    def v2_delete_backtest_dataset(
+        dataset_id: str,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        try:
+            deleted = ctx.repo.soft_delete_backtest_dataset(dataset_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if not deleted:
+            raise HTTPException(status_code=404, detail="冻结回测数据集不存在。")
+        ctx.repo.append_audit_log(
+            actor="console",
+            action="DELETE_BACKTEST_DATASET",
+            resource_type="BACKTEST_DATASET",
+            resource_id=dataset_id,
+            detail={"soft_delete": True},
+            created_at=datetime.now(timezone.utc),
+        )
+        return {"dataset_id": dataset_id, "deleted": True}
 
     @app.get("/api/v2/backtests")
     def v2_backtests(
@@ -669,7 +844,17 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 status_code=422,
                 detail="标记为 OOS_FROZEN 前必须确认参数已经冻结。",
             )
-        dataset_path = _resolve_backtest_dataset(ctx.config, request.dataset)
+        dataset_metadata: dict[str, Any] = {}
+        if request.dataset_id is not None:
+            try:
+                dataset_path, dataset_metadata = _backtest_dataset_service(
+                    ctx.config,
+                    ctx.repo,
+                ).resolve(request.dataset_id)
+            except DataSourceError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        else:
+            dataset_path = _resolve_backtest_dataset(ctx.config, str(request.dataset))
         started_at = datetime.now(timezone.utc)
         run_id = f"bt_{uuid4().hex}"
         report_root = _backtest_report_root(ctx.config)
@@ -683,6 +868,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             config=run_config,
             parameter_version="v2-console",
             code_commit=_current_git_commit(),
+            dataset_id=str(dataset_metadata.get("dataset_id") or "") or None,
+            dataset_checksum=str(dataset_metadata.get("checksum") or "") or None,
+            data_provider=str(dataset_metadata.get("provider") or "LEGACY_CSV"),
+            window_mode=str(dataset_metadata.get("window_mode") or "RAW_RANGE"),
+            dataset_schema_version=(
+                int(dataset_metadata["schema_version"])
+                if dataset_metadata.get("schema_version") is not None
+                else None
+            ),
         )
         try:
             summary, rows = await asyncio.to_thread(
@@ -691,6 +885,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 request,
                 dataset_path,
                 report_path,
+                dataset_metadata,
             )
             metrics = _v2_backtest_metrics(summary, report_path)
             ctx.repo.complete_backtest_run(
@@ -821,8 +1016,32 @@ class V2CommandRequest(BaseModel):
     requested_by: str = Field(default="console", min_length=1, max_length=80)
 
 
+class V2BacktestDatasetRequest(BaseModel):
+    provider: str = Field(default="binance", pattern=r"^binance$")
+    symbol: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
+    interval: str = Field(default="1m", pattern=r"^(1m|5m|15m|1h)$")
+    price_type: str = Field(default="CONTRACT", pattern=r"^CONTRACT$")
+    start_time: datetime
+    end_time: datetime
+    window_mode: str = Field(
+        default="NYSE_CLOSED_ONLY",
+        pattern=r"^(NYSE_CLOSED_ONLY|RAW_RANGE)$",
+    )
+
+    def to_domain(self) -> DatasetRequest:
+        return DatasetRequest(
+            provider=self.provider,
+            symbol=self.symbol,
+            interval=self.interval,
+            start_time=self.start_time,
+            end_time=self.end_time,
+            window_mode=self.window_mode,
+        )
+
+
 class V2BacktestRunRequest(BaseModel):
-    dataset: str = Field(min_length=1, max_length=240)
+    dataset: str | None = Field(default=None, min_length=1, max_length=240)
+    dataset_id: str | None = Field(default=None, min_length=8, max_length=240)
     symbol: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
     observe_rows: int = Field(default=180, ge=30, le=100000)
     capital: float = Field(default=200.0, gt=0, le=1000000)
@@ -844,6 +1063,12 @@ class V2BacktestRunRequest(BaseModel):
         pattern=r"^(DEVELOPMENT|VALIDATION|OOS_FROZEN)$",
     )
     parameters_frozen: bool = False
+
+    @model_validator(mode="after")
+    def validate_dataset_reference(self) -> "V2BacktestRunRequest":
+        if (self.dataset is None) == (self.dataset_id is None):
+            raise ValueError("dataset 与 dataset_id 必须且只能提供一个。")
+        return self
 
 
 app = create_app()
@@ -887,6 +1112,17 @@ def _backtest_dataset_root(config: AppConfig) -> Path:
     return root.resolve()
 
 
+def _legacy_backtest_dataset_root(config: AppConfig) -> Path:
+    backtest = config.raw.get("backtest", {})
+    raw_path = str(
+        backtest.get("legacy_dataset_dir", backtest.get("dataset_dir", "data"))
+    ).strip()
+    root = Path(raw_path)
+    if not root.is_absolute():
+        root = Path(__file__).resolve().parent / root
+    return root.resolve()
+
+
 def _backtest_report_root(config: AppConfig) -> Path:
     raw_path = str(
         config.raw.get("backtest", {}).get(
@@ -902,8 +1138,150 @@ def _backtest_report_root(config: AppConfig) -> Path:
     return root
 
 
+def _backtest_staging_root(config: AppConfig) -> Path:
+    raw_path = str(
+        config.raw.get("backtest", {}).get(
+            "staging_dir",
+            "data/backtests/staging",
+        )
+    ).strip()
+    root = Path(raw_path)
+    if not root.is_absolute():
+        root = Path(__file__).resolve().parent / root
+    return root.resolve()
+
+
+def _build_historical_data_source(
+    config: AppConfig,
+    provider: str,
+) -> HistoricalDataSource:
+    online = config.raw.get("backtest", {}).get("online_data", {})
+    if not bool(online.get("enabled", True)):
+        raise DataSourceError("在线历史数据下载已在配置中关闭。")
+    registry = HistoricalDataSourceRegistry()
+    registry.register(
+        "binance",
+        lambda: BinanceHistoricalDataSource(
+            proxy_config=config.raw.get("proxy"),
+            timeout_seconds=float(online.get("request_timeout_seconds", 15.0)),
+            retry_attempts=int(online.get("retry_attempts", 3)),
+            retry_backoff_seconds=float(online.get("retry_backoff_seconds", 0.5)),
+            page_limit=int(online.get("page_limit", 1500)),
+            pause_seconds=float(online.get("page_pause_seconds", 0.05)),
+        ),
+    )
+    return registry.create(provider)
+
+
+def _backtest_dataset_service(
+    config: AppConfig,
+    repo: Repository | None = None,
+) -> BacktestDatasetService:
+    backtest = config.raw.get("backtest", {})
+    online = backtest.get("online_data", {})
+    return BacktestDatasetService(
+        repo=repo or Repository(config.database_path, account_id=config.account_id),
+        dataset_root=_backtest_dataset_root(config),
+        staging_root=_backtest_staging_root(config),
+        source_factory=lambda provider: _build_historical_data_source(config, provider),
+        validation_config=backtest.get("validation", {}),
+        max_range_days_1m=int(online.get("max_range_days_1m", 180)),
+    )
+
+
+def _run_backtest_dataset_job(
+    config: AppConfig,
+    job_id: str,
+    request: DatasetRequest,
+) -> None:
+    asyncio.run(_backtest_dataset_service(config).run_job(job_id, request))
+
+
+async def _close_historical_data_source(source: HistoricalDataSource) -> None:
+    close = getattr(source, "close", None)
+    if close is None:
+        return
+    result = close()
+    if inspect.isawaitable(result):
+        await result
+
+
+def _dataset_preview_payload(preview: Any) -> dict[str, Any]:
+    return {
+        "provider": preview.provider,
+        "symbol": preview.symbol,
+        "interval": preview.interval,
+        "start_time": preview.start_time.isoformat(),
+        "end_time": preview.end_time.isoformat(),
+        "estimated_rows": int(preview.estimated_rows),
+        "estimated_pages": int(preview.estimated_pages),
+        "estimated_size_bytes": int(preview.estimated_size_bytes),
+        "cache_hit": bool(preview.cache_hit),
+        "window_count": preview.window_count,
+        "warnings": list(preview.warnings),
+    }
+
+
+def _dataset_job_payload(job: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "job_id": str(job.get("job_id") or ""),
+        "dataset_id": job.get("dataset_id"),
+        "provider": str(job.get("provider") or ""),
+        "symbol": str(job.get("symbol") or ""),
+        "interval": str(job.get("interval") or ""),
+        "requested_start": str(job.get("requested_start") or ""),
+        "requested_end": str(job.get("requested_end") or ""),
+        "window_mode": str(job.get("window_mode") or ""),
+        "status": str(job.get("status") or "UNKNOWN"),
+        "stage": str(job.get("stage") or ""),
+        "progress": float(job.get("progress") or 0.0),
+        "current_page": int(job.get("current_page") or 0),
+        "total_pages": int(job.get("total_pages") or 0),
+        "downloaded_rows": int(job.get("downloaded_rows") or 0),
+        "cancel_requested": bool(job.get("cancel_requested")),
+        "error": job.get("error"),
+        "created_at": str(job.get("created_at") or ""),
+        "started_at": str(job.get("started_at") or ""),
+        "completed_at": str(job.get("completed_at") or ""),
+        "updated_at": str(job.get("updated_at") or ""),
+    }
+
+
+def _v2_dataset_payload(dataset: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "dataset_id": str(dataset.get("dataset_id") or ""),
+        "source_type": "FROZEN_DATASET",
+        "provider": str(dataset.get("provider") or ""),
+        "market": str(dataset.get("market") or ""),
+        "symbol": str(dataset.get("symbol") or ""),
+        "interval": str(dataset.get("interval") or ""),
+        "price_type": str(dataset.get("price_type") or "CONTRACT"),
+        "requested_start": str(dataset.get("requested_start") or ""),
+        "requested_end": str(dataset.get("requested_end") or ""),
+        "actual_start": str(dataset.get("actual_start") or ""),
+        "actual_end": str(dataset.get("actual_end") or ""),
+        "row_count": int(dataset.get("row_count") or 0),
+        "file_format": str(dataset.get("file_format") or ""),
+        "file_path": str(dataset.get("file_path") or ""),
+        "checksum": str(dataset.get("checksum") or ""),
+        "schema_version": int(dataset.get("schema_version") or 0),
+        "quality_status": str(dataset.get("quality_status") or ""),
+        "quality_report": (
+            dataset.get("quality_report")
+            if isinstance(dataset.get("quality_report"), dict)
+            else {}
+        ),
+        "window_mode": str(dataset.get("window_mode") or ""),
+        "window_count": dataset.get("window_count"),
+        "status": str(dataset.get("status") or ""),
+        "error": dataset.get("error"),
+        "created_at": str(dataset.get("created_at") or ""),
+        "updated_at": str(dataset.get("updated_at") or ""),
+    }
+
+
 def _resolve_backtest_dataset(config: AppConfig, dataset: str) -> Path:
-    root = _backtest_dataset_root(config)
+    root = _legacy_backtest_dataset_root(config)
     candidate = (root / dataset).resolve()
     if not candidate.is_relative_to(root):
         raise HTTPException(status_code=400, detail="回测数据集路径越界。")
@@ -917,6 +1295,7 @@ def _execute_v2_backtest(
     request: "V2BacktestRunRequest",
     dataset_path: Path,
     report_path: Path,
+    dataset_metadata: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     from trader import _read_backtest_csv, _run_backtest_csv
 
@@ -962,6 +1341,7 @@ def _execute_v2_backtest(
         request,
         rows,
         report_path,
+        dataset_metadata or {},
     )
     return summary, rows
 
@@ -971,6 +1351,7 @@ def _append_v2_backtest_validation(
     request: "V2BacktestRunRequest",
     rows: list[dict[str, Any]],
     report_path: Path,
+    dataset_metadata: dict[str, Any] | None = None,
 ) -> None:
     from strategy.backtest import (
         backtest_config_from_mapping,
@@ -1083,8 +1464,14 @@ def _append_v2_backtest_validation(
             else "当前结果不是冻结参数样本外证明；只有从未参与调参的数据区间才可标记为样本外。"
         ),
     }
+    dataset_metadata = dataset_metadata or {}
     report["metadata"] = {
         "dataset": request.dataset,
+        "dataset_id": request.dataset_id,
+        "dataset_checksum": dataset_metadata.get("checksum"),
+        "data_provider": dataset_metadata.get("provider", "LEGACY_CSV"),
+        "window_mode": dataset_metadata.get("window_mode", "RAW_RANGE"),
+        "dataset_schema_version": dataset_metadata.get("schema_version"),
         "sample_label": request.sample_label,
         "parameters_frozen": request.parameters_frozen,
         "data_start": _backtest_row_time(rows[0]) if rows else None,
@@ -1426,6 +1813,11 @@ def _v2_backtest_payload(
         "fill_model": str(row.get("fill_model") or ""),
         "parameter_version": str(row.get("parameter_version") or ""),
         "code_commit": str(row.get("code_commit") or ""),
+        "dataset_id": str(row.get("dataset_id") or ""),
+        "dataset_checksum": str(row.get("dataset_checksum") or ""),
+        "data_provider": str(row.get("data_provider") or ""),
+        "window_mode": str(row.get("window_mode") or ""),
+        "dataset_schema_version": row.get("dataset_schema_version"),
         "report_path": str(row.get("report_path") or ""),
         "config": row.get("config") if isinstance(row.get("config"), dict) else {},
         "metrics": row.get("metrics") if isinstance(row.get("metrics"), dict) else {},

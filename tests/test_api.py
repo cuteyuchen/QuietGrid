@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from core.config import AccountConfig, AppConfig
 from core.models import GridOrder, OrderSide, OrderStatus
 from db.database import init_db
 from db.repository import Repository
+from data_sources.base import HistoricalDataSource
+from data_sources.models import DatasetPreview, HistoricalSymbol, NormalizedKline
 
 
 class FakeConsoleExchange:
@@ -62,6 +65,32 @@ class FakeConsoleExchange:
 
     async def close(self) -> None:
         self.closed = True
+
+
+class FakeBacktestHistoricalSource(HistoricalDataSource):
+    provider_id = "binance"
+
+    def __init__(self, rows: list[NormalizedKline]) -> None:
+        self.rows = rows
+
+    async def list_symbols(self, query: str = "") -> list[HistoricalSymbol]:
+        return [HistoricalSymbol("BTCUSDT", market="USDS_M")]
+
+    async def preview(self, symbol, interval, start_time, end_time) -> DatasetPreview:
+        return DatasetPreview(
+            provider="binance",
+            symbol=symbol,
+            interval=interval,
+            start_time=start_time,
+            end_time=end_time,
+            estimated_rows=len(self.rows),
+            estimated_pages=1,
+            estimated_size_bytes=len(self.rows) * 128,
+        )
+
+    async def fetch_klines(self, symbol, interval, start_time, end_time):
+        for row in self.rows:
+            yield row
 
 
 def test_console_api_exposes_summary_and_active_sessions(tmp_path) -> None:
@@ -1451,6 +1480,124 @@ def test_v2_backtest_rejects_unfrozen_oos_label(tmp_path) -> None:
 
     assert response.status_code == 422
     assert "参数已经冻结" in response.json()["detail"]
+
+
+def test_v2_online_dataset_job_freezes_and_runs_by_dataset_id(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "quietgrid-v2-online-data.db"
+    dataset_root = tmp_path / "frozen-datasets"
+    report_root = tmp_path / "reports"
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    start_ms = int(start.timestamp() * 1000)
+    rows = []
+    for index in range(90):
+        close = 100.0 + ((index % 12) - 6) * 0.12
+        opened = start_ms + index * 60_000
+        rows.append(
+            NormalizedKline(
+                opened,
+                opened + 59_999,
+                close,
+                close + 0.6,
+                close - 0.6,
+                close,
+                10,
+                1000,
+                5,
+            )
+        )
+    monkeypatch.setattr(
+        api_module,
+        "_build_historical_data_source",
+        lambda config, provider: FakeBacktestHistoricalSource(rows),
+    )
+    config = _test_config(db_path)
+    config.raw["backtest"] = {
+        "dataset_dir": str(dataset_root),
+        "staging_dir": str(tmp_path / "staging"),
+        "legacy_dataset_dir": str(tmp_path / "legacy"),
+        "report_dir": str(report_root),
+        "online_data": {"max_concurrent_jobs": 1, "max_range_days_1m": 180},
+    }
+    config.raw["trading"] = {
+        "capital_per_symbol": 200,
+        "leverage": 1,
+        "max_maker_fee_rate": 0,
+        "stop_buffer_pct": 0.015,
+    }
+    request = {
+        "provider": "binance",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "start_time": start.isoformat(),
+        "end_time": (start + timedelta(minutes=90)).isoformat(),
+        "window_mode": "RAW_RANGE",
+    }
+
+    with TestClient(create_app(config)) as client:
+        providers = client.get("/api/v2/backtest-data/providers")
+        symbols = client.get("/api/v2/backtest-data/providers/binance/symbols?query=BTC")
+        preview = client.post("/api/v2/backtest-data/preview", json=request)
+        created = client.post("/api/v2/backtest-data/jobs", json=request)
+
+        assert providers.status_code == 200
+        assert symbols.json()["items"][0]["symbol"] == "BTCUSDT"
+        assert preview.json()["estimated_rows"] == 90
+        assert created.status_code == 202
+        job_id = created.json()["job_id"]
+        job = created.json()
+        for _ in range(100):
+            job = client.get(f"/api/v2/backtest-data/jobs/{job_id}").json()
+            if job["status"] in {"READY", "FAILED", "CANCELLED"}:
+                break
+            time.sleep(0.01)
+
+        assert job["status"] == "READY", job
+        dataset_id = job["dataset_id"]
+        dataset = client.get(f"/api/v2/backtests/datasets/{dataset_id}")
+        assert dataset.status_code == 200
+        assert dataset.json()["quality_status"] == "READY"
+        assert len(dataset.json()["checksum"]) == 64
+
+        backtest = client.post(
+            "/api/v2/backtests",
+            json={
+                "dataset_id": dataset_id,
+                "symbol": "BTCUSDT",
+                "observe_rows": 30,
+                "capital": 200,
+                "leverage": 1,
+                "maker_fee_rate": 0,
+                "fill_model": "L0_CONSERVATIVE",
+            },
+        )
+
+        assert backtest.status_code == 200, backtest.text
+        body = backtest.json()
+        assert body["dataset_id"] == dataset_id
+        assert body["dataset_checksum"] == dataset.json()["checksum"]
+        assert body["data_provider"] == "binance"
+        assert body["report"]["metadata"]["dataset_id"] == dataset_id
+        assert body["report"]["metadata"]["dataset_checksum"] == dataset.json()["checksum"]
+
+
+def test_v2_backtest_requires_exactly_one_dataset_reference(tmp_path) -> None:
+    client = TestClient(create_app(_test_config(tmp_path / "dataset-reference.db")))
+    base = {
+        "symbol": "BTCUSDT",
+        "observe_rows": 30,
+        "capital": 200,
+        "leverage": 1,
+        "fill_model": "L0_CONSERVATIVE",
+    }
+
+    missing = client.post("/api/v2/backtests", json=base)
+    duplicated = client.post(
+        "/api/v2/backtests",
+        json={**base, "dataset": "sample.csv", "dataset_id": "ds_duplicate"},
+    )
+
+    assert missing.status_code == 422
+    assert duplicated.status_code == 422
 
 
 def test_v2_workspace_history_and_order_reconciliation(monkeypatch, tmp_path) -> None:

@@ -303,6 +303,75 @@ CREATE TABLE IF NOT EXISTS backtest_metrics (
     UNIQUE(backtest_run_id, metric_name)
 );
 
+CREATE TABLE IF NOT EXISTS backtest_datasets (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    dataset_id          TEXT NOT NULL UNIQUE,
+    account_id          TEXT NOT NULL DEFAULT 'default',
+    provider            TEXT NOT NULL,
+    market              TEXT NOT NULL,
+    symbol              TEXT NOT NULL,
+    interval            TEXT NOT NULL,
+    price_type          TEXT NOT NULL DEFAULT 'CONTRACT',
+    requested_start     DATETIME NOT NULL,
+    requested_end       DATETIME NOT NULL,
+    actual_start        DATETIME,
+    actual_end          DATETIME,
+    row_count           INTEGER NOT NULL DEFAULT 0,
+    file_format         TEXT NOT NULL DEFAULT 'csv',
+    file_path           TEXT NOT NULL,
+    checksum            TEXT NOT NULL,
+    schema_version      INTEGER NOT NULL DEFAULT 1,
+    quality_status      TEXT NOT NULL,
+    quality_report_json TEXT NOT NULL,
+    window_mode         TEXT NOT NULL DEFAULT 'NYSE_CLOSED_ONLY',
+    window_count        INTEGER,
+    status              TEXT NOT NULL,
+    error               TEXT,
+    deleted_at          DATETIME,
+    created_at          DATETIME NOT NULL,
+    updated_at          DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS backtest_dataset_jobs (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id              TEXT NOT NULL UNIQUE,
+    account_id          TEXT NOT NULL DEFAULT 'default',
+    dataset_id          TEXT,
+    provider            TEXT NOT NULL,
+    symbol              TEXT NOT NULL,
+    interval            TEXT NOT NULL,
+    requested_start     DATETIME NOT NULL,
+    requested_end       DATETIME NOT NULL,
+    window_mode         TEXT NOT NULL DEFAULT 'NYSE_CLOSED_ONLY',
+    status              TEXT NOT NULL,
+    stage               TEXT NOT NULL,
+    progress            REAL NOT NULL DEFAULT 0,
+    current_page        INTEGER NOT NULL DEFAULT 0,
+    total_pages         INTEGER NOT NULL DEFAULT 0,
+    downloaded_rows     INTEGER NOT NULL DEFAULT 0,
+    cancel_requested    INTEGER NOT NULL DEFAULT 0,
+    error               TEXT,
+    created_at          DATETIME NOT NULL,
+    started_at          DATETIME,
+    completed_at        DATETIME,
+    updated_at          DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS backtest_dataset_windows (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    dataset_id          TEXT NOT NULL REFERENCES backtest_datasets(dataset_id),
+    window_id           TEXT NOT NULL,
+    market_close        DATETIME NOT NULL,
+    force_close_at      DATETIME NOT NULL,
+    row_count           INTEGER NOT NULL,
+    observation_rows    INTEGER NOT NULL,
+    tradable_rows       INTEGER NOT NULL,
+    status              TEXT NOT NULL,
+    warning             TEXT,
+    created_at          DATETIME NOT NULL,
+    UNIQUE(dataset_id, window_id)
+);
+
 CREATE TABLE IF NOT EXISTS control_commands (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     command_id          TEXT NOT NULL UNIQUE,
@@ -361,6 +430,10 @@ CREATE INDEX IF NOT EXISTS idx_inventory_lots_session_status ON inventory_lots(s
 CREATE INDEX IF NOT EXISTS idx_inventory_snapshots_session_time ON inventory_snapshots(session_id, as_of_time);
 CREATE INDEX IF NOT EXISTS idx_risk_snapshots_window_time ON risk_snapshots(window_id, as_of_time);
 CREATE INDEX IF NOT EXISTS idx_control_commands_status_time ON control_commands(status, requested_at);
+CREATE INDEX IF NOT EXISTS idx_backtest_datasets_identity ON backtest_datasets(account_id, provider, symbol, interval, requested_start, requested_end);
+CREATE INDEX IF NOT EXISTS idx_backtest_datasets_status ON backtest_datasets(status, deleted_at);
+CREATE INDEX IF NOT EXISTS idx_backtest_dataset_jobs_account_status ON backtest_dataset_jobs(account_id, status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_backtest_dataset_windows_dataset ON backtest_dataset_windows(dataset_id, market_close);
 """
 
 SCHEMA_SQL = TABLE_SCHEMA_SQL + "\n" + INDEX_SCHEMA_SQL
@@ -384,6 +457,14 @@ WINDOW_COLUMN_MIGRATIONS = {
     "runtime_id": "TEXT",
 }
 
+BACKTEST_RUN_COLUMN_MIGRATIONS = {
+    "dataset_id": "TEXT",
+    "dataset_checksum": "TEXT",
+    "data_provider": "TEXT",
+    "window_mode": "TEXT",
+    "dataset_schema_version": "INTEGER",
+}
+
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
     path = Path(db_path)
@@ -402,6 +483,7 @@ def init_db(db_path: str | Path) -> None:
         conn.executescript(TABLE_SCHEMA_SQL)
         _ensure_columns(conn, "windows", WINDOW_COLUMN_MIGRATIONS)
         _ensure_session_columns(conn)
+        _ensure_columns(conn, "backtest_runs", BACKTEST_RUN_COLUMN_MIGRATIONS)
         conn.executescript(INDEX_SCHEMA_SQL)
         conn.commit()
 

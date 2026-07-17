@@ -154,9 +154,33 @@ database:
   path: "data/trading.db"
 
 backtest:
-  # 控制台仅枚举此目录内的 CSV；API 会拒绝路径穿越。
-  dataset_dir: "data"
+  # 在线下载完成后写入不可变冻结数据集；旧 CSV 仍可放入该目录兼容使用。
+  dataset_dir: "data/backtests/datasets"
+  legacy_dataset_dir: "data"
+  staging_dir: "data/backtests/staging"
   report_dir: "reports/backtests"
+  storage_format: "csv"
+  schema_version: 1
+  default_provider: "binance"
+  online_data:
+    enabled: true
+    max_range_days_1m: 180
+    max_concurrent_jobs: 1
+    page_limit: 1500
+    page_pause_seconds: 0.05
+    request_timeout_seconds: 15
+    retry_attempts: 3
+    retry_backoff_seconds: 0.5
+  validation:
+    warning_missing_ratio: 0.001
+    reject_missing_ratio: 0.01
+    max_consecutive_missing: 5
+    drop_unclosed: true
+    verify_checksum_on_read: true
+  windowing:
+    default_mode: "NYSE_CLOSED_ONLY"
+    force_close_minutes: 120
+    minimum_tradable_rows: 30
   fill_model: "L0_CONSERVATIVE"
   max_fills_per_bar: 2
   maker_fill_probability: 0.65

@@ -12,11 +12,13 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Trash2,
   X,
 } from '@lucide/vue'
 import {
   cancelV2BacktestDatasetJob,
   createV2BacktestDatasetJob,
+  deleteV2BacktestDataset,
   loadV2BacktestDataProviders,
   loadV2BacktestDatasetDetail,
   loadV2BacktestDatasetJob,
@@ -59,6 +61,8 @@ const job = ref<V2DatasetJob | null>(null)
 const datasetSearch = ref('')
 const uploadFile = ref<File | null>(null)
 const uploading = ref(false)
+const deletingDatasetId = ref('')
+const confirmDeleteId = ref('')
 
 const now = new Date()
 const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
@@ -277,6 +281,26 @@ async function importUpload() {
   }
 }
 
+async function deleteSelectedDataset() {
+  const datasetId = selectedDataset.value?.datasetId || ''
+  if (!datasetId || deletingDatasetId.value) return
+  if (confirmDeleteId.value !== datasetId) {
+    confirmDeleteId.value = datasetId
+    return
+  }
+  deletingDatasetId.value = datasetId
+  dataError.value = ''
+  try {
+    await deleteV2BacktestDataset(datasetId, props.accountId)
+    confirmDeleteId.value = ''
+    emit('refresh')
+  } catch (reason) {
+    dataError.value = message(reason, '数据集删除失败')
+  } finally {
+    deletingDatasetId.value = ''
+  }
+}
+
 function selectDataset(dataset: V2BacktestDataset) {
   emit('select', dataset)
 }
@@ -304,6 +328,7 @@ function stageLabel(stage: string) {
     DOWNLOADING: '下载历史 K 线',
     NORMALIZING: '标准化字段',
     VALIDATING: '执行质量校验',
+    WINDOWING: '切分 NYSE 休市窗口',
     COMPLETED: '冻结数据集完成',
     CACHE_HIT: '复用已有冻结数据',
     FAILED: '任务失败',
@@ -579,7 +604,27 @@ function message(reason: unknown, fallback: string) {
           <span class="selected-dataset-summary__check"><ShieldCheck :size="20" /></span>
           <span><small>当前回测数据</small><strong>{{ selectedDataset.symbol || selectedDataset.name }} · {{ selectedDataset.interval || '旧版 CSV' }}</strong></span>
         </div>
-        <StatusBadge :tone="statusTone(selectedDataset.qualityStatus)" :label="qualityLabel(selectedDataset)" />
+        <div class="selected-dataset-summary__actions">
+          <StatusBadge :tone="statusTone(selectedDataset.qualityStatus)" :label="qualityLabel(selectedDataset)" />
+          <template v-if="selectedDataset.datasetId">
+            <button
+              v-if="confirmDeleteId !== selectedDataset.datasetId"
+              class="button button--danger-outline button--small"
+              type="button"
+              title="已被回测报告引用的数据集不会删除"
+              @click="deleteSelectedDataset"
+            >
+              <Trash2 :size="15" />删除数据
+            </button>
+            <template v-else>
+              <button class="button button--ghost button--small" type="button" :disabled="Boolean(deletingDatasetId)" @click="confirmDeleteId = ''">取消</button>
+              <button class="button button--danger button--small" type="button" :disabled="Boolean(deletingDatasetId)" @click="deleteSelectedDataset">
+                <LoaderCircle v-if="deletingDatasetId" :size="15" class="spin" /><Trash2 v-else :size="15" />
+                {{ deletingDatasetId ? '删除中…' : '再次确认删除' }}
+              </button>
+            </template>
+          </template>
+        </div>
       </header>
       <dl>
         <div><dt>Dataset ID</dt><dd class="mono">{{ selectedDataset.datasetId || selectedDataset.relativePath }}</dd></div>

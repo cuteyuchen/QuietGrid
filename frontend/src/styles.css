@@ -3724,7 +3724,7 @@ pre {
   min-width: 0;
 }
 
-.selected-dataset-summary > header > div > span:last-child {
+.selected-dataset-summary > header > div:first-child > span:last-child {
   display: grid;
   min-width: 0;
   gap: 2px;
@@ -3742,8 +3742,14 @@ pre {
   white-space: nowrap;
 }
 
-.selected-dataset-summary > header > .status-badge {
+.selected-dataset-summary__actions {
   margin-left: auto;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.selected-dataset-summary__actions .button {
+  min-height: 32px;
 }
 
 .selected-dataset-summary > dl {
@@ -3976,8 +3982,10 @@ pre {
     align-items: flex-start;
   }
 
-  .selected-dataset-summary > header > .status-badge {
+  .selected-dataset-summary__actions {
+    width: 100%;
     margin-left: 0;
+    justify-content: flex-start;
   }
 
   .parameter-dataset-context > .mono {

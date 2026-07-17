@@ -849,6 +849,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             if job is None:
                 raise HTTPException(status_code=404, detail="数据集任务不存在。")
             raise HTTPException(status_code=409, detail="当前任务状态不能取消。")
+        ctx.repo.append_audit_log(
+            actor="console",
+            action="CANCEL_BACKTEST_DATASET_JOB",
+            resource_type="BACKTEST_DATASET_JOB",
+            resource_id=job_id,
+            detail={"cancel_requested": True},
+            created_at=datetime.now(timezone.utc),
+        )
         return {"job_id": job_id, "cancel_requested": True}
 
     @app.get("/api/v2/backtests/datasets/{dataset_id}")
@@ -915,6 +923,16 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 ).resolve(request.dataset_id)
             except DataSourceError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
+            dataset_symbol = str(dataset_metadata.get("symbol") or "").strip().upper()
+            requested_symbol = request.symbol.strip().upper()
+            if dataset_symbol and dataset_symbol != requested_symbol:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"回测标的 {requested_symbol} 与冻结数据集标的 "
+                        f"{dataset_symbol} 不一致，请重新选择数据集或标的。"
+                    ),
+                )
         else:
             dataset_path = _resolve_backtest_dataset(ctx.config, str(request.dataset))
         started_at = datetime.now(timezone.utc)

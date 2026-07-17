@@ -4,7 +4,7 @@
 
 > 本文档描述系统设计与实现现状，不构成投资建议。策略默认连接币安测试网，接入真实盘前请通读[部署](#部署)与[风险提示](#风险提示)。
 >
-> v2 的逐项实现、回测边界和实盘门槛见 [`docs/v2-implementation-status.md`](docs/v2-implementation-status.md)。
+> v2 的逐项实现、回测边界和实盘门槛见 [`docs/v2-implementation-status.md`](docs/v2-implementation-status.md)；在线数据、冻结数据集、NYSE 窗口和前端完整工作流见 [`docs/online-backtest-data.md`](docs/online-backtest-data.md)。
 
 ---
 
@@ -179,7 +179,7 @@ QuietGrid/
 
 **M7 风控**（`strategy/risk.py` 决策 + `grid_engine.py` 交易所端执行）：止盈（已实现盈利 ≥ `take_profit_usdt`）、动态止损（价格触及 `stop_loss_price`）、区间击穿（转 COOLDOWN）、强制离场（委托调度器判定）、资金上限（`total_capital_limit`）与并发上限（`max_concurrent`）。所有阈值走配置，非硬编码。
 
-**回测**（`strategy/backtest.py` + `api.py`）：提供 `L0_CONSERVATIVE` 保守成交模型、穿透 tick、同 Bar 风控优先、成交折扣、成交层数限制、手续费/滑点/资金费、未来数据校验、Walk-Forward、Monte Carlo、样本冻结、窗口分布和成本敏感性。当前不伪装支持缺少历史盘口数据的 L1/L2 回测。
+**回测**（`strategy/backtest.py` + `api.py`）：提供 Binance 在线历史数据、CSV 导入、冻结 Dataset ID、质量校验、NYSE 休市窗口切分，以及 `L0_CONSERVATIVE` 保守成交模型、穿透 tick、同 Bar 风控优先、成交折扣、成交层数限制、手续费/滑点/资金费、未来数据校验、Walk-Forward、Monte Carlo、样本冻结、独立窗口分布和成本敏感性。当前不伪装支持缺少历史盘口数据的 L1/L2 回测。
 
 **通知**（`core/notifications.py`）：`WebhookNotifier` 挂在系统日志的 WARN/ERROR 钩子上，支持 `generic` / `dingtalk` / `telegram` 格式；发送失败不阻断交易日志写入。
 

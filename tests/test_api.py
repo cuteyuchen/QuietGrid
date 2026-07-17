@@ -1558,6 +1558,17 @@ def test_v2_online_dataset_job_freezes_and_runs_by_dataset_id(monkeypatch, tmp_p
         assert dataset.json()["quality_status"] == "READY"
         assert len(dataset.json()["checksum"]) == 64
 
+        mismatched = client.post(
+            "/api/v2/backtests",
+            json={
+                "dataset_id": dataset_id,
+                "symbol": "ETHUSDT",
+                "observe_rows": 30,
+            },
+        )
+        assert mismatched.status_code == 422
+        assert "与冻结数据集标的 BTCUSDT 不一致" in mismatched.json()["detail"]
+
         backtest = client.post(
             "/api/v2/backtests",
             json={
@@ -1578,6 +1589,37 @@ def test_v2_online_dataset_job_freezes_and_runs_by_dataset_id(monkeypatch, tmp_p
         assert body["data_provider"] == "binance"
         assert body["report"]["metadata"]["dataset_id"] == dataset_id
         assert body["report"]["metadata"]["dataset_checksum"] == dataset.json()["checksum"]
+        protected = client.delete(f"/api/v2/backtests/datasets/{dataset_id}")
+        assert protected.status_code == 409
+        assert "回测" in protected.json()["detail"]
+
+
+def test_v2_cancel_dataset_job_is_audited(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid-v2-cancel-job.db"
+    config = _test_config(db_path)
+    now = datetime.now(timezone.utc)
+
+    with TestClient(create_app(config)) as client:
+        repo = Repository(db_path, account_id=config.account_id)
+        repo.create_backtest_dataset_job(
+            job_id="job-cancel-audit",
+            provider="binance",
+            symbol="BTCUSDT",
+            interval="1m",
+            requested_start=now - timedelta(days=1),
+            requested_end=now,
+            window_mode="RAW_RANGE",
+        )
+
+        response = client.post(
+            "/api/v2/backtest-data/jobs/job-cancel-audit/cancel"
+        )
+
+        assert response.status_code == 200
+        assert response.json()["cancel_requested"] is True
+        audit = repo.recent_rows("audit_logs", limit=1)[0]
+        assert audit["action"] == "CANCEL_BACKTEST_DATASET_JOB"
+        assert audit["resource_id"] == "job-cancel-audit"
 
 
 def test_v2_upload_csv_validates_and_freezes_dataset(tmp_path) -> None:
@@ -1623,6 +1665,14 @@ def test_v2_upload_csv_validates_and_freezes_dataset(tmp_path) -> None:
         ).status_code == 200
         listed = client.get("/api/v2/backtests/datasets").json()["items"]
         assert [item["source_type"] for item in listed] == ["FROZEN_DATASET"]
+        deleted = client.delete(
+            f"/api/v2/backtests/datasets/{dataset['dataset_id']}"
+        )
+        assert deleted.status_code == 200
+        assert deleted.json()["deleted"] is True
+        assert client.get(
+            f"/api/v2/backtests/datasets/{dataset['dataset_id']}"
+        ).status_code == 404
 
 
 def test_v2_nyse_closed_dataset_runs_independent_windows(tmp_path) -> None:

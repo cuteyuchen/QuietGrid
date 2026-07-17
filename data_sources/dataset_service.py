@@ -13,7 +13,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from data_sources.base import DataSourceError, HistoricalDataSource
-from data_sources.csv_source import INTERVAL_MILLISECONDS
+from data_sources.csv_source import CsvHistoricalDataSource, INTERVAL_MILLISECONDS
 from data_sources.models import DatasetPreview, DatasetRequest, DatasetStatus, NormalizedKline
 from data_sources.normalizer import validate_and_normalize_klines
 from db.repository import Repository
@@ -132,6 +132,111 @@ class BacktestDatasetService:
         if job is None:
             raise DataSourceError("数据集任务创建失败。")
         return job
+
+    async def import_csv(
+        self,
+        source_path: str | Path,
+        *,
+        symbol: str,
+        interval: str,
+        window_mode: str = "NYSE_CLOSED_ONLY",
+    ) -> dict[str, Any]:
+        """校验用户上传 CSV，并冻结为与在线下载一致的不可变数据集。"""
+        if interval not in INTERVAL_MILLISECONDS:
+            raise DataSourceError(f"不支持的历史数据周期: {interval}")
+        path = Path(source_path).resolve()
+        source = CsvHistoricalDataSource(path)
+        earliest = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        latest = datetime(2100, 1, 1, tzinfo=timezone.utc)
+        try:
+            rows = [
+                row
+                async for row in source.fetch_klines(
+                    symbol.strip().upper(),
+                    interval,
+                    earliest,
+                    latest,
+                )
+            ]
+        except RuntimeError as exc:
+            raise DataSourceError(str(exc)) from exc
+        normalized, quality = validate_and_normalize_klines(
+            rows,
+            interval_ms=INTERVAL_MILLISECONDS[interval],
+            now_ms=int(datetime.now(timezone.utc).timestamp() * 1000),
+            drop_unclosed=bool(self.validation_config.get("drop_unclosed", True)),
+            warning_missing_ratio=float(
+                self.validation_config.get("warning_missing_ratio", 0.001)
+            ),
+            reject_missing_ratio=float(
+                self.validation_config.get("reject_missing_ratio", 0.01)
+            ),
+            max_consecutive_missing=int(
+                self.validation_config.get("max_consecutive_missing", 5)
+            ),
+        )
+        if not normalized:
+            raise DataSourceError("上传 CSV 没有可用的已闭合K线。")
+        if quality.errors:
+            raise DataSourceError("；".join(quality.errors))
+        interval_ms = INTERVAL_MILLISECONDS[interval]
+        request = DatasetRequest(
+            provider="csv",
+            symbol=symbol,
+            interval=interval,
+            start_time=normalized[0].open_datetime,
+            end_time=datetime.fromtimestamp(
+                (normalized[-1].open_time + interval_ms) / 1000,
+                tz=timezone.utc,
+            ),
+            window_mode=window_mode,
+        )
+        self.dataset_root.mkdir(parents=True, exist_ok=True)
+        self.staging_root.mkdir(parents=True, exist_ok=True)
+        staging_path = self.staging_root / f"upload_{uuid4().hex}.csv.tmp"
+        try:
+            metadata = _checksum_metadata(request, normalized)
+            _write_frozen_csv(staging_path, normalized)
+            checksum = _dataset_checksum(staging_path, metadata)
+            dataset_id = _dataset_id(request, normalized, checksum)
+            cached = self.repo.get_backtest_dataset(dataset_id)
+            if cached is not None:
+                return cached
+            final_path = (self.dataset_root / f"{dataset_id}.csv").resolve()
+            if not final_path.is_relative_to(self.dataset_root):
+                raise DataSourceError("冻结数据集路径越界。")
+            os.replace(staging_path, final_path)
+            self.repo.save_backtest_dataset(
+                {
+                    "dataset_id": dataset_id,
+                    "provider": request.provider,
+                    "market": "LOCAL",
+                    "symbol": request.symbol,
+                    "interval": request.interval,
+                    "price_type": "CONTRACT",
+                    "requested_start": request.start_time.isoformat(),
+                    "requested_end": request.end_time.isoformat(),
+                    "actual_start": normalized[0].open_datetime.isoformat(),
+                    "actual_end": normalized[-1].open_datetime.isoformat(),
+                    "row_count": len(normalized),
+                    "file_format": "csv",
+                    "file_path": final_path.relative_to(self.dataset_root).as_posix(),
+                    "checksum": checksum,
+                    "schema_version": SCHEMA_VERSION,
+                    "quality_status": quality.status.value,
+                    "quality_report": quality.to_mapping(),
+                    "window_mode": request.window_mode,
+                    "window_count": None,
+                    "status": quality.status.value,
+                }
+            )
+            dataset = self.repo.get_backtest_dataset(dataset_id)
+            if dataset is None:
+                raise DataSourceError("上传数据集冻结失败。")
+            return dataset
+        finally:
+            if staging_path.exists():
+                staging_path.unlink()
 
     async def run_job(self, job_id: str, request: DatasetRequest) -> None:
         job = self.repo.get_backtest_dataset_job(job_id)

@@ -17,7 +17,7 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
@@ -673,15 +673,16 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         root = _legacy_backtest_dataset_root(ctx.config)
         if not root.exists():
             return {"items": frozen_items, "legacy_csv_items": []}
-        frozen_paths = (
-            {str(item.get("file_path") or "") for item in ctx.repo.backtest_datasets()}
-            if root == _backtest_dataset_root(ctx.config)
-            else set()
-        )
+        dataset_root = _backtest_dataset_root(ctx.config)
+        frozen_paths = {
+            (dataset_root / str(item.get("file_path") or "")).resolve()
+            for item in ctx.repo.backtest_datasets()
+            if item.get("file_path")
+        }
         legacy_items = []
         for path in sorted(root.rglob("*.csv"), key=lambda item: item.name.lower()):
             relative_path = path.relative_to(root).as_posix()
-            if relative_path in frozen_paths:
+            if path.resolve() in frozen_paths:
                 continue
             stat = path.stat()
             legacy_items.append(
@@ -768,6 +769,61 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             dataset_futures.add(future)
             future.add_done_callback(dataset_futures.discard)
         return _dataset_job_payload(job)
+
+    @app.post("/api/v2/backtest-data/upload", status_code=status.HTTP_201_CREATED)
+    async def v2_upload_backtest_data(
+        http_request: Request,
+        file_name: str = Query(..., min_length=5, max_length=180),
+        symbol: str = Query(..., min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_-]+$"),
+        interval: str = Query("1m", pattern=r"^(1m|5m|15m|1h)$"),
+        window_mode: str = Query(
+            "NYSE_CLOSED_ONLY",
+            pattern=r"^(NYSE_CLOSED_ONLY|RAW_RANGE)$",
+        ),
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        if Path(file_name).suffix.lower() != ".csv":
+            raise HTTPException(status_code=422, detail="仅支持 .csv 文件。")
+        max_bytes = 25 * 1024 * 1024
+        staging_root = _backtest_staging_root(ctx.config)
+        staging_root.mkdir(parents=True, exist_ok=True)
+        upload_path = staging_root / f"upload_raw_{uuid4().hex}.csv"
+        written = 0
+        try:
+            with upload_path.open("wb") as fh:
+                async for chunk in http_request.stream():
+                    written += len(chunk)
+                    if written > max_bytes:
+                        raise HTTPException(
+                            status_code=413,
+                            detail="上传 CSV 不能超过 25 MB。",
+                        )
+                    fh.write(chunk)
+            if written == 0:
+                raise HTTPException(status_code=422, detail="上传 CSV 为空。")
+            service = _backtest_dataset_service(ctx.config, ctx.repo)
+            dataset = await service.import_csv(
+                upload_path,
+                symbol=symbol,
+                interval=interval,
+                window_mode=window_mode,
+            )
+            ctx.repo.append_audit_log(
+                actor="console",
+                action="UPLOAD_BACKTEST_DATASET",
+                resource_type="BACKTEST_DATASET",
+                resource_id=str(dataset.get("dataset_id") or ""),
+                detail={"file_name": Path(file_name).name, "size_bytes": written},
+                created_at=datetime.now(timezone.utc),
+            )
+            return _v2_dataset_payload(dataset)
+        except HTTPException:
+            raise
+        except (DataSourceError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            if upload_path.exists():
+                upload_path.unlink()
 
     @app.get("/api/v2/backtest-data/jobs/{job_id}")
     def v2_backtest_data_job(

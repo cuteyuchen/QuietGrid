@@ -291,10 +291,111 @@ export type V2OrderReconciliation = {
 }
 
 export type V2BacktestDataset = {
+  datasetId: string | null
+  sourceType: 'FROZEN_DATASET' | 'LEGACY_CSV'
   name: string
   relativePath: string
   sizeBytes: number
   modifiedAt: string
+  provider: string
+  market: string
+  symbol: string
+  interval: string
+  priceType: string
+  requestedStart: string
+  requestedEnd: string
+  actualStart: string
+  actualEnd: string
+  rowCount: number
+  checksum: string
+  schemaVersion: number
+  qualityStatus: string
+  qualityReport: V2DatasetQualityReport
+  windowMode: string
+  windowCount: number | null
+  status: string
+  error: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type V2DatasetQualityReport = {
+  status: string
+  inputRows: number
+  outputRows: number
+  duplicateRows: number
+  conflictingDuplicates: number
+  missingIntervals: number
+  missingRatio: number
+  maxConsecutiveMissing: number
+  unclosedRows: number
+  firstOpenTime: number | null
+  lastOpenTime: number | null
+  warnings: string[]
+  errors: string[]
+}
+
+export type V2BacktestDataProvider = {
+  id: string
+  label: string
+  market: string
+  intervals: string[]
+  priceTypes: string[]
+}
+
+export type V2BacktestSymbol = {
+  symbol: string
+  status: string
+  market: string
+  baseAsset: string
+  quoteAsset: string
+}
+
+export type V2DatasetRequest = {
+  provider: string
+  symbol: string
+  interval: string
+  priceType: string
+  startTime: string
+  endTime: string
+  windowMode: 'NYSE_CLOSED_ONLY' | 'RAW_RANGE'
+}
+
+export type V2DatasetPreview = {
+  provider: string
+  symbol: string
+  interval: string
+  startTime: string
+  endTime: string
+  estimatedRows: number
+  estimatedPages: number
+  estimatedSizeBytes: number
+  cacheHit: boolean
+  windowCount: number | null
+  warnings: string[]
+}
+
+export type V2DatasetJob = {
+  jobId: string
+  datasetId: string | null
+  provider: string
+  symbol: string
+  interval: string
+  requestedStart: string
+  requestedEnd: string
+  windowMode: string
+  status: string
+  stage: string
+  progress: number
+  currentPage: number
+  totalPages: number
+  downloadedRows: number
+  cancelRequested: boolean
+  error: string
+  createdAt: string
+  startedAt: string
+  completedAt: string
+  updatedAt: string
 }
 
 export type V2BacktestRun = {
@@ -309,6 +410,11 @@ export type V2BacktestRun = {
   parameterVersion: string
   codeCommit: string
   reportPath: string
+  datasetId: string
+  datasetChecksum: string
+  dataProvider: string
+  windowMode: string
+  windowCount: number | null
   config: Record<string, unknown>
   metrics: Record<string, number | string | null>
 }
@@ -388,6 +494,12 @@ export type V2BacktestDetail = V2BacktestRun & {
     }
     metadata?: {
       dataset?: string
+      dataset_id?: string
+      dataset_checksum?: string
+      data_provider?: string
+      window_mode?: string
+      window_count?: number | null
+      dataset_schema_version?: number | null
       sample_label?: string
       parameters_frozen?: boolean
       data_start?: string | null
@@ -403,7 +515,8 @@ export type V2BacktestDetail = V2BacktestRun & {
 }
 
 export type V2BacktestRequest = {
-  dataset: string
+  dataset?: string
+  datasetId?: string
   symbol: string
   observeRows: number
   capital: number
@@ -916,18 +1029,134 @@ export async function loadV2OrderReconciliation(
 }
 
 export async function loadV2BacktestDatasets(accountId?: string): Promise<V2BacktestDataset[]> {
-  const value = await fetchJson<{ items: Array<{
-    name: string
-    relative_path: string
-    size_bytes: number
-    modified_at: string
-  }> }>(accountUrl('/api/v2/backtests/datasets', accountId))
+  const value = await fetchJson<{ items: Array<Record<string, unknown>> }>(
+    accountUrl('/api/v2/backtests/datasets', accountId),
+  )
+  return value.items.map(mapV2BacktestDataset)
+}
+
+export async function loadV2BacktestDataProviders(
+  accountId?: string,
+): Promise<V2BacktestDataProvider[]> {
+  const value = await fetchJson<{ items: Array<Record<string, unknown>> }>(
+    accountUrl('/api/v2/backtest-data/providers', accountId),
+  )
   return value.items.map((item) => ({
-    name: item.name,
-    relativePath: item.relative_path,
-    sizeBytes: item.size_bytes,
-    modifiedAt: item.modified_at,
+    id: String(item.id || ''),
+    label: String(item.label || ''),
+    market: String(item.market || ''),
+    intervals: Array.isArray(item.intervals) ? item.intervals.map(String) : [],
+    priceTypes: Array.isArray(item.price_types) ? item.price_types.map(String) : [],
   }))
+}
+
+export async function searchV2BacktestSymbols(
+  query = '',
+  accountId?: string,
+): Promise<V2BacktestSymbol[]> {
+  const path = `/api/v2/backtest-data/providers/binance/symbols?query=${encodeURIComponent(query)}&market=usds_m`
+  const value = await fetchJson<{ items: Array<Record<string, unknown>> }>(
+    accountUrl(path, accountId),
+  )
+  return value.items.map((item) => ({
+    symbol: String(item.symbol || ''),
+    status: String(item.status || ''),
+    market: String(item.market || ''),
+    baseAsset: String(item.base_asset || ''),
+    quoteAsset: String(item.quote_asset || ''),
+  }))
+}
+
+export async function previewV2BacktestDataset(
+  request: V2DatasetRequest,
+  accountId?: string,
+): Promise<V2DatasetPreview> {
+  const value = await requestJson<Record<string, unknown>>(
+    accountUrl('/api/v2/backtest-data/preview', accountId),
+    { method: 'POST', body: JSON.stringify(datasetRequestBody(request)) },
+  )
+  return mapV2DatasetPreview(value)
+}
+
+export async function createV2BacktestDatasetJob(
+  request: V2DatasetRequest,
+  accountId?: string,
+): Promise<V2DatasetJob> {
+  const value = await requestJson<Record<string, unknown>>(
+    accountUrl('/api/v2/backtest-data/jobs', accountId),
+    { method: 'POST', body: JSON.stringify(datasetRequestBody(request)) },
+  )
+  return mapV2DatasetJob(value)
+}
+
+export async function uploadV2BacktestDataset(
+  file: File,
+  options: {
+    symbol: string
+    interval: string
+    windowMode: 'NYSE_CLOSED_ONLY' | 'RAW_RANGE'
+  },
+  accountId?: string,
+): Promise<V2BacktestDataset> {
+  const query = new URLSearchParams({
+    file_name: file.name,
+    symbol: options.symbol,
+    interval: options.interval,
+    window_mode: options.windowMode,
+  })
+  const response = await fetch(
+    accountUrl(`/api/v2/backtest-data/upload?${query.toString()}`, accountId),
+    {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'text/csv' },
+      body: file,
+    },
+  )
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>
+  if (!response.ok) {
+    throw new Error(body.detail ? String(body.detail) : `请求失败：${response.status}`)
+  }
+  return mapV2BacktestDataset(body)
+}
+
+export async function loadV2BacktestDatasetJob(
+  jobId: string,
+  accountId?: string,
+): Promise<V2DatasetJob> {
+  const value = await fetchJson<Record<string, unknown>>(
+    accountUrl(`/api/v2/backtest-data/jobs/${encodeURIComponent(jobId)}`, accountId),
+  )
+  return mapV2DatasetJob(value)
+}
+
+export async function cancelV2BacktestDatasetJob(
+  jobId: string,
+  accountId?: string,
+): Promise<void> {
+  await requestJson(
+    accountUrl(`/api/v2/backtest-data/jobs/${encodeURIComponent(jobId)}/cancel`, accountId),
+    { method: 'POST' },
+  )
+}
+
+export async function loadV2BacktestDatasetDetail(
+  datasetId: string,
+  accountId?: string,
+): Promise<V2BacktestDataset> {
+  const value = await fetchJson<Record<string, unknown>>(
+    accountUrl(`/api/v2/backtests/datasets/${encodeURIComponent(datasetId)}`, accountId),
+  )
+  return mapV2BacktestDataset(value)
+}
+
+export async function deleteV2BacktestDataset(
+  datasetId: string,
+  accountId?: string,
+): Promise<void> {
+  await requestJson(
+    accountUrl(`/api/v2/backtests/datasets/${encodeURIComponent(datasetId)}`, accountId),
+    { method: 'DELETE' },
+  )
 }
 
 export async function loadV2Backtests(accountId?: string): Promise<V2BacktestRun[]> {
@@ -960,7 +1189,7 @@ export async function startV2Backtest(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      dataset: request.dataset,
+      ...(request.datasetId ? { dataset_id: request.datasetId } : { dataset: request.dataset }),
       symbol: request.symbol,
       observe_rows: request.observeRows,
       capital: request.capital,
@@ -1094,8 +1323,120 @@ function mapV2BacktestRun(value: Record<string, unknown>): V2BacktestRun {
     parameterVersion: String(value.parameter_version || ''),
     codeCommit: String(value.code_commit || ''),
     reportPath: String(value.report_path || ''),
+    datasetId: String(value.dataset_id || ''),
+    datasetChecksum: String(value.dataset_checksum || ''),
+    dataProvider: String(value.data_provider || ''),
+    windowMode: String(value.window_mode || ''),
+    windowCount: value.window_count == null ? null : Math.trunc(unknownNumber(value.window_count)),
     config,
     metrics,
+  }
+}
+
+function mapV2BacktestDataset(value: Record<string, unknown>): V2BacktestDataset {
+  const quality = value.quality_report && typeof value.quality_report === 'object'
+    ? value.quality_report as Record<string, unknown>
+    : {}
+  const sourceType = String(value.source_type || 'LEGACY_CSV') === 'FROZEN_DATASET'
+    ? 'FROZEN_DATASET'
+    : 'LEGACY_CSV'
+  const relativePath = String(value.relative_path || value.file_path || '')
+  const symbol = String(value.symbol || '')
+  const interval = String(value.interval || '')
+  return {
+    datasetId: value.dataset_id ? String(value.dataset_id) : null,
+    sourceType,
+    name: String(value.name || (symbol && interval ? `${symbol} · ${interval}` : relativePath)),
+    relativePath,
+    sizeBytes: unknownNumber(value.size_bytes),
+    modifiedAt: String(value.modified_at || value.updated_at || value.created_at || ''),
+    provider: String(value.provider || (sourceType === 'LEGACY_CSV' ? 'local' : '')),
+    market: String(value.market || ''),
+    symbol,
+    interval,
+    priceType: String(value.price_type || ''),
+    requestedStart: String(value.requested_start || ''),
+    requestedEnd: String(value.requested_end || ''),
+    actualStart: String(value.actual_start || ''),
+    actualEnd: String(value.actual_end || ''),
+    rowCount: Math.trunc(unknownNumber(value.row_count)),
+    checksum: String(value.checksum || ''),
+    schemaVersion: Math.trunc(unknownNumber(value.schema_version)),
+    qualityStatus: String(value.quality_status || (sourceType === 'LEGACY_CSV' ? 'LEGACY' : '')),
+    qualityReport: {
+      status: String(quality.status || value.quality_status || ''),
+      inputRows: Math.trunc(unknownNumber(quality.input_rows)),
+      outputRows: Math.trunc(unknownNumber(quality.output_rows)),
+      duplicateRows: Math.trunc(unknownNumber(quality.duplicate_rows)),
+      conflictingDuplicates: Math.trunc(unknownNumber(quality.conflicting_duplicates)),
+      missingIntervals: Math.trunc(unknownNumber(quality.missing_intervals)),
+      missingRatio: unknownNumber(quality.missing_ratio),
+      maxConsecutiveMissing: Math.trunc(unknownNumber(quality.max_consecutive_missing)),
+      unclosedRows: Math.trunc(unknownNumber(quality.unclosed_rows)),
+      firstOpenTime: quality.first_open_time == null ? null : unknownNumber(quality.first_open_time),
+      lastOpenTime: quality.last_open_time == null ? null : unknownNumber(quality.last_open_time),
+      warnings: Array.isArray(quality.warnings) ? quality.warnings.map(String) : [],
+      errors: Array.isArray(quality.errors) ? quality.errors.map(String) : [],
+    },
+    windowMode: String(value.window_mode || ''),
+    windowCount: value.window_count == null ? null : Math.trunc(unknownNumber(value.window_count)),
+    status: String(value.status || (sourceType === 'LEGACY_CSV' ? 'READY' : '')),
+    error: String(value.error || ''),
+    createdAt: String(value.created_at || ''),
+    updatedAt: String(value.updated_at || ''),
+  }
+}
+
+function datasetRequestBody(request: V2DatasetRequest): Record<string, unknown> {
+  return {
+    provider: request.provider,
+    symbol: request.symbol,
+    interval: request.interval,
+    price_type: request.priceType,
+    start_time: request.startTime,
+    end_time: request.endTime,
+    window_mode: request.windowMode,
+  }
+}
+
+function mapV2DatasetPreview(value: Record<string, unknown>): V2DatasetPreview {
+  return {
+    provider: String(value.provider || ''),
+    symbol: String(value.symbol || ''),
+    interval: String(value.interval || ''),
+    startTime: String(value.start_time || ''),
+    endTime: String(value.end_time || ''),
+    estimatedRows: Math.trunc(unknownNumber(value.estimated_rows)),
+    estimatedPages: Math.trunc(unknownNumber(value.estimated_pages)),
+    estimatedSizeBytes: unknownNumber(value.estimated_size_bytes),
+    cacheHit: Boolean(value.cache_hit),
+    windowCount: value.window_count == null ? null : Math.trunc(unknownNumber(value.window_count)),
+    warnings: Array.isArray(value.warnings) ? value.warnings.map(String) : [],
+  }
+}
+
+function mapV2DatasetJob(value: Record<string, unknown>): V2DatasetJob {
+  return {
+    jobId: String(value.job_id || ''),
+    datasetId: value.dataset_id ? String(value.dataset_id) : null,
+    provider: String(value.provider || ''),
+    symbol: String(value.symbol || ''),
+    interval: String(value.interval || ''),
+    requestedStart: String(value.requested_start || ''),
+    requestedEnd: String(value.requested_end || ''),
+    windowMode: String(value.window_mode || ''),
+    status: String(value.status || 'UNKNOWN'),
+    stage: String(value.stage || ''),
+    progress: unknownNumber(value.progress),
+    currentPage: Math.trunc(unknownNumber(value.current_page)),
+    totalPages: Math.trunc(unknownNumber(value.total_pages)),
+    downloadedRows: Math.trunc(unknownNumber(value.downloaded_rows)),
+    cancelRequested: Boolean(value.cancel_requested),
+    error: String(value.error || ''),
+    createdAt: String(value.created_at || ''),
+    startedAt: String(value.started_at || ''),
+    completedAt: String(value.completed_at || ''),
+    updatedAt: String(value.updated_at || ''),
   }
 }
 
@@ -1298,6 +1639,25 @@ async function fetchJson<T>(url: string): Promise<T> {
     throw new Error(`请求失败：${response.status}`)
   }
   return (await response.json()) as T
+}
+
+async function requestJson<T = Record<string, unknown>>(
+  url: string,
+  init: RequestInit,
+): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      Accept: 'application/json',
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init.headers || {}),
+    },
+  })
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>
+  if (!response.ok) {
+    throw new Error(body.detail ? String(body.detail) : `请求失败：${response.status}`)
+  }
+  return body as T
 }
 
 function accountUrl(path: string, accountId?: string): string {

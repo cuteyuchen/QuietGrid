@@ -1514,7 +1514,7 @@ def test_v2_online_dataset_job_freezes_and_runs_by_dataset_id(monkeypatch, tmp_p
     config.raw["backtest"] = {
         "dataset_dir": str(dataset_root),
         "staging_dir": str(tmp_path / "staging"),
-        "legacy_dataset_dir": str(tmp_path / "legacy"),
+        "legacy_dataset_dir": str(tmp_path),
         "report_dir": str(report_root),
         "online_data": {"max_concurrent_jobs": 1, "max_range_days_1m": 180},
     }
@@ -1578,6 +1578,68 @@ def test_v2_online_dataset_job_freezes_and_runs_by_dataset_id(monkeypatch, tmp_p
         assert body["data_provider"] == "binance"
         assert body["report"]["metadata"]["dataset_id"] == dataset_id
         assert body["report"]["metadata"]["dataset_checksum"] == dataset.json()["checksum"]
+
+
+def test_v2_upload_csv_validates_and_freezes_dataset(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid-v2-upload.db"
+    dataset_root = tmp_path / "frozen-datasets"
+    config = _test_config(db_path)
+    config.raw["backtest"] = {
+        "dataset_dir": str(dataset_root),
+        "staging_dir": str(tmp_path / "staging"),
+        "legacy_dataset_dir": str(tmp_path / "legacy"),
+    }
+    rows = ["timestamp,open,high,low,close,volume"]
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for index in range(90):
+        opened = start + timedelta(minutes=index)
+        close = 100 + (index % 5) * 0.1
+        rows.append(
+            f"{opened.isoformat()},{close},{close + 1},{close - 1},{close},12"
+        )
+
+    with TestClient(create_app(config)) as client:
+        response = client.post(
+            "/api/v2/backtest-data/upload",
+            params={
+                "file_name": "uploaded.csv",
+                "symbol": "BTCUSDT",
+                "interval": "1m",
+                "window_mode": "RAW_RANGE",
+            },
+            content="\n".join(rows).encode("utf-8"),
+            headers={"Content-Type": "text/csv"},
+        )
+
+        assert response.status_code == 201, response.text
+        dataset = response.json()
+        assert dataset["provider"] == "csv"
+        assert dataset["symbol"] == "BTCUSDT"
+        assert dataset["row_count"] == 90
+        assert dataset["quality_status"] == "READY"
+        assert len(dataset["checksum"]) == 64
+        assert client.get(
+            f"/api/v2/backtests/datasets/{dataset['dataset_id']}"
+        ).status_code == 200
+        listed = client.get("/api/v2/backtests/datasets").json()["items"]
+        assert [item["source_type"] for item in listed] == ["FROZEN_DATASET"]
+
+
+def test_v2_upload_rejects_non_csv_and_invalid_rows(tmp_path) -> None:
+    client = TestClient(create_app(_test_config(tmp_path / "upload-invalid.db")))
+    rejected_extension = client.post(
+        "/api/v2/backtest-data/upload",
+        params={"file_name": "payload.txt", "symbol": "BTCUSDT"},
+        content=b"high,low,close\n2,1,1.5\n",
+    )
+    rejected_schema = client.post(
+        "/api/v2/backtest-data/upload",
+        params={"file_name": "payload.csv", "symbol": "BTCUSDT"},
+        content=b"timestamp,close\n2026-01-01T00:00:00Z,100\n",
+    )
+
+    assert rejected_extension.status_code == 422
+    assert rejected_schema.status_code == 422
 
 
 def test_v2_backtest_requires_exactly_one_dataset_reference(tmp_path) -> None:

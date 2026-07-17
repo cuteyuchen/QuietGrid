@@ -24,6 +24,7 @@ import {
 import MetricCard from '../components/MetricCard.vue'
 import MiniLineChart from '../components/MiniLineChart.vue'
 import StatusBadge from '../components/StatusBadge.vue'
+import BacktestDataPanel from '../components/backtest/BacktestDataPanel.vue'
 
 const props = defineProps<{
   accountId: string
@@ -38,6 +39,7 @@ const running = ref(false)
 const error = ref('')
 const form = ref({
   dataset: '',
+  datasetId: '',
   symbol: 'BTCUSDT',
   observeRows: 30,
   capital: 200,
@@ -79,6 +81,20 @@ const monteCarloValues = computed(() => [
 const sensitivity = computed(() => validation.value?.cost_sensitivity)
 const windowDistribution = computed(() => validation.value?.window_distribution)
 const windowValues = computed(() => windowDistribution.value?.values || [])
+const selectedDataset = computed(() => datasets.value.find((item) => (
+  form.value.datasetId
+    ? item.datasetId === form.value.datasetId
+    : !item.datasetId && item.relativePath === form.value.dataset
+)) || null)
+const selectedDatasetKey = computed(() => {
+  if (form.value.datasetId) return `id:${form.value.datasetId}`
+  return form.value.dataset ? `path:${form.value.dataset}` : ''
+})
+const hasDataset = computed(() => Boolean(form.value.datasetId || form.value.dataset))
+const datasetReady = computed(() => Boolean(
+  selectedDataset.value && isDatasetRunnable(selectedDataset.value),
+))
+const canRun = computed(() => hasDataset.value && datasetReady.value)
 
 onMounted(refresh)
 watch(() => props.accountId, refresh)
@@ -93,8 +109,17 @@ async function refresh() {
     ])
     datasets.value = datasetItems
     runs.value = runItems
-    if (!form.value.dataset && datasetItems.length) {
-      form.value.dataset = datasetItems[0].relativePath
+    const selectionStillExists = datasetItems.some(
+      (item) => datasetKey(item) === selectedDatasetKey.value,
+    )
+    if (!hasDataset.value || !selectionStillExists) {
+      const runnableDataset = datasetItems.find(isDatasetRunnable)
+      if (runnableDataset) {
+        selectDataset(runnableDataset)
+      } else {
+        form.value.dataset = ''
+        form.value.datasetId = ''
+      }
     }
     if (selected.value && !runItems.some((item) => item.runId === selected.value?.runId)) {
       selected.value = null
@@ -107,7 +132,7 @@ async function refresh() {
 }
 
 async function runBacktest() {
-  if (!form.value.dataset || running.value) return
+  if (!canRun.value || running.value) return
   running.value = true
   error.value = ''
   try {
@@ -122,6 +147,30 @@ async function runBacktest() {
   } finally {
     running.value = false
   }
+}
+
+function selectDataset(dataset: V2BacktestDataset) {
+  if (dataset.datasetId) {
+    form.value.datasetId = dataset.datasetId
+    form.value.dataset = ''
+  } else {
+    form.value.datasetId = ''
+    form.value.dataset = dataset.relativePath
+  }
+  if (dataset.symbol) form.value.symbol = dataset.symbol
+}
+
+function datasetKey(dataset: V2BacktestDataset) {
+  return dataset.datasetId ? `id:${dataset.datasetId}` : `path:${dataset.relativePath}`
+}
+
+function isDatasetRunnable(dataset: V2BacktestDataset) {
+  if (dataset.sourceType === 'LEGACY_CSV') return true
+  return ['READY', 'READY_WITH_WARNINGS'].includes(dataset.status.toUpperCase())
+}
+
+function scrollToData() {
+  document.getElementById('data-preparation-title')?.scrollIntoView({ behavior: 'smooth' })
 }
 
 async function openRun(run: V2BacktestRun) {
@@ -168,10 +217,11 @@ function number(value: unknown, digits = 2) {
   return Number.isFinite(parsed) ? parsed.toFixed(digits) : '—'
 }
 
-function time(value: string | null | undefined) {
+function time(value: string | number | null | undefined) {
   if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
+  const raw = String(value)
+  const date = /^\d{12,}$/.test(raw) ? new Date(Number(raw)) : new Date(raw)
+  return Number.isNaN(date.getTime()) ? raw : date.toLocaleString('zh-CN', { hour12: false })
 }
 
 function downloadReport() {
@@ -192,8 +242,8 @@ function downloadReport() {
     <section class="page-intro">
       <div>
         <p class="eyebrow">Backtest Lab</p>
-        <h2>回测与策略验证</h2>
-        <p>完整保留成交、成本、样本外和尾部验证；默认值可直接运行，高级参数按需展开。</p>
+        <h2>回测中心</h2>
+        <p>从可复现数据集到专业验证报告，按一个连续流程完成；高级能力完整保留，需要时再展开。</p>
       </div>
       <button class="button button--secondary" type="button" :disabled="loading" @click="refresh">
         <RefreshCw :size="17" :class="{ spin: loading }" />
@@ -206,30 +256,57 @@ function downloadReport() {
       <span><strong>回测中心暂不可用</strong>{{ error }}</span>
     </div>
 
+    <ol class="backtest-flow" aria-label="回测工作流">
+      <li class="active"><span>1</span><div><strong>准备数据</strong><small>下载、上传或复用</small></div></li>
+      <li :class="{ active: hasDataset }"><span>2</span><div><strong>设置参数</strong><small>策略、成交与验证</small></div></li>
+      <li :class="{ active: running || runs.length }"><span>3</span><div><strong>运行实验</strong><small>保守撮合与压力验证</small></div></li>
+      <li :class="{ active: selected }"><span>4</span><div><strong>阅读报告</strong><small>收益、风险与可复现性</small></div></li>
+    </ol>
+
+    <BacktestDataPanel
+      :account-id="accountId"
+      :datasets="datasets"
+      :selected-key="selectedDatasetKey"
+      :loading="loading"
+      @select="selectDataset"
+      @refresh="refresh"
+    />
+
     <section class="panel" aria-labelledby="new-backtest-title">
       <div class="panel__header">
-        <div>
+        <div class="backtest-step-heading">
+          <div class="backtest-step-number" aria-hidden="true">2</div>
+          <div>
           <p class="eyebrow">新实验</p>
-          <h2 id="new-backtest-title">运行保守回测</h2>
-          <p>信号下一时点执行；同 Bar 冲突止损优先；默认使用成交折扣。</p>
+            <h2 id="new-backtest-title">设置回测与验证参数</h2>
+            <p>默认值适合第一次运行；成交、成本和验证参数完整保留在高级设置中。</p>
+          </div>
         </div>
         <StatusBadge tone="info" :label="sampleLabel(form.sampleLabel)" />
       </div>
 
       <form class="backtest-form backtest-form--primary" @submit.prevent="runBacktest">
-        <label class="field field--wide">
-          <span>历史数据集</span>
-          <select v-model="form.dataset" required>
-            <option value="" disabled>选择 data 目录中的 CSV</option>
-            <option v-for="dataset in datasets" :key="dataset.relativePath" :value="dataset.relativePath">
-              {{ dataset.name }} · {{ (dataset.sizeBytes / 1024).toFixed(1) }} KB
-            </option>
-          </select>
-          <small v-if="!datasets.length">将 CSV 放入配置的 backtest.dataset_dir 后即可选择。</small>
-        </label>
+        <div v-if="selectedDataset" class="parameter-dataset-context field--wide">
+          <Database :size="20" />
+          <span>
+            <small>本次实验固定使用</small>
+            <strong>{{ selectedDataset.symbol || selectedDataset.name }} · {{ selectedDataset.interval || '旧版 CSV' }}</strong>
+          </span>
+          <span class="mono">{{ selectedDataset.datasetId || selectedDataset.relativePath }}</span>
+          <button class="button button--secondary button--small" type="button" @click="scrollToData">更换数据</button>
+        </div>
+        <div v-if="selectedDataset && !datasetReady" class="inline-alert inline-alert--danger field--wide">
+          <AlertTriangle :size="19" />
+          <span><strong>当前数据集不可用于回测</strong>请展开上方质量报告查看错误，或切换到状态为“可用”的冻结数据集。</span>
+        </div>
+        <div v-if="!selectedDataset" class="inline-alert inline-alert--warning field--wide">
+          <AlertTriangle :size="19" />
+          <span><strong>还没有选择数据集</strong>请先在上方完成数据准备，参数会在选择后用于该冻结数据集。</span>
+        </div>
         <label class="field">
           <span>标的</span>
-          <input v-model.trim="form.symbol" type="text" required autocomplete="off">
+          <input v-model.trim="form.symbol" type="text" required autocomplete="off" :readonly="Boolean(selectedDataset?.symbol)">
+          <small>{{ selectedDataset?.symbol ? '来自冻结数据集，不可在回测时替换。' : '旧版 CSV 需要手动声明标的。' }}</small>
         </label>
         <label class="field">
           <span>观察期 K 线数</span>
@@ -316,7 +393,7 @@ function downloadReport() {
         <button
           class="button button--primary backtest-submit"
           type="submit"
-          :disabled="running || !form.dataset || (form.sampleLabel === 'OOS_FROZEN' && !form.parametersFrozen)"
+          :disabled="running || !canRun || (form.sampleLabel === 'OOS_FROZEN' && !form.parametersFrozen)"
         >
           <Play :size="17" />
           {{ running ? '正在回测与验证…' : '开始回测' }}
@@ -346,6 +423,8 @@ function downloadReport() {
               <StatusBadge :tone="run.status === 'COMPLETED' ? 'good' : run.status === 'FAILED' ? 'danger' : 'warning'" :label="run.status" />
             </span>
             <small>{{ sampleLabel(run.config.sample_label) }} · {{ time(run.startedAt) }}</small>
+            <small v-if="run.datasetId" class="run-dataset-ref">Dataset {{ run.datasetId.slice(0, 24) }}… · {{ run.dataProvider || '—' }}</small>
+            <small v-if="run.datasetChecksum" class="mono">Hash {{ run.datasetChecksum.slice(0, 12) }}… · {{ run.windowMode || 'RAW_RANGE' }}</small>
             <small>{{ run.fillModel }} · DD {{ money(Number(run.metrics.max_drawdown || 0)) }}</small>
             <b :class="Number(run.metrics.total_pnl || 0) >= 0 ? 'positive' : 'negative'">
               {{ money(Number(run.metrics.total_pnl || 0)) }}
@@ -404,7 +483,10 @@ function downloadReport() {
             </div>
 
             <dl class="metadata-grid metadata-grid--wide report-metadata">
-              <div><dt>数据集</dt><dd>{{ metadata?.dataset || selected.config.dataset || '—' }}</dd></div>
+              <div><dt>数据集</dt><dd>{{ metadata?.dataset || metadata?.dataset_id || selected.datasetId || selected.config.dataset || '旧版 CSV' }}</dd></div>
+              <div><dt>Dataset ID</dt><dd class="mono">{{ metadata?.dataset_id || selected.datasetId || '旧版 CSV' }}</dd></div>
+              <div><dt>数据哈希</dt><dd class="mono">{{ metadata?.dataset_checksum || selected.datasetChecksum || '—' }}</dd></div>
+              <div><dt>Provider / 窗口</dt><dd>{{ metadata?.data_provider || selected.dataProvider || 'local' }} · {{ metadata?.window_mode || selected.windowMode || 'RAW_RANGE' }}</dd></div>
               <div><dt>数据区间</dt><dd>{{ time(metadata?.data_start) }} – {{ time(metadata?.data_end) }}</dd></div>
               <div><dt>总行数 / 执行行数</dt><dd>{{ metadata?.row_count || '—' }} / {{ metadata?.execution_rows || '—' }}</dd></div>
               <div><dt>代码提交</dt><dd class="mono">{{ metadata?.code_commit || selected.codeCommit || '—' }}</dd></div>

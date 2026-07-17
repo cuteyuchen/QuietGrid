@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import csv
 import hashlib
 import hmac
 import json
@@ -20,6 +19,7 @@ from core.config import load_config, require_testnet, select_account, select_all
 from core.logging_config import setup_logging
 from core.notifications import build_system_log_notifier
 from core.scheduler import Scheduler
+from data_sources.csv_source import read_legacy_backtest_csv
 from db.database import init_db
 from db.repository import Repository
 from exchange.binance import BinanceFuturesClient
@@ -444,34 +444,7 @@ def _backtest_batch_summary(reports: list[dict[str, Any]], errors: list[dict[str
 
 
 def _read_backtest_csv(csv_path: Path) -> list[dict[str, Any]]:
-    if not csv_path.exists():
-        raise RuntimeError(f"回测CSV不存在: {csv_path}")
-    with csv_path.open("r", encoding="utf-8-sig", newline="") as fh:
-        reader = csv.DictReader(fh)
-        if reader.fieldnames is None:
-            raise RuntimeError("回测CSV缺少表头。")
-        missing = {"high", "low", "close"} - {name.strip() for name in reader.fieldnames}
-        if missing:
-            raise RuntimeError(f"回测CSV缺少必要列: {', '.join(sorted(missing))}")
-        rows = []
-        for line_number, row in enumerate(reader, start=2):
-            rows.append(_normalize_backtest_csv_row(row, line_number))
-    if not rows:
-        raise RuntimeError("回测CSV没有数据行。")
-    return rows
-
-
-def _normalize_backtest_csv_row(row: dict[str, Any], line_number: int) -> dict[str, Any]:
-    normalized: dict[str, Any] = {}
-    for key, value in row.items():
-        if key is not None:
-            normalized[key.strip()] = value
-    for key in ("high", "low", "close"):
-        try:
-            normalized[key] = float(normalized[key])
-        except (TypeError, ValueError, KeyError) as exc:
-            raise RuntimeError(f"回测CSV第{line_number}行 {key} 无效。") from exc
-    return normalized
+    return read_legacy_backtest_csv(csv_path)
 
 
 def _grid_config_from_raw(raw: dict[str, Any]) -> GridConfig:

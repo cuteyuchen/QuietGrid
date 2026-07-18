@@ -2095,6 +2095,9 @@ class Repository:
             "price_type", "requested_start", "requested_end", "actual_start", "actual_end",
             "row_count", "file_format", "file_path", "checksum", "schema_version",
             "quality_status", "quality_report_json", "window_mode", "window_count",
+            "raw_window_count", "eligible_window_count", "skipped_window_count",
+            "source_segments_json",
+            "has_funding", "funding_event_count", "funding_file_path",
             "status", "error", "created_at", "updated_at",
         )
         values = (
@@ -2106,6 +2109,12 @@ class Repository:
             dataset["file_path"], dataset["checksum"], int(dataset.get("schema_version", 1)),
             dataset["quality_status"], _json(dataset.get("quality_report", {})),
             dataset.get("window_mode", "NYSE_CLOSED_ONLY"), dataset.get("window_count"),
+            dataset.get("raw_window_count"), dataset.get("eligible_window_count"),
+            dataset.get("skipped_window_count"),
+            _json(dataset.get("source_segments", [])),
+            1 if dataset.get("has_funding") else 0,
+            dataset.get("funding_event_count"),
+            dataset.get("funding_file_path"),
             dataset["status"], dataset.get("error"), dataset.get("created_at", now), now,
         )
         with connect(self.db_path) as conn:

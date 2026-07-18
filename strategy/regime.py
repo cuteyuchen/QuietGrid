@@ -9,7 +9,8 @@ from typing import Any
 from strategy.grid_calculator import GridCalculationError, calculate_atr
 
 
-REGIME_MODEL_VERSION = "regime-rules-v2.0.0"
+REGIME_MODEL_VERSION = "regime-rules-v2.1.0"
+REGIME_FEATURE_VERSION = "regime-features-v2.1.0"
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,9 @@ class RegimeConfig:
     max_vol_expansion_ratio: float = 2.5
     min_depth_usdt: float = 10_000.0
     weights: RegimeWeights = RegimeWeights()
+    # 没有事件数据 Provider 时不给 event 维度免费满分：置其权重为 0 并把权重
+    # 重新归一化到其余维度（计划 §9.1）。接入事件源后再设为 True 启用 event。
+    event_source_available: bool = False
 
 
 @dataclass(frozen=True)
@@ -65,6 +69,7 @@ class RegimeDecision:
     component_scores: dict[str, float]
     features: FeatureSnapshot
     model_version: str = REGIME_MODEL_VERSION
+    feature_version: str = REGIME_FEATURE_VERSION
 
 
 class RegimeEngine:
@@ -113,14 +118,13 @@ class RegimeEngine:
             features.volatility_expansion,
             config.max_vol_expansion_ratio,
         )
+        # trend 只反映方向效率（低方向效率=更适合网格）；mean_reversion 只反映
+        # 反转结构（穿越频率），不再共用 1 - directional_efficiency，避免重复计分。
         trend_score = _clamp(100.0 * (1.0 - features.directional_efficiency))
         spread_score = _clamp(100.0 * (1.0 - features.spread_pct / config.max_spread_pct))
         depth_score = _clamp(100.0 * features.depth_usdt / config.min_depth_usdt)
         liquidity_score = 0.55 * spread_score + 0.45 * depth_score
-        mean_reversion_score = _clamp(
-            55.0 * features.reversal_ratio
-            + 45.0 * (1.0 - features.directional_efficiency)
-        )
+        mean_reversion_score = _clamp(100.0 * features.reversal_ratio)
         cost_score = _cost_score(expected_step_pct, cost_floor_pct)
         event_score = 0.0 if event_risk else 100.0
         component_scores = {
@@ -131,15 +135,15 @@ class RegimeEngine:
             "cost": cost_score,
             "event": event_score,
         }
-        weights = config.weights
+        effective_weights = _effective_weights(config)
         grid_score = sum(
             (
-                weights.volatility * volatility_score,
-                weights.trend * trend_score,
-                weights.liquidity * liquidity_score,
-                weights.mean_reversion * mean_reversion_score,
-                weights.cost * cost_score,
-                weights.event * event_score,
+                effective_weights["volatility"] * volatility_score,
+                effective_weights["trend"] * trend_score,
+                effective_weights["liquidity"] * liquidity_score,
+                effective_weights["mean_reversion"] * mean_reversion_score,
+                effective_weights["cost"] * cost_score,
+                effective_weights["event"] * event_score,
             )
         )
         threshold = config.stay_threshold if running else config.enter_threshold
@@ -231,6 +235,44 @@ def _regime_state(features: FeatureSnapshot, hard_blocks: list[str], allowed: bo
     return "QUIET_RANGE" if allowed else "UNKNOWN"
 
 
+def _mean_reversion_score(reversal_ratio: float, volatility_expansion: float) -> float:
+    """均值回归分只由反转比例与波动收敛驱动，不再复用方向效率（§9.1）。
+
+    reversal_ratio 越高说明短窗内价格频繁穿越、更适合网格；volatility_expansion
+    低于 1（短窗波动收敛于长窗）再给一档加分，扩张时则扣分。
+    """
+    reversal_component = _clamp(100.0 * reversal_ratio)
+    if volatility_expansion <= 1.0:
+        convergence_component = 100.0
+    else:
+        convergence_component = _clamp(100.0 * (2.0 - volatility_expansion))
+    return _clamp(0.7 * reversal_component + 0.3 * convergence_component)
+
+
+def _effective_weights(config: RegimeConfig) -> dict[str, float]:
+    """返回归一化后的实际权重。
+
+    event 维度在没有事件 Provider 时会给出免费满分（event_score=100），这会拉高
+    所有标的的分数。若 event_source_available 为 False，则把 event 权重置零并按比例
+    重新分摊到其余维度，避免"无事件数据即加分"（计划 §9.1）。
+    """
+    weights = config.weights
+    raw = {
+        "volatility": weights.volatility,
+        "trend": weights.trend,
+        "liquidity": weights.liquidity,
+        "mean_reversion": weights.mean_reversion,
+        "cost": weights.cost,
+        "event": weights.event,
+    }
+    if not config.event_source_available:
+        raw["event"] = 0.0
+    total = sum(raw.values())
+    if total <= 0:
+        raise ValueError("Regime 有效权重之和必须为正。")
+    return {key: value / total for key, value in raw.items()}
+
+
 def _volatility_score(expansion: float, hard_limit: float) -> float:
     if expansion <= 1.0:
         return 100.0
@@ -262,8 +304,12 @@ def _validate_config(config: RegimeConfig) -> None:
         config.weights.cost,
         config.weights.event,
     )
-    if any(value < 0 for value in weight_values) or abs(sum(weight_values) - 1.0) > 1e-9:
-        raise ValueError("Regime 权重之和必须为 1。")
+    # 权重在使用时按有效维度归一化（见 _effective_weights），因此不再强制和为 1，
+    # 只要求非负且总和为正，方便配置里直接把 event 权重设为 0。
+    if any(value < 0 for value in weight_values):
+        raise ValueError("Regime 权重不能为负数。")
+    if sum(weight_values) <= 0:
+        raise ValueError("Regime 权重之和必须为正。")
 
 
 def _clamp(value: float, lower: float = 0.0, upper: float = 100.0) -> float:

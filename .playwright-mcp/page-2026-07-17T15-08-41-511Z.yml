@@ -1,0 +1,75 @@
+- generic [ref=e3]:
+  - link "跳到主要内容" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - complementary [ref=e5]:
+    - generic [ref=e10]:
+      - strong [ref=e11]: QuietGrid
+      - generic [ref=e12]: Adaptive Trading
+    - navigation "主导航" [ref=e13]:
+      - generic [ref=e14]:
+        - heading "运行" [level=2] [ref=e15]
+        - button "本轮运行 生命周期主线" [ref=e16] [cursor=pointer]:
+          - generic [ref=e19]:
+            - strong [ref=e20]: 本轮运行
+            - generic [ref=e21]: 生命周期主线
+        - button "总览 安全状态与下一步" [ref=e22] [cursor=pointer]:
+          - generic [ref=e28]:
+            - strong [ref=e29]: 总览
+            - generic [ref=e30]: 安全状态与下一步
+        - button "市场状态 评分与候选标的" [ref=e31] [cursor=pointer]:
+          - generic [ref=e39]:
+            - strong [ref=e40]: 市场状态
+            - generic [ref=e41]: 评分与候选标的
+        - button "会话与库存 网格、订单与持仓" [ref=e42] [cursor=pointer]:
+          - generic [ref=e47]:
+            - strong [ref=e48]: 会话与库存
+            - generic [ref=e49]: 网格、订单与持仓
+        - button "风险中心 预算、熔断与恢复" [ref=e50] [cursor=pointer]:
+          - generic [ref=e53]:
+            - strong [ref=e54]: 风险中心
+            - generic [ref=e55]: 预算、熔断与恢复
+      - generic [ref=e56]:
+        - heading "研究" [level=2] [ref=e57]
+        - button "回测中心 实验、报告与验证" [ref=e58] [cursor=pointer]:
+          - generic [ref=e61]:
+            - strong [ref=e62]: 回测中心
+            - generic [ref=e63]: 实验、报告与验证
+        - button "策略重放 逐事件检查决策" [ref=e64] [cursor=pointer]:
+          - generic [ref=e70]:
+            - strong [ref=e71]: 策略重放
+            - generic [ref=e72]: 逐事件检查决策
+      - generic [ref=e73]:
+        - heading "系统" [level=2] [ref=e74]
+        - button "订单与日志 成交与审计记录" [ref=e75] [cursor=pointer]:
+          - generic [ref=e79]:
+            - strong [ref=e80]: 订单与日志
+            - generic [ref=e81]: 成交与审计记录
+        - button "策略设置 草稿与版本差异" [ref=e82] [cursor=pointer]:
+          - generic [ref=e86]:
+            - strong [ref=e87]: 策略设置
+            - generic [ref=e88]: 草稿与版本差异
+        - button "运维工具 环境、进程与清扫" [ref=e89] [cursor=pointer]:
+          - generic [ref=e101]:
+            - strong [ref=e102]: 运维工具
+            - generic [ref=e103]: 环境、进程与清扫
+    - generic [ref=e113]:
+      - strong [ref=e114]: 轮询模式
+      - generic [ref=e115]: 23:21:36
+  - generic [ref=e116]:
+    - banner [ref=e117]:
+      - generic [ref=e119]:
+        - heading "本轮运行" [level=1] [ref=e120]
+        - paragraph [ref=e121]: 一眼看清系统当前处于哪个阶段
+      - generic [ref=e122]:
+        - generic [ref=e123]: 测试网 TESTNET
+        - generic [ref=e125]: Trader unavailable
+        - generic [ref=e127]: 数据 WAITING
+        - generic [ref=e129]: 风险 LOW
+      - generic [ref=e131]:
+        - generic [ref=e132]:
+          - generic [ref=e133]: 当前账户
+          - combobox "当前账户" [ref=e134] [cursor=pointer]:
+            - option "默认账户 · 测试网" [selected]
+        - button "刷新数据" [disabled] [ref=e135]
+    - main [ref=e141]:
+      - generic "正在加载控制台" [ref=e142]

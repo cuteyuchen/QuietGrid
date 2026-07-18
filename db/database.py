@@ -325,6 +325,13 @@ CREATE TABLE IF NOT EXISTS backtest_datasets (
     quality_report_json TEXT NOT NULL,
     window_mode         TEXT NOT NULL DEFAULT 'NYSE_CLOSED_ONLY',
     window_count        INTEGER,
+    raw_window_count    INTEGER,
+    eligible_window_count INTEGER,
+    skipped_window_count  INTEGER,
+    source_segments_json  TEXT,
+    has_funding         INTEGER NOT NULL DEFAULT 0,
+    funding_event_count INTEGER,
+    funding_file_path   TEXT,
     status              TEXT NOT NULL,
     error               TEXT,
     deleted_at          DATETIME,
@@ -475,6 +482,16 @@ BACKTEST_DATASET_WINDOW_COLUMN_MIGRATIONS = {
     "skip_reason": "TEXT",
 }
 
+BACKTEST_DATASET_COLUMN_MIGRATIONS = {
+    "raw_window_count": "INTEGER",
+    "eligible_window_count": "INTEGER",
+    "skipped_window_count": "INTEGER",
+    "source_segments_json": "TEXT",
+    "has_funding": "INTEGER NOT NULL DEFAULT 0",
+    "funding_event_count": "INTEGER",
+    "funding_file_path": "TEXT",
+}
+
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
     path = Path(db_path)
@@ -498,6 +515,11 @@ def init_db(db_path: str | Path) -> None:
             conn,
             "backtest_dataset_windows",
             BACKTEST_DATASET_WINDOW_COLUMN_MIGRATIONS,
+        )
+        _ensure_columns(
+            conn,
+            "backtest_datasets",
+            BACKTEST_DATASET_COLUMN_MIGRATIONS,
         )
         conn.executescript(INDEX_SCHEMA_SQL)
         conn.commit()

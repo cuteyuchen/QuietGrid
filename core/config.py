@@ -101,6 +101,116 @@ def select_all_accounts(config: AppConfig) -> tuple[AppConfig, ...]:
     return tuple(select_account(config, account.id) for account in config.accounts)
 
 
+class StartupConfigError(RuntimeError):
+    """启动前配置校验失败，用于失败关闭而不是静默降级。"""
+
+
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+_REQUIRED_V2_FEATURE_FLAGS = (
+    "regime_v2",
+    "inventory_manager",
+    "adaptive_grid_v2",
+    "risk_manager_v2",
+)
+# TradFi 代理标的（美股合约）不得出现在测试网 allowlist 中，避免误用测试币下单。
+_TRADFI_SYMBOL_HINTS = (
+    "AAPL",
+    "MSFT",
+    "TSLA",
+    "NVDA",
+    "AMZN",
+    "GOOGL",
+    "META",
+    "NFLX",
+)
+
+
+def _is_loopback_host(address: str) -> bool:
+    return address.strip().lower() in _LOOPBACK_HOSTS
+
+
+def _web_auth_token(web: dict[str, Any]) -> str:
+    explicit = str(web.get("auth_token") or "").strip()
+    if explicit:
+        return explicit
+    env_name = str(web.get("auth_token_env") or "").strip()
+    if env_name:
+        return str(os.getenv(env_name) or "").strip()
+    return ""
+
+
+def validate_web_binding(raw: dict[str, Any]) -> None:
+    """P0-2：非 loopback 监听必须提供访问令牌，否则拒绝启动。"""
+    web = raw.get("web", {}) or {}
+    address = str(web.get("address") or "127.0.0.1")
+    if _is_loopback_host(address):
+        return
+    if not _web_auth_token(web):
+        raise StartupConfigError(
+            f"web.address={address!r} 对非本机开放，但未配置 auth_token/auth_token_env，"
+            "拒绝以无鉴权方式暴露控制台。请改为 127.0.0.1 或配置访问令牌。"
+        )
+
+
+def _profile_name(raw: dict[str, Any]) -> str:
+    return str(raw.get("environment") or raw.get("profile") or "").strip().lower()
+
+
+def _symbol_allowlist(raw: dict[str, Any]) -> list[str]:
+    selection = raw.get("selection", {}) or {}
+    allowlist = selection.get("symbol_allowlist") or []
+    return [str(item).strip().upper() for item in allowlist if str(item).strip()]
+
+
+def _is_tradfi_symbol(symbol: str) -> bool:
+    return any(symbol.startswith(hint) for hint in _TRADFI_SYMBOL_HINTS)
+
+
+def validate_symbol_profile(raw: dict[str, Any]) -> None:
+    """P0-3：测试网 profile 不允许混入真实 TradFi 标的。"""
+    profile = _profile_name(raw)
+    if profile != "testnet":
+        return
+    tradfi = sorted({s for s in _symbol_allowlist(raw) if _is_tradfi_symbol(s)})
+    if tradfi:
+        raise StartupConfigError(
+            "testnet profile 的 symbol_allowlist 含真实 TradFi 标的："
+            f"{', '.join(tradfi)}；测试与真实标的必须隔离到不同 profile。"
+        )
+
+
+def validate_v2_feature_flags(raw: dict[str, Any]) -> None:
+    """P0-5：v2 production profile 缺少必需 feature flag 时失败关闭，禁止静默退回 v1。"""
+    profile = _profile_name(raw)
+    if profile not in {"v2-production", "production"}:
+        return
+    features = raw.get("features", {}) or {}
+    missing = [flag for flag in _REQUIRED_V2_FEATURE_FLAGS if flag not in features]
+    disabled = [
+        flag
+        for flag in _REQUIRED_V2_FEATURE_FLAGS
+        if flag in features and not bool(features[flag])
+    ]
+    if missing or disabled:
+        problems: list[str] = []
+        if missing:
+            problems.append(f"缺失 {', '.join(missing)}")
+        if disabled:
+            problems.append(f"被关闭 {', '.join(disabled)}")
+        raise StartupConfigError(
+            f"{profile} profile 要求启用全部 v2 feature flag，但 {'；'.join(problems)}；"
+            "拒绝启动以避免静默退回 v1 策略。"
+        )
+
+
+def validate_startup_config(config: AppConfig) -> None:
+    """在服务启动前统一执行 P0 安全与配置校验，任一失败即拒绝启动。"""
+    raw = config.raw
+    validate_web_binding(raw)
+    validate_symbol_profile(raw)
+    validate_v2_feature_flags(raw)
+
+
 def require_testnet(config: AppConfig) -> None:
     raw_value = getattr(config, "binance_testnet_raw", None)
     if raw_value is not None and raw_value.strip().lower() != "true":

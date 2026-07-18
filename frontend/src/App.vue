@@ -8,6 +8,7 @@ import {
   Layers3,
   LayoutDashboard,
   Menu,
+  Milestone,
   Radar,
   RefreshCw,
   ServerCog,
@@ -46,6 +47,7 @@ import {
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import StatusBadge from './components/StatusBadge.vue'
 import BacktestsPage from './pages/BacktestsPage.vue'
+import CurrentRoundPage from './pages/CurrentRoundPage.vue'
 import DashboardPage from './pages/DashboardPage.vue'
 import MarketPage from './pages/MarketPage.vue'
 import OperationsPage from './pages/OperationsPage.vue'
@@ -56,6 +58,7 @@ import SessionsPage from './pages/SessionsPage.vue'
 import SettingsPage from './pages/SettingsPage.vue'
 
 type PageKey =
+  | 'current-round'
   | 'dashboard'
   | 'market'
   | 'sessions'
@@ -79,6 +82,7 @@ const navigation = [
   {
     label: '运行',
     items: [
+      { key: 'current-round', label: '本轮运行', description: '生命周期主线', icon: Milestone },
       { key: 'dashboard', label: '总览', description: '安全状态与下一步', icon: LayoutDashboard },
       { key: 'market', label: '市场状态', description: '评分与候选标的', icon: Radar },
       { key: 'sessions', label: '会话与库存', description: '网格、订单与持仓', icon: Layers3 },
@@ -103,6 +107,7 @@ const navigation = [
 ] as const
 
 const pageDescriptions: Record<PageKey, { title: string; subtitle: string }> = {
+  'current-round': { title: '本轮运行', subtitle: '一眼看清系统当前处于哪个阶段' },
   dashboard: { title: '运行总览', subtitle: '先看安全，再决定下一步' },
   market: { title: '市场状态', subtitle: '用可解释评分判断是否适合网格' },
   sessions: { title: '会话与库存', subtitle: '查看网格、真实订单、成交和库存风险' },
@@ -187,6 +192,7 @@ const dataTone = computed(() => {
   return ['STALE', 'ERROR', 'UNHEALTHY', 'DISCONNECTED'].includes(value) ? 'danger' : value === 'WAITING' ? 'warning' : 'good'
 })
 const activeComponent = computed(() => ({
+  'current-round': CurrentRoundPage,
   dashboard: DashboardPage,
   market: MarketPage,
   sessions: SessionsPage,
@@ -442,6 +448,16 @@ async function saveStrategy(draft: StrategySettings) {
 
 function componentProps() {
   switch (activePage.value) {
+    case 'current-round':
+      return {
+        summary: summary.value,
+        dashboard: v2Dashboard.value,
+        control: controlState.value,
+        sessions: sessions.value,
+        candidates: liquidityCandidates.value,
+        loading: initialLoading.value,
+        dataError: dataError.value,
+      }
     case 'dashboard':
       return {
         summary: summary.value,

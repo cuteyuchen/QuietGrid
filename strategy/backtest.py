@@ -7,6 +7,7 @@ from math import isfinite
 from typing import Any
 
 from core.models import GridParams, OrderSide
+from data_sources.models import FundingEvent
 
 
 class LookAheadViolation(RuntimeError):
@@ -126,6 +127,8 @@ def run_grid_backtest(
     klines: list[dict[str, Any]],
     current_price: float,
     config: BacktestConfig | None = None,
+    *,
+    funding_events: list[FundingEvent] | None = None,
 ) -> BacktestResult:
     config = config or BacktestConfig()
     _validate_backtest_config(config)
@@ -133,6 +136,13 @@ def run_grid_backtest(
     current_price = _positive_finite(current_price, "current_price")
     if not klines:
         raise ValueError("回测K线不能为空。")
+    # 资金费按真实结算事件扣除：只有当某根 Bar 跨过 funding_time 且当时存在库存时
+    # 才按净名义价值计费，而不是把资金费平摊进每根 Bar（计划 §9.3）。
+    # 显式传入 funding_events（含空列表）即进入事件模式，不再回退到 per-bar 估算；
+    # 传 None 表示未提供事件数据，沿用旧的 funding_rate_per_bar 兼容路径。
+    funding_event_mode = funding_events is not None
+    funding_schedule = _sorted_funding_events(funding_events)
+    funding_cursor = 0
 
     qty = config.capital * config.leverage / current_price / params.grid_num
     qty = _positive_finite(qty, "qty")
@@ -269,7 +279,20 @@ def run_grid_backtest(
             next_order = _next_order(params, order)
             if next_order is not None:
                 open_orders.append(next_order)
-        if conservative and config.funding_rate_per_bar != 0:
+        if funding_event_mode:
+            # 显式传入事件列表即进入事件模式：只按跨越的真实结算事件扣费，
+            # 不回退到 per-bar 平摊（空列表表示该区间无资金费事件）。
+            if conservative and funding_schedule:
+                funding_delta, funding_cursor = _event_funding_cost(
+                    funding_schedule,
+                    funding_cursor,
+                    _bar_close_ms(row),
+                    long_lots,
+                    short_lots,
+                    close,
+                )
+                funding_paid += funding_delta
+        elif conservative and config.funding_rate_per_bar != 0:
             funding_paid += _funding_cost(
                 long_lots,
                 short_lots,
@@ -585,6 +608,99 @@ def _funding_cost(
     long_notional = sum(lot.qty for lot in long_lots) * mark_price
     short_notional = sum(lot.qty for lot in short_lots) * mark_price
     return (long_notional - short_notional) * funding_rate
+
+
+def _sorted_funding_events(
+    funding_events: list[FundingEvent] | None,
+) -> list[FundingEvent]:
+    if not funding_events:
+        return []
+    return sorted(funding_events, key=lambda event: event.funding_time)
+
+
+def _bar_close_ms(row: dict[str, Any]) -> int | None:
+    """取本根 Bar 的收盘毫秒时间戳，用于资金费事件跨越判断。
+
+    归档/在线 K 线用整数毫秒时间戳，_parse_time 只认 ISO 字符串，故这里单独解析
+    close_time / open_time / event_time 等常见字段。
+    """
+    for key in ("close_time", "event_time", "timestamp", "open_time", "time"):
+        raw = row.get(key)
+        if raw in (None, ""):
+            continue
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            parsed = _parse_time(raw)
+            if parsed is not None:
+                return int(parsed.timestamp() * 1000)
+    return None
+
+
+def _bar_open_ms(row: dict[str, Any]) -> int | None:
+    for key in ("open_time", "timestamp", "time", "event_time"):
+        raw = row.get(key)
+        if raw in (None, ""):
+            continue
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            parsed = _parse_time(raw)
+            if parsed is not None:
+                return int(parsed.timestamp() * 1000)
+    return None
+
+
+def slice_funding_events_for_klines(
+    funding_events: list[FundingEvent],
+    klines: list[dict[str, Any]],
+) -> list[FundingEvent]:
+    """裁出落在这批 K 线时间覆盖内的资金费事件。
+
+    run_grid_backtest 的事件游标从 0 开始，第一根 Bar 会结算所有 funding_time
+    不晚于其收盘的事件。若把整段事件原样传给某个子区间（walk-forward 分折、
+    NYSE 窗口等），早于该区间的事件会被错误地压到第一根 Bar 上。这里按
+    [首根开盘, 末根收盘] 裁剪，保证每个事件只归属于覆盖它的那个区间；对相邻、
+    不重叠（contiguous）的 K 线区间而言边界不会重复计费，落在区间之间缝隙里
+    （观察期、被跳过的窗口）的事件也会被正确排除。
+    """
+    if not funding_events or not klines:
+        return []
+    first_open = _bar_open_ms(klines[0])
+    last_close = _bar_close_ms(klines[-1])
+    if first_open is None or last_close is None:
+        return []
+    return [
+        event
+        for event in funding_events
+        if first_open <= event.funding_time <= last_close
+    ]
+
+
+def _event_funding_cost(
+    schedule: list[FundingEvent],
+    cursor: int,
+    bar_ms: int | None,
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    close: float,
+) -> tuple[float, int]:
+    """结算本根 Bar 跨过的所有真实资金费事件（§9.3）。
+
+    只有当 Bar 时间到达某个 funding_time、且当时存在库存时才按净名义价值扣费；
+    无库存或未跨过事件则不扣。cursor 记录已结算到的事件下标，保证每个事件只计一次。
+    """
+    if bar_ms is None:
+        return 0.0, cursor
+    charge = 0.0
+    while cursor < len(schedule) and schedule[cursor].funding_time <= bar_ms:
+        event = schedule[cursor]
+        mark_price = event.mark_price if event.mark_price is not None else close
+        long_notional = sum(lot.qty for lot in long_lots) * mark_price
+        short_notional = sum(lot.qty for lot in short_lots) * mark_price
+        charge += (long_notional - short_notional) * event.funding_rate
+        cursor += 1
+    return charge, cursor
 
 
 def _validate_bar_time(

@@ -24,7 +24,12 @@ from db.database import init_db
 from db.repository import Repository
 from exchange.binance import BinanceFuturesClient
 from exchange.mock import MockExchangeClient
-from strategy.backtest import BacktestResult, backtest_config_from_mapping, run_grid_backtest
+from strategy.backtest import (
+    BacktestResult,
+    backtest_config_from_mapping,
+    run_grid_backtest,
+    slice_funding_events_for_klines,
+)
 from strategy.cooldown import CooldownConfig
 from strategy.adaptive_grid import AdaptiveGridConfig
 from strategy.controller import ControllerConfig, TradingController, V2FeatureFlags, _position_close_specs
@@ -339,6 +344,7 @@ def _run_backtest_csv(
     symbol: str,
     funding_rate: float,
     output_path: Path | None = None,
+    funding_events: list[Any] | None = None,
 ) -> dict[str, Any]:
     rows = _read_backtest_csv(csv_path)
     if observe_rows < 1:
@@ -355,11 +361,18 @@ def _run_backtest_csv(
         funding_rate=funding_rate,
         config=_grid_config_from_raw(config.raw),
     )
+    # 只把落在回测区间（观察期之后）的资金费事件传入；传 None 表示不启用事件模式。
+    sliced_funding = (
+        slice_funding_events_for_klines(funding_events, backtest_klines)
+        if funding_events is not None
+        else None
+    )
     result = run_grid_backtest(
         params,
         backtest_klines,
         current_price=current_price,
         config=backtest_config_from_mapping(config.raw),
+        funding_events=sliced_funding,
     )
     summary = _backtest_summary(result, observe_rows, len(backtest_klines))
     if output_path is not None:
@@ -2394,12 +2407,14 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             min_depth_usdt=float(regime.get("hard_limits", {}).get("min_depth_usdt", 10_000)),
             weights=RegimeWeights(
                 volatility=float(regime_weights.get("volatility", 0.25)),
-                trend=float(regime_weights.get("trend", 0.25)),
-                liquidity=float(regime_weights.get("liquidity", 0.20)),
+                trend=float(regime_weights.get("trend", 0.20)),
+                liquidity=float(regime_weights.get("liquidity", 0.25)),
                 mean_reversion=float(regime_weights.get("mean_reversion", 0.15)),
-                cost=float(regime_weights.get("cost", 0.10)),
-                event=float(regime_weights.get("event", 0.05)),
+                cost=float(regime_weights.get("cost", 0.15)),
+                event=float(regime_weights.get("event", 0.0)),
             ),
+            # 事件权重只有在事件 Provider 接入后才启用；否则 event 分量会被归一化剔除。
+            event_source_available=bool(features.get("ai_regime_feature", False)),
         ),
         adaptive_grid_config=AdaptiveGridConfig(
             center_half_life_minutes=float(grid.get("center_half_life_minutes", 30)),
@@ -2417,6 +2432,8 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             adverse_selection_buffer_pct=float(costs.get("adverse_selection_buffer_pct", 0.0005)),
             slippage_buffer_pct=float(costs.get("slippage_buffer_pct", 0.0005)),
             safety_margin_pct=float(costs.get("safety_margin_pct", 0.0005)),
+            horizon_bars=int(grid.get("horizon_bars", 60)),
+            volatility_estimator=str(grid.get("volatility_estimator", "ewma")),
         ),
         inventory_config=InventoryConfig(
             caution_utilization=float(inventory.get("caution_utilization", 0.40)),

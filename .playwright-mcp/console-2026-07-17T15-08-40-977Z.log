@@ -1,0 +1,12 @@
+[   12449ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/sessions/4?account_id=default:0
+[   31444ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/v2/dashboard?account_id=default:0
+[   43134ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/accounts:0
+[   91443ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/v2/dashboard?account_id=default:0
+[  141203ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/logs/system?limit=20&account_id=default:0
+[  235446ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/v2/dashboard?account_id=default:0
+[  237240ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/logs/system?limit=20&account_id=default:0
+[  247458ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/v2/dashboard?account_id=default:0
+[  259468ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/selection/candidates?limit=20&account_id=default:0
+[  288286ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/sessions/4?account_id=default:0
+[  360039ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/sessions/active?include_recent=true&limit=200&window_id=2&account_id=default:0
+[  391450ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/api/v2/dashboard?account_id=default:0

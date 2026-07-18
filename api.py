@@ -8,8 +8,8 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import json
 import inspect
-from math import isfinite, sqrt
 import platform
+import secrets
 import shlex
 from pathlib import Path
 import subprocess
@@ -19,21 +19,30 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
 import web as legacy_web
-from core.config import AppConfig, load_config, select_account
+from core.config import (
+    AppConfig,
+    _web_auth_token,
+    load_config,
+    select_account,
+    validate_startup_config,
+)
 from data_sources import (
     BacktestWindow,
+    BinanceArchiveHistoricalDataSource,
     BinanceHistoricalDataSource,
     DataSourceError,
     DatasetRequest,
     HistoricalDataSource,
     HistoricalDataSourceRegistry,
+    HybridBinanceHistoricalDataSource,
     NyseWindowSlicer,
     normalized_klines_from_mappings,
 )
+from data_sources.models import FundingEvent
 from data_sources.csv_source import INTERVAL_MILLISECONDS
 from data_sources.dataset_service import BacktestDatasetService
 from db.database import init_db
@@ -41,6 +50,35 @@ from db.repository import Repository, RoundStartConflict
 from exchange.binance import BinanceFuturesClient
 from strategy.grid_calculator import SUPPORTED_RANGE_METHODS
 from strategy.selector import SelectionConfig, Selector
+
+# 无状态辅助函数拆分包，重新导出以保持 `api._xxx` 访问方式不变。
+from api_support.metrics import (
+    _numbers_close,
+    _numeric_quantile,
+    _optional_float,
+    _orders_refer_to_same_order,
+    _ratio_sum,
+    _series_cvar,
+    _series_sharpe,
+    _series_sortino,
+)
+from api_support.backtest_analysis import (
+    _backtest_row_time,
+    _backtest_window_distribution,
+    _nyse_window_distribution,
+    _window_analysis,
+)
+from api_support.payloads import (
+    _exchange_order_payload,
+    _grid_round_payload,
+    _order_payload,
+    _round_candidate_payload,
+    _session_duration_hours,
+    _session_performance_payload,
+    _system_log_payload,
+    _trade_payload,
+    _verification_payload,
+)
 
 
 DEFAULT_BOUNDED_RUN_SECONDS = 60.0
@@ -54,6 +92,7 @@ class AccountRequestContext:
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
     app_config = config or load_config()
+    validate_startup_config(app_config)
     for account in app_config.accounts:
         init_db(account.database_path)
         Repository(account.database_path, account_id=account.id).fail_interrupted_backtest_dataset_jobs()
@@ -99,6 +138,24 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["*"],
     )
+
+    web_auth_token = _web_auth_token(app_config.raw.get("web", {}))
+
+    @app.middleware("http")
+    async def _enforce_auth_token(request: Request, call_next):
+        # 配置了访问令牌时，除 CORS 预检外的所有请求都必须携带匹配令牌。
+        if web_auth_token and request.method != "OPTIONS":
+            provided = request.headers.get("x-auth-token") or ""
+            if not provided:
+                authorization = request.headers.get("authorization") or ""
+                if authorization.lower().startswith("bearer "):
+                    provided = authorization[7:].strip()
+            if not secrets.compare_digest(provided, web_auth_token):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "缺少或无效的访问令牌。"},
+                )
+        return await call_next(request)
 
     def get_account_context(account_id: str | None = Query(None)) -> AccountRequestContext:
         try:
@@ -713,12 +770,30 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         return {
             "items": [
                 {
-                    "id": "binance",
-                    "label": "Binance USDⓈ-M Futures",
+                    "id": "binance_hybrid",
+                    "label": "Binance 官方归档（推荐）",
                     "market": "USDS_M",
                     "intervals": ["1m", "5m", "15m", "1h"],
                     "price_types": ["CONTRACT"],
-                }
+                    "recommended": True,
+                    "description": "官方月度/每日归档为主，仅最新尾部使用 REST 补齐。",
+                },
+                {
+                    "id": "binance_archive",
+                    "label": "Binance 官方归档（仅归档）",
+                    "market": "USDS_M",
+                    "intervals": ["1m", "5m", "15m", "1h"],
+                    "price_types": ["CONTRACT"],
+                    "description": "仅使用官方归档 ZIP，不含尚未归档的最新尾部。",
+                },
+                {
+                    "id": "binance_rest",
+                    "label": "Binance REST（仅最新数据）",
+                    "market": "USDS_M",
+                    "intervals": ["1m", "5m", "15m", "1h"],
+                    "price_types": ["CONTRACT"],
+                    "description": "REST 分页，易受地区限制与限流影响，建议仅取最新尾部。",
+                },
             ]
         }
 
@@ -915,14 +990,23 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 detail="标记为 OOS_FROZEN 前必须确认参数已经冻结。",
             )
         dataset_metadata: dict[str, Any] = {}
+        funding_events: list[FundingEvent] | None = None
         if request.dataset_id is not None:
+            service = _backtest_dataset_service(ctx.config, ctx.repo)
             try:
-                dataset_path, dataset_metadata = _backtest_dataset_service(
-                    ctx.config,
-                    ctx.repo,
-                ).resolve(request.dataset_id)
+                dataset_path, dataset_metadata = service.resolve(request.dataset_id)
             except DataSourceError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
+            if request.include_funding:
+                if not dataset_metadata.get("has_funding"):
+                    raise HTTPException(
+                        status_code=422,
+                        detail="该数据集未冻结历史资金费，无法启用事件化资金费回测。",
+                    )
+                try:
+                    funding_events = service.load_funding_events(request.dataset_id)
+                except DataSourceError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
             dataset_symbol = str(dataset_metadata.get("symbol") or "").strip().upper()
             requested_symbol = request.symbol.strip().upper()
             if dataset_symbol and dataset_symbol != requested_symbol:
@@ -934,6 +1018,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     ),
                 )
         else:
+            if request.include_funding:
+                raise HTTPException(
+                    status_code=422,
+                    detail="事件化资金费仅支持带资金费的冻结数据集（dataset_id）。",
+                )
             dataset_path = _resolve_backtest_dataset(ctx.config, str(request.dataset))
         started_at = datetime.now(timezone.utc)
         run_id = f"bt_{uuid4().hex}"
@@ -971,6 +1060,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 dataset_path,
                 report_path,
                 dataset_metadata,
+                funding_events,
             )
             metrics = _v2_backtest_metrics(summary, report_path)
             ctx.repo.complete_backtest_run(
@@ -1102,7 +1192,10 @@ class V2CommandRequest(BaseModel):
 
 
 class V2BacktestDatasetRequest(BaseModel):
-    provider: str = Field(default="binance", pattern=r"^binance$")
+    provider: str = Field(
+        default="binance_hybrid",
+        pattern=r"^(binance_hybrid|binance_archive|binance_rest|binance)$",
+    )
     symbol: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
     interval: str = Field(default="1m", pattern=r"^(1m|5m|15m|1h)$")
     price_type: str = Field(default="CONTRACT", pattern=r"^CONTRACT$")
@@ -1138,6 +1231,7 @@ class V2BacktestRunRequest(BaseModel):
     taker_fee_rate: float = Field(default=0.0005, ge=0.0, le=0.02)
     stop_slippage_bps: float = Field(default=10.0, ge=0.0, le=1000.0)
     funding_rate_per_bar: float = Field(default=0.0, ge=-0.01, le=0.01)
+    include_funding: bool = False
     walk_forward_test_rows: int = Field(default=12, ge=5, le=100000)
     monte_carlo_simulations: int = Field(default=1000, ge=100, le=10000)
     monte_carlo_missing_fill_probability: float = Field(default=0.10, ge=0.0, le=1.0)
@@ -1240,21 +1334,84 @@ def _build_historical_data_source(
     config: AppConfig,
     provider: str,
 ) -> HistoricalDataSource:
-    online = config.raw.get("backtest", {}).get("online_data", {})
+    backtest = config.raw.get("backtest", {})
+    online = backtest.get("online_data", {})
     if not bool(online.get("enabled", True)):
         raise DataSourceError("在线历史数据下载已在配置中关闭。")
-    registry = HistoricalDataSourceRegistry()
-    registry.register(
-        "binance",
-        lambda: BinanceHistoricalDataSource(
-            proxy_config=config.raw.get("proxy"),
+    providers_config = backtest.get("providers", {})
+    proxy_config = config.raw.get("proxy")
+
+    def _rest_config() -> dict[str, Any]:
+        return providers_config.get("binance_rest", {})
+
+    def _archive_config() -> dict[str, Any]:
+        return providers_config.get("binance_archive", {})
+
+    def _hybrid_config() -> dict[str, Any]:
+        return providers_config.get("binance_hybrid", {})
+
+    def _build_rest(
+        *, validate_symbol_listing: bool = True, provider_id: str = "binance_rest"
+    ) -> BinanceHistoricalDataSource:
+        rest = _rest_config()
+        return BinanceHistoricalDataSource(
+            proxy_config=proxy_config,
+            base_url=str(rest.get("base_url") or "https://fapi.binance.com"),
+            provider_id=provider_id,
+            validate_symbol_listing=validate_symbol_listing,
             timeout_seconds=float(online.get("request_timeout_seconds", 15.0)),
             retry_attempts=int(online.get("retry_attempts", 3)),
             retry_backoff_seconds=float(online.get("retry_backoff_seconds", 0.5)),
             page_limit=int(online.get("page_limit", 1500)),
             pause_seconds=float(online.get("page_pause_seconds", 0.05)),
-        ),
+        )
+
+    def _build_archive(
+        *, provider_id: str = "binance_archive"
+    ) -> BinanceArchiveHistoricalDataSource:
+        archive = _archive_config()
+        return BinanceArchiveHistoricalDataSource(
+            base_url=str(archive.get("base_url") or "https://data.binance.vision"),
+            market_path=str(archive.get("market_path") or "futures/um"),
+            prefer_monthly=bool(archive.get("prefer_monthly", True)),
+            verify_official_checksum=bool(archive.get("verify_official_checksum", True)),
+            max_uncompressed_bytes=int(
+                archive.get("max_uncompressed_bytes", 2 * 1024 * 1024 * 1024)
+            ),
+            proxy_config=proxy_config,
+            timeout_seconds=float(online.get("request_timeout_seconds", 30.0)),
+            retry_attempts=int(online.get("retry_attempts", 3)),
+            retry_backoff_seconds=float(online.get("retry_backoff_seconds", 0.5)),
+            pause_seconds=float(online.get("page_pause_seconds", 0.02)),
+            provider_id=provider_id,
+        )
+
+    def _build_hybrid() -> HybridBinanceHistoricalDataSource:
+        hybrid = _hybrid_config()
+        return HybridBinanceHistoricalDataSource(
+            archive_source=_build_archive(),
+            # Hybrid 中的 REST 只补最新尾部，历史标的不强制当前 TRADING。
+            rest_source=_build_rest(validate_symbol_listing=False),
+            tolerate_missing_latest_tail=bool(
+                hybrid.get("tolerate_missing_latest_tail", True)
+            ),
+        )
+
+    registry = HistoricalDataSourceRegistry()
+    registry.register("binance_rest", _build_rest)
+    registry.register("binance_archive", _build_archive)
+    registry.register("binance_hybrid", _build_hybrid)
+    # 兼容旧 provider 名 "binance"：映射到归档优先的 Hybrid 主链路。
+    registry.register(
+        "binance",
+        lambda: _build_hybrid_as("binance"),
     )
+
+    def _build_hybrid_as(provider_id: str) -> HistoricalDataSource:
+        source = _build_hybrid()
+        source.provider_id = provider_id
+        return source
+
     return registry.create(provider)
 
 
@@ -1359,11 +1516,27 @@ def _v2_dataset_payload(dataset: dict[str, Any]) -> dict[str, Any]:
         ),
         "window_mode": str(dataset.get("window_mode") or ""),
         "window_count": dataset.get("window_count"),
+        "raw_window_count": dataset.get("raw_window_count"),
+        "eligible_window_count": dataset.get("eligible_window_count"),
+        "skipped_window_count": dataset.get("skipped_window_count"),
+        "source_segments": _decode_source_segments(dataset.get("source_segments_json")),
         "status": str(dataset.get("status") or ""),
         "error": dataset.get("error"),
         "created_at": str(dataset.get("created_at") or ""),
         "updated_at": str(dataset.get("updated_at") or ""),
     }
+
+
+def _decode_source_segments(raw: Any) -> list[dict[str, Any]]:
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return raw
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 def _resolve_backtest_dataset(config: AppConfig, dataset: str) -> Path:
@@ -1382,6 +1555,7 @@ def _execute_v2_backtest(
     dataset_path: Path,
     report_path: Path,
     dataset_metadata: dict[str, Any] | None = None,
+    funding_events: list[FundingEvent] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     from trader import _read_backtest_csv, _run_backtest_csv
 
@@ -1440,6 +1614,7 @@ def _execute_v2_backtest(
             runtime_config,
             request,
             windows,
+            funding_events,
         )
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(
@@ -1460,7 +1635,9 @@ def _execute_v2_backtest(
             request.symbol.upper(),
             0.0,
             report_path,
+            funding_events=funding_events,
         )
+    summary["funding_mode"] = "EVENT" if funding_events is not None else "PER_BAR"
     _append_v2_backtest_validation(
         runtime_config,
         request,
@@ -1468,6 +1645,7 @@ def _execute_v2_backtest(
         report_path,
         dataset_metadata,
         window_backtests=window_backtests,
+        funding_events=funding_events,
     )
     return summary, validation_rows
 
@@ -1476,8 +1654,13 @@ def _run_nyse_window_backtests(
     runtime_config: SimpleNamespace,
     request: "V2BacktestRunRequest",
     windows: list[BacktestWindow],
+    funding_events: list[FundingEvent] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
-    from strategy.backtest import backtest_config_from_mapping, run_grid_backtest
+    from strategy.backtest import (
+        backtest_config_from_mapping,
+        run_grid_backtest,
+        slice_funding_events_for_klines,
+    )
     from strategy.grid_calculator import calculate_grid_params
     from trader import _backtest_report, _backtest_summary, _grid_config_from_raw
 
@@ -1504,11 +1687,17 @@ def _run_nyse_window_backtests(
                 funding_rate=0.0,
                 config=grid_config,
             )
+            window_funding = (
+                slice_funding_events_for_klines(funding_events, test)
+                if funding_events is not None
+                else None
+            )
             result = run_grid_backtest(
                 params,
                 test,
                 current_price=current_price,
                 config=run_config,
+                funding_events=window_funding,
             )
             summary = _backtest_summary(result, request.observe_rows, len(test))
             report = _backtest_report(result, params, summary)
@@ -1708,37 +1897,6 @@ def _aggregate_window_summary(
     }
 
 
-def _ratio_sum(items: list[dict[str, Any]], numerator: str, denominator: str) -> float:
-    upper = sum(float(item.get(numerator) or 0.0) for item in items)
-    lower = sum(float(item.get(denominator) or 0.0) for item in items)
-    return upper / lower if lower else 0.0
-
-
-def _series_sharpe(changes: list[float]) -> float:
-    if len(changes) < 2:
-        return 0.0
-    mean = sum(changes) / len(changes)
-    variance = sum((value - mean) ** 2 for value in changes) / (len(changes) - 1)
-    return mean / sqrt(variance) * sqrt(len(changes)) if variance > 0 else 0.0
-
-
-def _series_sortino(changes: list[float]) -> float:
-    if len(changes) < 2:
-        return 0.0
-    downside = [min(0.0, value) for value in changes]
-    variance = sum(value * value for value in downside) / len(downside)
-    return (sum(changes) / len(changes)) / sqrt(variance) * sqrt(len(changes)) if variance > 0 else 0.0
-
-
-def _series_cvar(changes: list[float]) -> float:
-    losses = sorted(-value for value in changes if value < 0)
-    if not losses:
-        return 0.0
-    tail_start = max(0, int(len(losses) * 0.95) - 1)
-    tail = losses[tail_start:]
-    return sum(tail) / len(tail)
-
-
 def _append_v2_backtest_validation(
     runtime_config: SimpleNamespace,
     request: "V2BacktestRunRequest",
@@ -1746,10 +1904,12 @@ def _append_v2_backtest_validation(
     report_path: Path,
     dataset_metadata: dict[str, Any] | None = None,
     window_backtests: list[dict[str, Any]] | None = None,
+    funding_events: list[FundingEvent] | None = None,
 ) -> None:
     from strategy.backtest import (
         backtest_config_from_mapping,
         run_grid_backtest,
+        slice_funding_events_for_klines,
     )
     from strategy.grid_calculator import calculate_grid_params
     from strategy.validation import (
@@ -1782,11 +1942,18 @@ def _append_v2_backtest_validation(
                 funding_rate=0.0,
                 config=grid_config,
             )
+            test_list = list(test)
+            fold_funding = (
+                slice_funding_events_for_klines(funding_events, test_list)
+                if funding_events is not None
+                else None
+            )
             result = run_grid_backtest(
                 params,
-                list(test),
+                test_list,
                 current_price=current_price,
                 config=run_config,
+                funding_events=fold_funding,
             )
             return {
                 "status": "COMPLETED",
@@ -1835,6 +2002,7 @@ def _append_v2_backtest_validation(
         request,
         grid_config,
         run_config,
+        funding_events=funding_events,
     )
     window_distribution = (
         _nyse_window_distribution(window_backtests)
@@ -1898,14 +2066,23 @@ def _backtest_cost_sensitivity(
     request: "V2BacktestRunRequest",
     grid_config: Any,
     base_config: Any,
+    funding_events: list[FundingEvent] | None = None,
 ) -> dict[str, Any]:
-    from strategy.backtest import run_grid_backtest
+    from strategy.backtest import (
+        run_grid_backtest,
+        slice_funding_events_for_klines,
+    )
     from strategy.grid_calculator import calculate_grid_params
 
     if len(rows) <= request.observe_rows:
         return {"status": "FAILED", "error": "成本敏感性分析样本不足。", "scenarios": []}
     train = rows[: request.observe_rows]
     test = rows[request.observe_rows :]
+    scenario_funding = (
+        slice_funding_events_for_klines(funding_events, test)
+        if funding_events is not None
+        else None
+    )
     try:
         current_price = float(train[-1]["close"])
         params = calculate_grid_params(
@@ -1976,6 +2153,7 @@ def _backtest_cost_sensitivity(
                 test,
                 current_price=current_price,
                 config=scenario_config,
+                funding_events=scenario_funding,
             )
             results.append(
                 {
@@ -1999,166 +2177,6 @@ def _backtest_cost_sensitivity(
         }
     except Exception as exc:
         return {"status": "FAILED", "error": str(exc), "scenarios": []}
-
-
-def _backtest_window_distribution(
-    equity_curve: Any,
-    window_rows: int,
-    initial_equity: float,
-) -> dict[str, Any]:
-    if not isinstance(equity_curve, list) or not equity_curve:
-        return {
-            "status": "EMPTY",
-            "source": "FIXED_ROWS",
-            "window_rows": window_rows,
-            "window_count": 0,
-            "values": [],
-        }
-    values: list[float] = []
-    previous_equity = float(initial_equity)
-    for start in range(0, len(equity_curve), window_rows):
-        window = equity_curve[start : start + window_rows]
-        if not window:
-            continue
-        end_equity = float(window[-1].get("equity") or previous_equity)
-        values.append(end_equity - previous_equity)
-        previous_equity = end_equity
-    return {
-        "status": "COMPLETED",
-        "source": "FIXED_ROWS",
-        "window_rows": window_rows,
-        "window_count": len(values),
-        "positive_ratio": (
-            sum(1 for value in values if value > 0) / len(values)
-            if values
-            else 0.0
-        ),
-        "p05": _numeric_quantile(values, 0.05),
-        "p50": _numeric_quantile(values, 0.50),
-        "p95": _numeric_quantile(values, 0.95),
-        "worst": min(values, default=0.0),
-        "best": max(values, default=0.0),
-        "values": values,
-    }
-
-
-def _nyse_window_distribution(
-    window_backtests: list[dict[str, Any]],
-) -> dict[str, Any]:
-    completed = [
-        item
-        for item in window_backtests
-        if item.get("status") == "COMPLETED"
-        and isinstance(item.get("summary"), dict)
-    ]
-    values = [
-        float(item["summary"].get("total_pnl") or 0.0)
-        for item in completed
-    ]
-    skipped_count = sum(
-        1 for item in window_backtests if item.get("status") == "SKIPPED"
-    )
-    failed_count = sum(
-        1 for item in window_backtests if item.get("status") == "FAILED"
-    )
-    return {
-        "status": "COMPLETED" if values else "EMPTY",
-        "source": "NYSE_WINDOWS",
-        "window_rows": None,
-        "window_count": len(values),
-        "total_window_count": len(window_backtests),
-        "skipped_count": skipped_count,
-        "failed_count": failed_count,
-        "positive_ratio": (
-            sum(1 for value in values if value > 0) / len(values)
-            if values
-            else 0.0
-        ),
-        "p05": _numeric_quantile(values, 0.05),
-        "p50": _numeric_quantile(values, 0.50),
-        "p95": _numeric_quantile(values, 0.95),
-        "worst": min(values, default=0.0),
-        "best": max(values, default=0.0),
-        "values": values,
-    }
-
-
-def _window_analysis(
-    window_backtests: list[dict[str, Any]] | None,
-) -> dict[str, Any]:
-    if window_backtests is None:
-        return {
-            "status": "NOT_APPLICABLE",
-            "source": "RAW_RANGE",
-            "total_count": 0,
-            "completed_count": 0,
-            "skipped_count": 0,
-            "failed_count": 0,
-            "reason_counts": {},
-            "windows": [],
-        }
-
-    windows: list[dict[str, Any]] = []
-    reason_counts: dict[str, int] = {}
-    for entry in window_backtests:
-        window = entry.get("window")
-        window = window if isinstance(window, dict) else {}
-        summary = entry.get("summary")
-        summary = summary if isinstance(summary, dict) else {}
-        status = str(entry.get("status") or window.get("status") or "UNKNOWN")
-        reason = str(
-            window.get("skip_reason")
-            or entry.get("error")
-            or window.get("warning")
-            or ""
-        )
-        if reason:
-            reason_counts[reason] = reason_counts.get(reason, 0) + 1
-        windows.append(
-            {
-                "window_id": window.get("window_id"),
-                "market_close": window.get("market_close"),
-                "force_close_at": window.get("force_close_at"),
-                "row_count": int(window.get("row_count") or 0),
-                "observation_rows": int(window.get("observation_rows") or 0),
-                "tradable_rows": int(window.get("tradable_rows") or 0),
-                "status": status,
-                "skip_reason": window.get("skip_reason"),
-                "reason": window.get("warning") or entry.get("error"),
-                "total_pnl": summary.get("total_pnl"),
-                "max_drawdown": summary.get("max_drawdown"),
-                "fills": summary.get("fills"),
-                "stopped_reason": summary.get("stopped_reason"),
-            }
-        )
-
-    completed_count = sum(1 for item in windows if item["status"] == "COMPLETED")
-    skipped_count = sum(1 for item in windows if item["status"] == "SKIPPED")
-    failed_count = sum(1 for item in windows if item["status"] == "FAILED")
-    status = "COMPLETED"
-    if failed_count or skipped_count:
-        status = "COMPLETED_WITH_EXCLUSIONS" if completed_count else "NO_VALID_WINDOWS"
-    return {
-        "status": status,
-        "source": "NYSE_WINDOWS",
-        "total_count": len(windows),
-        "completed_count": completed_count,
-        "skipped_count": skipped_count,
-        "failed_count": failed_count,
-        "reason_counts": reason_counts,
-        "windows": windows,
-    }
-
-
-def _numeric_quantile(values: list[float], probability: float) -> float:
-    if not values:
-        return 0.0
-    ordered = sorted(values)
-    position = (len(ordered) - 1) * probability
-    lower = int(position)
-    upper = min(len(ordered) - 1, lower + 1)
-    fraction = position - lower
-    return ordered[lower] * (1 - fraction) + ordered[upper] * fraction
 
 
 def _v2_backtest_metrics(
@@ -2279,21 +2297,6 @@ def _v2_backtest_metrics(
             }
         )
     return metrics
-
-
-def _backtest_row_time(row: dict[str, Any]) -> str | None:
-    for key in (
-        "available_time",
-        "event_time",
-        "timestamp",
-        "open_time",
-        "time",
-        "close_time",
-    ):
-        value = row.get(key)
-        if value not in (None, ""):
-            return str(value)
-    return None
 
 
 def _current_git_commit() -> str:
@@ -2637,35 +2640,6 @@ async def _load_exchange_open_orders(
             await exchange.close()
 
 
-def _exchange_order_payload(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "order_id": str(
-            row.get("orderId")
-            or row.get("order_id")
-            or ""
-        ),
-        "client_id": str(
-            row.get("clientOrderId")
-            or row.get("origClientOrderId")
-            or row.get("client_id")
-            or ""
-        ),
-        "symbol": str(row.get("symbol") or ""),
-        "side": str(row.get("side") or "").upper(),
-        "price": _optional_float(row.get("price")),
-        "qty": _optional_float(
-            row.get("origQty")
-            if row.get("origQty") not in (None, "")
-            else row.get("qty")
-        ),
-        "executed_qty": _optional_float(row.get("executedQty")),
-        "status": str(row.get("status") or "OPEN").upper(),
-        "type": str(row.get("type") or ""),
-        "reduce_only": bool(row.get("reduceOnly", False)),
-        "update_time": row.get("updateTime") or row.get("time"),
-    }
-
-
 def _order_reconciliation_differences(
     local_orders: list[dict[str, Any]],
     exchange_orders: list[dict[str, Any]],
@@ -2729,40 +2703,6 @@ def _order_reconciliation_differences(
             }
         )
     return differences
-
-
-def _orders_refer_to_same_order(
-    local: dict[str, Any],
-    exchange: dict[str, Any],
-) -> bool:
-    local_client = str(local.get("client_id") or "")
-    exchange_client = str(exchange.get("client_id") or "")
-    if local_client and exchange_client and local_client == exchange_client:
-        return True
-    local_order = str(local.get("order_id") or "")
-    exchange_order = str(exchange.get("order_id") or "")
-    return bool(local_order and exchange_order and local_order == exchange_order)
-
-
-def _numbers_close(left: Any, right: Any) -> bool:
-    left_value = _optional_float(left)
-    right_value = _optional_float(right)
-    if left_value is None or right_value is None:
-        return left_value is right_value
-    return abs(left_value - right_value) <= max(
-        1e-9,
-        1e-8 * max(abs(left_value), abs(right_value)),
-    )
-
-
-def _optional_float(value: Any) -> float | None:
-    if value in (None, ""):
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if isfinite(number) else None
 
 
 def _readonly_environment_verification_rows(config: AppConfig, repo: Repository) -> list[dict[str, Any]]:
@@ -3853,58 +3793,6 @@ def _session_payload(
     }
 
 
-def _grid_round_payload(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "window_id": int(row.get("window_id") or 0),
-        "window_start": row.get("window_start"),
-        "window_end": row.get("window_end"),
-        "status": row.get("status"),
-        "status_label": legacy_web._localize_scalar_text(str(row.get("status") or "")),
-        "total_pnl": row.get("total_pnl"),
-        "session_count": int(row.get("session_count") or 0),
-        "active_session_count": int(row.get("active_session_count") or 0),
-    }
-
-
-def _round_candidate_payload(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "window_id": int(row.get("window_id") or 0),
-        "symbol": str(row.get("symbol") or ""),
-        "rank": row.get("liquidity_rank"),
-        "score": row.get("score"),
-        "volume_score": row.get("volume_score"),
-        "depth_score": row.get("depth_score"),
-        "volume_24h": row.get("volume_24h"),
-        "depth_usdt": row.get("depth_usdt"),
-        "price": row.get("price"),
-        "bid_price": row.get("bid_price"),
-        "ask_price": row.get("ask_price"),
-        "spread_pct": row.get("spread_pct"),
-        "volatility_method": row.get("volatility_method"),
-        "volatility_method_label": legacy_web._localize_scalar_text(str(row.get("volatility_method") or "")),
-        "volatility_value": row.get("volatility_value"),
-        "volatility_window": row.get("volatility_window"),
-        "range_lower": row.get("range_lower"),
-        "range_upper": row.get("range_upper"),
-        "range_width_pct": row.get("range_width_pct"),
-        "threshold_met": bool(row.get("threshold_met")),
-        "selected": bool(row.get("session_id")),
-        "disabled": False,
-        "status": "stale" if row.get("data_stale") else "ok",
-        "current_volatility": row.get("volatility_value"),
-        "current_volatility_window": row.get("volatility_window"),
-        "snapshot_at": row.get("calculated_at") or row.get("updated_at"),
-        "session_id": row.get("session_id"),
-        "stage": row.get("stage"),
-        "error": row.get("error") or "",
-        "last_kline_close_at": row.get("last_kline_close_at"),
-        "market_updated_at": row.get("market_updated_at"),
-        "calculated_at": row.get("calculated_at"),
-        "data_stale": bool(row.get("data_stale")),
-        "updated_at": row.get("updated_at"),
-    }
-
-
 def _volatility_stage_payload(row: dict[str, Any], config: AppConfig) -> dict[str, Any]:
     state = str(row.get("state") or "").upper()
     if state == "OBSERVING":
@@ -3977,141 +3865,6 @@ def _session_control_snapshot(repo: Repository, session_id: int) -> dict[str, An
         "orders_by_status": orders_by_status,
         "close_time": row.get("close_time"),
         "close_reason": row.get("close_reason"),
-    }
-
-
-def _order_payload(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": row.get("id"),
-        "session_id": row.get("session_id"),
-        "symbol": row.get("symbol"),
-        "order_id": row.get("order_id"),
-        "client_id": row.get("client_id"),
-        "grid_index": row.get("grid_index"),
-        "side": row.get("side"),
-        "side_label": legacy_web._localize_scalar_text(str(row.get("side") or "")),
-        "price": row.get("price"),
-        "qty": row.get("qty"),
-        "status": row.get("status"),
-        "status_label": legacy_web._order_status_label(str(row.get("status") or "")),
-        "entry_price": row.get("entry_price"),
-        "created_at": row.get("created_at"),
-        "filled_at": row.get("filled_at"),
-        "fill_price": row.get("fill_price"),
-        "updated_at": row.get("updated_at"),
-    }
-
-
-def _trade_payload(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": row.get("id"),
-        "session_id": row.get("session_id"),
-        "symbol": row.get("symbol"),
-        "order_id": row.get("order_id"),
-        "side": row.get("side"),
-        "side_label": legacy_web._localize_scalar_text(str(row.get("side") or "")),
-        "price": row.get("price"),
-        "qty": row.get("qty"),
-        "quote_qty": row.get("quote_qty"),
-        "grid_index": row.get("grid_index"),
-        "grid_pnl": row.get("grid_pnl"),
-        "fee": row.get("fee"),
-        "funding_fee": row.get("funding_fee"),
-        "trade_time": row.get("trade_time"),
-        "created_at": row.get("created_at"),
-    }
-
-
-def _session_performance_payload(row: dict[str, Any], trades: list[dict[str, Any]]) -> dict[str, Any]:
-    ordered = sorted(trades, key=lambda item: (str(item.get("trade_time") or ""), int(item.get("id") or 0)))
-    gross_grid_pnl = sum(float(item.get("grid_pnl") or 0.0) for item in ordered if item.get("grid_pnl") is not None)
-    trading_fees = sum(float(item.get("fee") or 0.0) for item in ordered)
-    funding_fee = sum(float(item.get("funding_fee") or 0.0) for item in ordered)
-    realized_pnl = float(row.get("realized_pnl") or 0.0)
-    unpaired_pnl = realized_pnl - gross_grid_pnl + trading_fees - funding_fee
-    capital = float(row.get("capital") or 0.0)
-    roi = realized_pnl / capital if capital > 0 else None
-    initial_margin = capital
-    current_margin = max(0.0, capital + realized_pnl) if capital > 0 else None
-    margin_change = (current_margin - initial_margin) if current_margin is not None else None
-    duration_hours = _session_duration_hours(row)
-    annualized_roi = roi * (24 * 365 / duration_hours) if roi is not None and duration_hours and duration_hours > 0 else None
-
-    cumulative = 0.0
-    curve = []
-    for item in ordered:
-        cumulative += float(item.get("grid_pnl") or 0.0)
-        cumulative -= float(item.get("fee") or 0.0)
-        cumulative += float(item.get("funding_fee") or 0.0)
-        curve.append(
-            {
-                "time": item.get("trade_time"),
-                "value": cumulative,
-            }
-        )
-
-    return {
-        "gross_grid_pnl": gross_grid_pnl,
-        "trading_fees": trading_fees,
-        "funding_fee": funding_fee,
-        "realized_pnl": realized_pnl,
-        "unpaired_pnl": unpaired_pnl,
-        "initial_margin": initial_margin,
-        "current_margin": current_margin,
-        "margin_change": margin_change,
-        "roi": roi,
-        "annualized_roi": annualized_roi,
-        "duration_hours": duration_hours,
-        "trade_count": len(ordered),
-        "unpaired_trade_count": sum(1 for item in ordered if item.get("grid_pnl") is None),
-        "pnl_curve": curve[-80:],
-    }
-
-
-def _session_duration_hours(row: dict[str, Any]) -> float | None:
-    try:
-        opened_at = datetime.fromisoformat(str(row.get("open_time")))
-    except (TypeError, ValueError):
-        return None
-    close_value = row.get("close_time")
-    if close_value:
-        try:
-            closed_at = datetime.fromisoformat(str(close_value))
-        except (TypeError, ValueError):
-            closed_at = datetime.now(timezone.utc)
-    else:
-        closed_at = datetime.now(timezone.utc)
-    if opened_at.tzinfo is None:
-        opened_at = opened_at.replace(tzinfo=timezone.utc)
-    if closed_at.tzinfo is None:
-        closed_at = closed_at.replace(tzinfo=timezone.utc)
-    return max(0.0, (closed_at.astimezone(timezone.utc) - opened_at.astimezone(timezone.utc)).total_seconds() / 3600)
-
-
-def _system_log_payload(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": row.get("id"),
-        "time": row.get("log_time"),
-        "level": row.get("level"),
-        "level_label": legacy_web._localize_scalar_text(str(row.get("level") or "")),
-        "module": row.get("module"),
-        "module_label": legacy_web._localize_value("module", row.get("module")),
-        "message": legacy_web._localize_message(str(row.get("message") or "")),
-        "detail": legacy_web._localize_detail(str(row.get("detail") or "")) if row.get("detail") else "",
-    }
-
-
-def _verification_payload(row: dict[str, Any]) -> dict[str, Any]:
-    status = str(row.get("verification_status") or "unknown")
-    module = str(row.get("module") or "")
-    return {
-        "module": module,
-        "name": row.get("verification_item") or legacy_web._ENVIRONMENT_VERIFICATION_LABELS.get(module, module),
-        "status": status,
-        "status_label": legacy_web._VERIFICATION_STATUS_LABELS.get(status, status),
-        "last_checked": row.get("last_checked") or "",
-        "latest_message": legacy_web._localize_message(str(row.get("latest_message") or "")),
-        "detail": row.get("detail_summary") or "",
     }
 
 

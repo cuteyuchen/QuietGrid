@@ -182,3 +182,108 @@ accounts:
 
     with pytest.raises(ValueError, match="missing"):
         select_account(config, "missing")
+
+
+# --- P0-2/3/5 启动配置校验 -------------------------------------------------
+
+from core.config import (  # noqa: E402
+    StartupConfigError,
+    validate_startup_config,
+    validate_symbol_profile,
+    validate_v2_feature_flags,
+    validate_web_binding,
+)
+
+
+def test_web_binding_rejects_public_address_without_token() -> None:
+    with pytest.raises(StartupConfigError, match="auth_token"):
+        validate_web_binding({"web": {"address": "0.0.0.0", "auth_token": ""}})
+
+
+def test_web_binding_allows_loopback_without_token() -> None:
+    validate_web_binding({"web": {"address": "127.0.0.1", "auth_token": ""}})
+
+
+def test_web_binding_allows_public_address_with_token() -> None:
+    validate_web_binding({"web": {"address": "0.0.0.0", "auth_token": "secret"}})
+
+
+def test_web_binding_reads_token_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("QUIETGRID_WEB_TOKEN", "from-env")
+    validate_web_binding(
+        {"web": {"address": "0.0.0.0", "auth_token_env": "QUIETGRID_WEB_TOKEN"}}
+    )
+    monkeypatch.delenv("QUIETGRID_WEB_TOKEN", raising=False)
+    with pytest.raises(StartupConfigError):
+        validate_web_binding(
+            {"web": {"address": "0.0.0.0", "auth_token_env": "QUIETGRID_WEB_TOKEN"}}
+        )
+
+
+def test_symbol_profile_rejects_tradfi_in_testnet() -> None:
+    raw = {
+        "environment": "testnet",
+        "selection": {"symbol_allowlist": ["BTCUSDT", "AAPLUSDT"]},
+    }
+    with pytest.raises(StartupConfigError, match="AAPLUSDT"):
+        validate_symbol_profile(raw)
+
+
+def test_symbol_profile_allows_crypto_only_testnet() -> None:
+    validate_symbol_profile(
+        {"environment": "testnet", "selection": {"symbol_allowlist": ["BTCUSDT", "ETHUSDT"]}}
+    )
+
+
+def test_symbol_profile_ignores_non_testnet_profiles() -> None:
+    validate_symbol_profile(
+        {"environment": "tradfi-live", "selection": {"symbol_allowlist": ["AAPLUSDT"]}}
+    )
+
+
+def test_v2_feature_flags_fail_closed_when_missing() -> None:
+    with pytest.raises(StartupConfigError, match="regime_v2"):
+        validate_v2_feature_flags({"environment": "v2-production", "features": {}})
+
+
+def test_v2_feature_flags_fail_closed_when_disabled() -> None:
+    with pytest.raises(StartupConfigError, match="被关闭"):
+        validate_v2_feature_flags(
+            {
+                "environment": "v2-production",
+                "features": {
+                    "regime_v2": False,
+                    "inventory_manager": True,
+                    "adaptive_grid_v2": True,
+                    "risk_manager_v2": True,
+                },
+            }
+        )
+
+
+def test_v2_feature_flags_pass_when_all_enabled() -> None:
+    validate_v2_feature_flags(
+        {
+            "environment": "v2-production",
+            "features": {
+                "regime_v2": True,
+                "inventory_manager": True,
+                "adaptive_grid_v2": True,
+                "risk_manager_v2": True,
+            },
+        }
+    )
+
+
+def test_validate_startup_config_runs_all_checks(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("BINANCE_TESTNET", raising=False)
+    config_path = tmp_path / "config.yaml"
+    env_path = tmp_path / ".env"
+    config_path.write_text(
+        "database:\n  path: test.db\nweb:\n  address: 0.0.0.0\n  auth_token: ''\n",
+        encoding="utf-8",
+    )
+    env_path.write_text("", encoding="utf-8")
+    config = load_config(config_path, env_path)
+    with pytest.raises(StartupConfigError):
+        validate_startup_config(config)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import StrEnum
 from math import isfinite
 from typing import Any
@@ -29,6 +29,7 @@ class DatasetRequest:
     start_time: datetime
     end_time: datetime
     window_mode: str = "NYSE_CLOSED_ONLY"
+    include_funding: bool = False
 
     def __post_init__(self) -> None:
         if not self.provider.strip():
@@ -45,6 +46,7 @@ class DatasetRequest:
         object.__setattr__(self, "symbol", self.symbol.strip().upper())
         object.__setattr__(self, "interval", self.interval.strip())
         object.__setattr__(self, "window_mode", self.window_mode.strip().upper())
+        object.__setattr__(self, "include_funding", bool(self.include_funding))
 
 
 @dataclass(frozen=True)
@@ -160,6 +162,77 @@ class DatasetQualityReport:
             "warnings": list(self.warnings),
             "errors": list(self.errors),
         }
+
+
+class ArchiveSegmentType(StrEnum):
+    MONTHLY_ARCHIVE = "monthly_archive"
+    DAILY_ARCHIVE = "daily_archive"
+    REST_TAIL = "rest_tail"
+
+
+@dataclass(frozen=True)
+class ArchiveSegment:
+    """归档下载计划中的一个时间片，描述其类型与 UTC 时间边界。"""
+
+    segment_type: ArchiveSegmentType
+    period_start: date
+    period_end: date
+    start_ms: int
+    end_ms: int
+    label: str = ""
+
+    def __post_init__(self) -> None:
+        if self.period_start > self.period_end:
+            raise ValueError("period_start 不能晚于 period_end。")
+        if self.start_ms >= self.end_ms:
+            raise ValueError("start_ms 必须早于 end_ms。")
+
+    @property
+    def is_rest(self) -> bool:
+        return self.segment_type is ArchiveSegmentType.REST_TAIL
+
+
+@dataclass
+class SourceSegmentMetadata:
+    """记录一个数据片段的来源、行数与官方 / 本地 checksum，写入数据集元数据。"""
+
+    segment_type: str
+    url: str = ""
+    official_checksum: str | None = None
+    local_checksum: str | None = None
+    rows: int = 0
+    start: str | None = None
+    end: str | None = None
+    status: str = "OK"
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "type": self.segment_type,
+            "url": self.url,
+            "official_checksum": self.official_checksum,
+            "local_checksum": self.local_checksum,
+            "rows": self.rows,
+            "start": self.start,
+            "end": self.end,
+            "status": self.status,
+        }
+
+
+@dataclass(frozen=True)
+class FundingEvent:
+    """单次资金费结算事件，回测中仅在跨过 funding_time 且存在库存时扣费。"""
+
+    funding_time: int
+    funding_rate: float
+    mark_price: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.funding_time < 0:
+            raise ValueError("funding_time 不能为负数。")
+        if not isfinite(self.funding_rate):
+            raise ValueError("funding_rate 必须是有限数。")
+        if self.mark_price is not None and (not isfinite(self.mark_price) or self.mark_price <= 0):
+            raise ValueError("mark_price 必须是有限正数。")
 
 
 def _is_timezone_aware(value: datetime) -> bool:

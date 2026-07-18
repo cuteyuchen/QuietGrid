@@ -10,7 +10,7 @@ from core.models import GridParams
 from strategy.grid_calculator import GridCalculationError, calculate_atr
 
 
-ADAPTIVE_GRID_VERSION = "adaptive-grid-v2.0.0"
+ADAPTIVE_GRID_VERSION = "adaptive-grid-v2.1.0"
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,11 @@ class AdaptiveGridConfig:
     adverse_selection_buffer_pct: float = 0.0005
     slippage_buffer_pct: float = 0.0005
     safety_margin_pct: float = 0.0005
+    # 区间与格距共用同一波动率预测尺度：先在 horizon_bars 窗口上用同一估计器算出
+    # 单根 Bar 波动率，再分别缩放到区间（乘 sqrt(horizon)）与格距（每根）。避免此前
+    # 区间用 60 窗口、格距用 15 窗口造成的口径不一致（计划 §9.2）。
+    horizon_bars: int = 60
+    volatility_estimator: str = "ewma"
 
 
 class AdaptiveGridGenerator:
@@ -63,14 +68,23 @@ class AdaptiveGridGenerator:
         atr = calculate_atr(highs, lows, closes, 14)
         atr_pct = atr / center
         log_returns = [log(closes[index] / closes[index - 1]) for index in range(1, len(closes))]
-        sigma = pstdev(log_returns[-60:]) * sqrt(min(60, len(log_returns)))
+        # 单根 Bar 波动率（同一估计器、同一 horizon 窗口），区间与格距都从它推导，
+        # 避免此前区间用 60 根、格距用 15 根导致两者时间尺度不一致（§9.2）。
+        horizon = max(1, min(config.horizon_bars, len(log_returns)))
+        sigma_per_bar = _per_bar_volatility(
+            log_returns,
+            horizon,
+            config.volatility_estimator,
+            config.center_half_life_minutes,
+        )
+        sigma_horizon = sigma_per_bar * sqrt(horizon)
         ordered = sorted(closes)
         q_low = _quantile(ordered, 0.05)
         q_high = _quantile(ordered, 0.95)
         quantile_band = max(center - q_low, q_high - center) / center
         half_width_pct = max(
             config.k_atr_range * atr_pct,
-            config.k_sigma_range * sigma,
+            config.k_sigma_range * sigma_horizon,
             quantile_band,
             config.min_step_pct * config.min_grid_num / 2,
         )
@@ -91,7 +105,7 @@ class AdaptiveGridGenerator:
         step = max(
             cost_floor,
             config.k_atr_step * atr_pct,
-            config.k_sigma_step * pstdev(log_returns[-15:]),
+            config.k_sigma_step * sigma_per_bar,
             config.min_step_pct,
         )
         step = min(step, config.max_step_pct)
@@ -129,7 +143,7 @@ class AdaptiveGridGenerator:
             stop_loss_price=lower * (1.0 - config.stop_buffer_pct),
             calculated_at=calculated_at or datetime.now(timezone.utc),
             volatility_method="adaptive_v2",
-            volatility_value=max(atr_pct, sigma),
+            volatility_value=max(atr_pct, sigma_horizon),
             volatility_window=len(klines),
             upper_stop_loss_price=upper * (1.0 + config.stop_buffer_pct),
             grid_mode="adaptive_v2",
@@ -174,6 +188,31 @@ def _minimum_step_pct(prices: list[float]) -> float:
     return min(prices[index] / prices[index - 1] - 1.0 for index in range(1, len(prices)))
 
 
+def _per_bar_volatility(
+    log_returns: list[float],
+    horizon: int,
+    estimator: str,
+    half_life_minutes: float,
+) -> float:
+    """在统一 horizon 窗口内估计单根 Bar 的收益波动率（§9.2）。
+
+    "std" 直接取窗口内对数收益的总体标准差；"ewma" 用半衰期加权，让近端 Bar
+    权重更高。区间与格距都以该单根波动率乘以对应根数换算，时间尺度一致。
+    """
+    window = log_returns[-horizon:]
+    if not window:
+        return 0.0
+    if estimator == "ewma":
+        alpha = 1.0 - exp(log(0.5) / max(half_life_minutes, 1e-9))
+        mean = window[0]
+        variance = 0.0
+        for value in window[1:]:
+            variance = (1.0 - alpha) * (variance + alpha * (value - mean) ** 2)
+            mean = alpha * value + (1.0 - alpha) * mean
+        return sqrt(max(variance, 0.0))
+    return pstdev(window)
+
+
 def _ewma(values: list[float], half_life: float) -> float:
     alpha = 1.0 - exp(log(0.5) / half_life)
     result = values[0]
@@ -210,6 +249,10 @@ def _validate_config(config: AdaptiveGridConfig) -> None:
         raise ValueError("expansion_rate 不能为负数。")
     if not 0 <= config.stop_buffer_pct < 1:
         raise ValueError("stop_buffer_pct 无效。")
+    if config.horizon_bars < 2:
+        raise ValueError("horizon_bars 至少为 2。")
+    if config.volatility_estimator not in {"ewma", "std"}:
+        raise ValueError("volatility_estimator 仅支持 ewma 或 std。")
 
 
 def _bounded(value: Any, lower: float, upper: float, label: str) -> float:

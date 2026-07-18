@@ -172,3 +172,97 @@ def test_binance_source_stops_immediately_on_418() -> None:
     with pytest.raises(DataSourceError, match="418"):
         asyncio.run(run())
     assert calls == 1
+
+
+def _funding(funding_time: int, rate: float, mark: str | None = "100.0") -> dict[str, object]:
+    row: dict[str, object] = {
+        "symbol": "BTCUSDT",
+        "fundingTime": funding_time,
+        "fundingRate": str(rate),
+    }
+    if mark is not None:
+        row["markPrice"] = mark
+    return row
+
+
+def test_binance_source_fetch_funding_paginates_and_filters_future() -> None:
+    start_ms = 1_800_000_000_000
+    eight_hours = 8 * 60 * 60 * 1000
+    now_ms = start_ms + 3 * eight_hours
+    seen_starts: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/fapi/v1/fundingRate"
+        cursor = int(request.url.params["startTime"])
+        seen_starts.append(cursor)
+        if cursor == start_ms:
+            return httpx.Response(
+                200,
+                json=[
+                    _funding(start_ms, 0.0001),
+                    _funding(start_ms + eight_hours, 0.0002, mark=None),
+                ],
+            )
+        if cursor == start_ms + eight_hours + 1:
+            # 第二页：一个已结算事件 + 一个未来事件（>= now_ms 应被剔除）。
+            return httpx.Response(
+                200,
+                json=[
+                    _funding(start_ms + 2 * eight_hours, -0.0003, mark="0"),
+                    _funding(now_ms + eight_hours, 0.0005),
+                ],
+            )
+        # 第三页：已无新的已结算事件，返回空以终止分页。
+        return httpx.Response(200, json=[])
+
+    async def run():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        source = BinanceHistoricalDataSource(
+            client=client,
+            pause_seconds=0,
+            funding_page_limit=2,
+            now_ms=lambda: now_ms,
+        )
+        start = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc)
+        events = [
+            event
+            async for event in source.fetch_funding(
+                "btcusdt",
+                start,
+                start + timedelta(days=2),
+            )
+        ]
+        await client.aclose()
+        return events
+
+    events = asyncio.run(run())
+
+    assert [event.funding_time for event in events] == [
+        start_ms,
+        start_ms + eight_hours,
+        start_ms + 2 * eight_hours,
+    ]
+    assert [round(event.funding_rate, 4) for event in events] == [0.0001, 0.0002, -0.0003]
+    # markPrice 缺失或非正值均归一为 None。
+    assert events[0].mark_price == 100.0
+    assert events[1].mark_price is None
+    assert events[2].mark_price is None
+    assert seen_starts == [
+        start_ms,
+        start_ms + eight_hours + 1,
+        start_ms + 2 * eight_hours + 1,
+    ]
+
+
+def test_binance_source_fetch_funding_rejects_naive_datetime() -> None:
+    async def run():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=[])))
+        source = BinanceHistoricalDataSource(client=client)
+        try:
+            async for _ in source.fetch_funding("BTCUSDT", datetime(2026, 1, 1), datetime(2026, 1, 2)):
+                pass
+        finally:
+            await client.aclose()
+
+    with pytest.raises(ValueError, match="时区"):
+        asyncio.run(run())

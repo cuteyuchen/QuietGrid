@@ -1,0 +1,126 @@
+environment: testnet
+
+account:
+  id: default
+  api_key_env: BINANCE_API_KEY
+  api_secret_env: BINANCE_API_SECRET
+  allow_withdrawal_permission: false
+
+features:
+  regime_v2: true
+  inventory_manager: true
+  adaptive_grid_v2: true
+  risk_manager_v2: true
+  ai_regime_feature: false
+
+scheduler:
+  market_calendar: NYSE
+  timezone: UTC
+  force_close_before_premarket_minutes: 120
+  minimum_runtime_minutes: 120
+
+selection:
+  max_candidates: 10
+  max_concurrent: 1
+  volume_weight: 0.45
+  depth_weight: 0.35
+  spread_weight: 0.10
+  historical_stability_weight: 0.10
+  symbol_allowlist: []
+  symbol_blacklist: []
+
+regime:
+  bar_interval: 1m
+  short_window: 15
+  long_window: 60
+  enter_threshold: 75
+  stay_threshold: 65
+  recovery_confirm_minutes: 15
+  max_data_age_seconds: 90
+  weights:
+    volatility: 0.25
+    trend: 0.25
+    liquidity: 0.20
+    mean_reversion: 0.15
+    cost: 0.10
+    event: 0.05
+  hard_limits:
+    max_spread_pct: 0.0010
+    max_vol_expansion_ratio: 2.5
+    min_depth_usdt: 10000
+
+risk:
+  effective_leverage_cap: 1.0
+  max_session_loss_pct: 0.005
+  max_weekend_loss_pct: 0.015
+  max_symbol_inventory_pct: 0.10
+  max_group_notional_pct: 0.20
+  max_consecutive_session_losses: 2
+  max_window_stop_count: 3
+  exchange_stop_required: true
+  block_risk_increase_hot_reload: true
+
+grid:
+  center_method: ewma
+  center_half_life_minutes: 30
+  range_method: robust_max
+  k_atr_range: 2.0
+  k_sigma_range: 2.0
+  max_range_pct: 0.03
+  min_step_pct: 0.0015
+  max_step_pct: 0.01
+  k_atr_step: 0.50
+  k_sigma_step: 0.80
+  min_grid_num: 6
+  max_grid_num: 20
+  spacing: expanding
+  expansion_rate: 0.08
+  rebuild_check_minutes: 15
+  rebuild_center_drift_pct: 0.003
+
+inventory:
+  caution_utilization: 0.40
+  high_utilization: 0.60
+  critical_utilization: 0.80
+  suppress_same_side_orders: true
+  passive_reduce_first: true
+
+cooldown:
+  volatility_minutes: 20
+  breakout_minutes: 45
+  stop_loss_disable_symbol_for_window: true
+  require_flat_position: true
+  require_no_open_orders: true
+  recovery_confirm_minutes: 15
+
+costs:
+  verify_maker_fee_at_startup: true
+  adverse_selection_buffer_pct: 0.0005
+  slippage_buffer_pct: 0.0005
+  safety_margin_pct: 0.0005
+
+backtest:
+  fill_model: conservative_bar
+  maker_fill_discount: 0.50
+  stop_first_on_same_bar: true
+  max_fills_per_bar: 2
+  walk_forward_train_months: 12
+  walk_forward_test_months: 3
+  monte_carlo_runs: 1000
+
+web:
+  host: 127.0.0.1
+  port: 8080
+  auth_token_env: QUIETGRID_WEB_TOKEN
+  cors_origins:
+    - http://localhost:5173
+
+persistence:
+  database_path: data/trading-v2.db
+  wal: true
+  backup_directory: backups
+
+notifications:
+  enabled: true
+  min_level: WARN
+  webhook_url_env: QUIETGRID_WEBHOOK_URL

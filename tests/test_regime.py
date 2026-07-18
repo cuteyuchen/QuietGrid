@@ -113,3 +113,66 @@ def test_insufficient_samples_fail_closed() -> None:
             spread_pct=0.0001,
             depth_usdt=20_000,
         )
+
+
+def test_event_weight_zeroed_when_source_unavailable_is_default() -> None:
+    from strategy.regime import RegimeConfig, RegimeWeights, _effective_weights
+
+    config = RegimeConfig(weights=RegimeWeights(
+        volatility=0.25, trend=0.20, liquidity=0.25,
+        mean_reversion=0.15, cost=0.15, event=0.0,
+    ))
+    weights = _effective_weights(config)
+
+    assert weights["event"] == 0.0
+    assert abs(sum(weights.values()) - 1.0) < 1e-9
+
+
+def test_event_weight_renormalized_when_source_absent() -> None:
+    from strategy.regime import RegimeConfig, RegimeWeights, _effective_weights
+
+    # 即使配置给了 event 权重，只要事件 Provider 不可用就应被清零并重新归一化。
+    config = RegimeConfig(
+        weights=RegimeWeights(
+            volatility=0.25, trend=0.20, liquidity=0.20,
+            mean_reversion=0.15, cost=0.10, event=0.10,
+        ),
+        event_source_available=False,
+    )
+    weights = _effective_weights(config)
+
+    assert weights["event"] == 0.0
+    assert abs(sum(weights.values()) - 1.0) < 1e-9
+    # 其余维度按比例放大：volatility 0.25/0.90。
+    assert abs(weights["volatility"] - 0.25 / 0.90) < 1e-9
+
+
+def test_event_weight_kept_when_source_available() -> None:
+    from strategy.regime import RegimeConfig, RegimeWeights, _effective_weights
+
+    config = RegimeConfig(
+        weights=RegimeWeights(
+            volatility=0.25, trend=0.20, liquidity=0.20,
+            mean_reversion=0.15, cost=0.10, event=0.10,
+        ),
+        event_source_available=True,
+    )
+    weights = _effective_weights(config)
+
+    assert abs(weights["event"] - 0.10) < 1e-9
+
+
+def test_trend_and_mean_reversion_do_not_share_directional_efficiency() -> None:
+    # trend 反映方向效率，mean_reversion 反映反转/穿越；二者对同一序列应给出不同分数，
+    # 说明不再重复计入 (1 - directional_efficiency)。
+    decision = RegimeEngine().evaluate(
+        "BTCUSDT",
+        _range_klines(),
+        spread_pct=0.0001,
+        depth_usdt=20_000,
+        expected_step_pct=0.003,
+        cost_floor_pct=0.001,
+    )
+
+    assert decision.component_scores["trend"] != decision.component_scores["mean_reversion"]
+    assert decision.feature_version == "regime-features-v2.1.0"

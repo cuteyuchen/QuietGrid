@@ -47,6 +47,9 @@ grid:
   k_atr_step: 0.50
   k_sigma_step: 0.80
   expansion_rate: 0.08
+  # 区间与格距共用同一波动率预测尺度（§9.2）。
+  horizon_bars: 60
+  volatility_estimator: "ewma"
   volatility_refresh_seconds: 60
   rolling_regrid_enabled: true
   rolling_regrid_seconds: 7200
@@ -64,13 +67,16 @@ regime:
   stay_threshold: 65
   max_data_age_seconds: 90
   recovery_confirm_minutes: 15
+  # event 权重默认 0：当前无事件 Provider，避免"无事件数据即加分"。
+  # 接入事件源后再上调 event 并置 event_source_available: true（§9.1）。
+  event_source_available: false
   weights:
     volatility: 0.25
-    trend: 0.25
-    liquidity: 0.20
+    trend: 0.20
+    liquidity: 0.25
     mean_reversion: 0.15
-    cost: 0.10
-    event: 0.05
+    cost: 0.15
+    event: 0.00
   hard_limits:
     max_spread_pct: 0.0010
     max_vol_expansion_ratio: 2.5
@@ -128,8 +134,11 @@ proxy:
 
 web:
   port: 8080
-  address: "0.0.0.0"
+  # P0-2：默认仅监听本机；若改为非 loopback 地址，必须提供 auth_token 或
+  # auth_token_env 指向的环境变量，否则服务拒绝启动（见 core.config.validate_web_binding）。
+  address: "127.0.0.1"
   auth_token: ""
+  auth_token_env: "QUIETGRID_WEB_TOKEN"
 
 # Vue 控制台的交易 loop 进程控制。mode=auto 在 Linux 下使用 systemd，在 Windows 下显示不可用。
 # 非 systemd 环境可使用 mode=command，并配置 status_command / stop_command / restart_command 为字符串列表。
@@ -160,8 +169,29 @@ backtest:
   staging_dir: "data/backtests/staging"
   report_dir: "reports/backtests"
   storage_format: "csv"
-  schema_version: 1
-  default_provider: "binance"
+  # 数据集格式版本由代码唯一掌管（data_sources.dataset_service.SCHEMA_VERSION），
+  # 不在配置中重复声明，避免 §5.6 的双重来源隐患。
+  # 归档优先的混合数据源：官方月/日归档为主，REST 仅补未归档的最新尾部。
+  default_provider: "binance_hybrid"
+  providers:
+    binance_archive:
+      enabled: true
+      base_url: "https://data.binance.vision"
+      market_path: "futures/um"
+      prefer_monthly: true
+      verify_official_checksum: true
+      max_zip_bytes: 536870912
+      max_uncompressed_bytes: 2147483648
+    binance_rest:
+      enabled: true
+      base_url: "https://fapi.binance.com"
+      use_for_latest_tail_only: true
+      tail_max_days: 2
+    binance_hybrid:
+      enabled: true
+      archive_provider: "binance_archive"
+      rest_provider: "binance_rest"
+      tolerate_missing_latest_tail: true
   online_data:
     enabled: true
     max_range_days_1m: 180

@@ -284,3 +284,161 @@ def test_backtest_rejects_future_available_data_and_reverse_time() -> None:
         assert "倒序" in str(exc)
     else:
         raise AssertionError("reverse event time must invalidate the backtest")
+
+
+def _funding_event(minutes_from_start: int, rate: float, base_time):
+    from datetime import timedelta
+    from data_sources.models import FundingEvent
+
+    funding_time = base_time + timedelta(minutes=minutes_from_start)
+    return FundingEvent(
+        funding_time=int(funding_time.timestamp() * 1000),
+        funding_rate=rate,
+    )
+
+
+def test_event_funding_only_charged_when_crossing_event_with_inventory():
+    from datetime import datetime, timedelta, timezone
+    from core.models import GridParams, OrderSide
+    from strategy.backtest import BacktestConfig, run_grid_backtest
+
+    base = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    # 构造能成交并留下多头库存的下跌行情。
+    params = GridParams(
+        symbol="BTCUSDT",
+        upper=105.0,
+        lower=95.0,
+        center=100.0,
+        grid_num=4,
+        step_pct=0.02,
+        grid_prices=[95.0, 97.5, 100.0, 102.5, 105.0],
+        baseline_atr=1.0,
+        stop_loss_price=90.0,
+        calculated_at=base,
+    )
+    klines = []
+    for index in range(6):
+        close = 100.0 - index  # 持续下探，买单逐格成交，产生多头库存
+        klines.append(
+            {
+                "open_time": int((base + timedelta(minutes=index)).timestamp() * 1000),
+                "close_time": int((base + timedelta(minutes=index, seconds=59)).timestamp() * 1000),
+                "high": close + 0.5,
+                "low": close - 0.5,
+                "close": close,
+            }
+        )
+    config = BacktestConfig(fill_model="L0_CONSERVATIVE", maker_fill_probability=1.0)
+
+    # funding 事件落在第 3 分钟，此时已有多头库存 → 扣费。
+    with_event = run_grid_backtest(
+        params,
+        klines,
+        current_price=100.0,
+        config=config,
+        funding_events=[_funding_event(3, 0.001, base)],
+    )
+    # funding 事件落在库存产生之前的第 0 分钟 → 不扣费。
+    before_inventory = run_grid_backtest(
+        params,
+        klines,
+        current_price=100.0,
+        config=config,
+        funding_events=[_funding_event(0, 0.001, base)],
+    )
+
+    assert with_event.funding_paid > 0
+    assert before_inventory.funding_paid == 0.0
+
+
+def test_event_funding_ignores_rate_per_bar_fallback():
+    from datetime import datetime, timedelta, timezone
+    from core.models import GridParams
+    from strategy.backtest import BacktestConfig, run_grid_backtest
+
+    base = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    params = GridParams(
+        symbol="BTCUSDT",
+        upper=105.0,
+        lower=95.0,
+        center=100.0,
+        grid_num=4,
+        step_pct=0.02,
+        grid_prices=[95.0, 97.5, 100.0, 102.5, 105.0],
+        baseline_atr=1.0,
+        stop_loss_price=90.0,
+        calculated_at=base,
+    )
+    klines = []
+    for index in range(4):
+        close = 100.0 - index
+        klines.append(
+            {
+                "open_time": int((base + timedelta(minutes=index)).timestamp() * 1000),
+                "close_time": int((base + timedelta(minutes=index, seconds=59)).timestamp() * 1000),
+                "high": close + 0.5,
+                "low": close - 0.5,
+                "close": close,
+            }
+        )
+    # 提供空的 funding 事件列表：既不按事件扣，也不回退到 per-bar。
+    config = BacktestConfig(
+        fill_model="L0_CONSERVATIVE",
+        maker_fill_probability=1.0,
+        funding_rate_per_bar=0.001,
+    )
+    result = run_grid_backtest(
+        params,
+        klines,
+        current_price=100.0,
+        config=config,
+        funding_events=[],
+    )
+    assert result.funding_paid == 0.0
+
+
+def test_slice_funding_events_partitions_contiguous_segments_without_double_count():
+    from datetime import datetime, timedelta, timezone
+    from strategy.backtest import slice_funding_events_for_klines
+
+    base = datetime(2026, 3, 1, tzinfo=timezone.utc)
+
+    def _kline(minute: int) -> dict:
+        return {
+            "open_time": int((base + timedelta(minutes=minute)).timestamp() * 1000),
+            "close_time": int((base + timedelta(minutes=minute, seconds=59)).timestamp() * 1000),
+            "high": 100.5,
+            "low": 99.5,
+            "close": 100.0,
+        }
+
+    # 事件分别落在第 0、3、6、9 分钟。
+    events = [_funding_event(m, 0.001, base) for m in (0, 3, 6, 9)]
+
+    # 观察期 = 前 4 根（0..3），回测区间 = 第 4..9 分钟。
+    observe = [_kline(m) for m in range(4)]
+    backtest = [_kline(m) for m in range(4, 10)]
+
+    # 观察期开盘之前不应误纳早于区间的事件到第一根 Bar；只保留区间内的 6、9。
+    sliced_backtest = slice_funding_events_for_klines(events, backtest)
+    assert [event.funding_time for event in sliced_backtest] == [
+        events[2].funding_time,
+        events[3].funding_time,
+    ]
+
+    # 相邻但不重叠的两段拼接应正好覆盖全部事件、且不重复计入边界事件。
+    sliced_observe = slice_funding_events_for_klines(events, observe)
+    combined = [event.funding_time for event in sliced_observe] + [
+        event.funding_time for event in sliced_backtest
+    ]
+    assert combined == [event.funding_time for event in events]
+    assert len(combined) == len(set(combined))
+
+
+def test_slice_funding_events_handles_empty_inputs():
+    from datetime import datetime, timezone
+    from strategy.backtest import slice_funding_events_for_klines
+
+    base = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    assert slice_funding_events_for_klines([], [{"open_time": 1, "close_time": 2}]) == []
+    assert slice_funding_events_for_klines([_funding_event(0, 0.001, base)], []) == []

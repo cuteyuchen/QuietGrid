@@ -107,6 +107,53 @@ def test_backtest_csv_runs_offline_from_local_file(tmp_path) -> None:
     assert "total_pnl" in result
 
 
+def test_backtest_csv_charges_only_funding_events_inside_backtest_range(tmp_path) -> None:
+    from datetime import timedelta
+    from data_sources.models import FundingEvent
+
+    csv_path = tmp_path / "klines.csv"
+    # 带真实毫秒时间戳的 CSV：观察期震荡以得到可用网格，回测区间持续下探建立多头库存。
+    base = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    rows = ["open_time,close_time,high,low,close"]
+    for index in range(60):
+        close = 100 + ((index % 10) - 5) * 0.3
+        open_ms = int((base + timedelta(minutes=index)).timestamp() * 1000)
+        rows.append(f"{open_ms},{open_ms + 59000},{close + 0.1},{close - 0.1},{close}")
+    for offset, close in enumerate([100.0, 99.4, 98.8, 98.2, 98.0, 98.0, 98.0]):
+        open_ms = int((base + timedelta(minutes=60 + offset)).timestamp() * 1000)
+        rows.append(f"{open_ms},{open_ms + 59000},{close + 0.2},{close - 0.2},{close}")
+    csv_path.write_text("\n".join(rows), encoding="utf-8")
+
+    def _event(minute: int) -> FundingEvent:
+        return FundingEvent(
+            funding_time=int((base + timedelta(minutes=minute)).timestamp() * 1000),
+            funding_rate=0.001,
+        )
+
+    # 事件 minute=10 落在观察期（前 60 根），minute=62 落在回测区间且此时有多头库存。
+    result = _run_backtest_csv(
+        _runtime_backtest_config(tmp_path / "trader.db"),
+        csv_path,
+        observe_rows=60,
+        symbol="BTCUSDT",
+        funding_rate=0.0,
+        funding_events=[_event(10), _event(62)],
+    )
+    # 观察期事件被裁掉，只有区间内事件在有库存时计费。
+    assert result["funding_paid"] > 0
+
+    # 只提供观察期内的事件：区间内无事件 → 事件模式下不计费。
+    result_no_range_event = _run_backtest_csv(
+        _runtime_backtest_config(tmp_path / "trader2.db"),
+        csv_path,
+        observe_rows=60,
+        symbol="BTCUSDT",
+        funding_rate=0.0,
+        funding_events=[_event(10)],
+    )
+    assert result_no_range_event["funding_paid"] == 0.0
+
+
 def test_backtest_csv_can_write_full_json_report(tmp_path) -> None:
     db_path = tmp_path / "trader.db"
     csv_path = tmp_path / "klines.csv"

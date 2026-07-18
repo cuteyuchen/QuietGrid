@@ -1897,3 +1897,48 @@ def test_v2_workspace_history_and_order_reconciliation(monkeypatch, tmp_path) ->
     assert body["differences"][0]["type"] == "EXCHANGE_ONLY"
     assert body["differences"][0]["client_id"] == "external-order"
     assert exchange.closed is True
+
+
+def _auth_config(db_path: Path, token: str) -> AppConfig:
+    return AppConfig(
+        raw={
+            "database": {"path": str(db_path)},
+            "web": {"address": "127.0.0.1", "port": 8080, "auth_token": token},
+            "api": {"address": "127.0.0.1", "port": 8000},
+            "selection": {"symbol_allowlist": ["BTCUSDT"], "symbol_blacklist": []},
+        },
+        binance_api_key="",
+        binance_api_secret="",
+        binance_testnet=True,
+        binance_testnet_raw="true",
+    )
+
+
+def test_auth_middleware_rejects_requests_without_token(tmp_path) -> None:
+    db_path = tmp_path / "auth.db"
+    init_db(db_path)
+    client = TestClient(create_app(_auth_config(db_path, "s3cret-token")))
+
+    assert client.get("/api/health").status_code == 401
+
+
+def test_auth_middleware_accepts_matching_token(tmp_path) -> None:
+    db_path = tmp_path / "auth.db"
+    init_db(db_path)
+    client = TestClient(create_app(_auth_config(db_path, "s3cret-token")))
+
+    header = client.get("/api/health", headers={"X-Auth-Token": "s3cret-token"})
+    bearer = client.get(
+        "/api/health", headers={"Authorization": "Bearer s3cret-token"}
+    )
+
+    assert header.status_code == 200
+    assert bearer.status_code == 200
+
+
+def test_auth_middleware_disabled_without_configured_token(tmp_path) -> None:
+    db_path = tmp_path / "noauth.db"
+    init_db(db_path)
+    client = TestClient(create_app(_test_config(db_path)))
+
+    assert client.get("/api/health").status_code == 200

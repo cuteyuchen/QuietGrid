@@ -12,6 +12,7 @@ ALLOWED_TRANSITIONS: dict[GridState, set[GridState]] = {
     GridState.OBSERVING: {GridState.READY, GridState.RUNNING, GridState.CLOSING, GridState.STOPPED},
     GridState.READY: {GridState.RUNNING, GridState.CLOSING, GridState.STOPPED},
     GridState.RUNNING: {
+        GridState.DEFENSIVE,
         GridState.REBALANCING,
         GridState.PAUSED,
         GridState.COOLDOWN,
@@ -19,6 +20,12 @@ ALLOWED_TRANSITIONS: dict[GridState, set[GridState]] = {
         GridState.STOPPED,
     },
     GridState.REBALANCING: {GridState.RUNNING, GridState.COOLDOWN, GridState.CLOSING, GridState.STOPPED},
+    GridState.DEFENSIVE: {
+        GridState.RUNNING,
+        GridState.COOLDOWN,
+        GridState.CLOSING,
+        GridState.STOPPED,
+    },
     GridState.RECOVERING: {GridState.RUNNING, GridState.CLOSING, GridState.STOPPED},
     GridState.PAUSED: {GridState.RUNNING, GridState.CLOSING, GridState.STOPPED},
     GridState.COOLDOWN: {GridState.OBSERVING, GridState.CLOSING, GridState.STOPPED},

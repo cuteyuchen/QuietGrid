@@ -30,6 +30,25 @@ const componentLabels: Record<string, string> = {
   event: '事件风险',
 }
 
+const stateLabels: Record<string, string> = {
+  QUIET_RANGE: '震荡区间',
+  TREND_UP: '上升趋势',
+  TREND_DOWN: '下降趋势',
+  VOLATILE: '高波动',
+  ILLIQUID: '流动性不足',
+  EVENT_RISK: '事件风险',
+  UNKNOWN_DATA: '数据状态未知',
+  UNKNOWN: '历史数据状态未知',
+}
+
+const verdictLabels: Record<string, string> = {
+  ALLOWED: '准入通过',
+  BLOCKED_SCORE: '评分未通过',
+  BLOCKED_COST: '交易经济性不足',
+  BLOCKED_HARD: '硬条件阻断',
+  BLOCKED_DATA: '数据阻断',
+}
+
 const availableSymbols = computed(() => Array.from(new Set([
   props.dashboard.latestRegime?.symbol,
   ...props.candidates.map((item) => item.symbol),
@@ -42,13 +61,21 @@ const currentRegime = computed(() => history.value.at(-1)
 
 const componentRows = computed(() => Object.entries(
   currentRegime.value?.componentScores || {},
-).map(([key, value]) => ({
-  key,
-  label: componentLabels[key] || key,
-  value: Math.max(0, Math.min(100, Number(value || 0))),
-})))
+).map(([key, value]) => {
+  const unavailable = key === 'event' && !currentRegime.value?.eventSourceAvailable
+  return {
+    key,
+    label: componentLabels[key] || key,
+    value: unavailable || value == null ? null : Math.max(0, Math.min(100, Number(value))),
+    weight: Number(currentRegime.value?.effectiveWeights[key] || 0),
+    contribution: Number(currentRegime.value?.scoreContributions[key] || 0),
+  }
+}))
 
 const scoreHistory = computed(() => history.value.map((item) => item.gridScore))
+const marketStateLabel = computed(() => stateLabels[currentRegime.value?.state || ''] || currentRegime.value?.state || '等待首个快照')
+const verdictLabel = computed(() => verdictLabels[currentRegime.value?.verdict || ''] || currentRegime.value?.verdict || '等待准入判断')
+const cost = computed(() => currentRegime.value?.costBreakdown || {})
 
 onMounted(ensureSelectedSymbol)
 watch(availableSymbols, ensureSelectedSymbol)
@@ -92,6 +119,10 @@ function money(value: number | null) {
 function pct(value: number | null) {
   return value == null ? '—' : `${(value * 100).toFixed(3)}%`
 }
+
+function scoreLabel(value: number | null) {
+  return value == null ? '未接入' : value.toFixed(0)
+}
 </script>
 
 <template>
@@ -104,7 +135,7 @@ function pct(value: number | null) {
       </div>
       <StatusBadge
         :tone="currentRegime?.allowed ? 'good' : 'warning'"
-        :label="currentRegime?.allowed ? '允许网格' : '暂不允许'"
+        :label="verdictLabel"
       />
     </section>
 
@@ -137,16 +168,18 @@ function pct(value: number | null) {
         </div>
         <div class="score-copy">
           <p class="eyebrow">综合评分</p>
-          <h2 id="regime-score-title">{{ currentRegime?.state || '等待首个快照' }}</h2>
+          <h2 id="regime-score-title">{{ marketStateLabel }}</h2>
           <p v-if="currentRegime">
             {{ currentRegime.allowed
               ? '评分达到进入阈值，仍需通过风险预算和库存检查。'
-              : '至少一个条件未满足，系统不会新增网格风险。' }}
+              : `${verdictLabel}；系统保持扫描，不会新增网格风险。` }}
           </p>
           <p v-else>交易进程产生市场状态快照后，这里会显示可解释的评分。</p>
           <dl class="metadata-list">
             <div><dt>数据时间</dt><dd>{{ currentRegime?.asOfTime || '—' }}</dd></div>
             <div><dt>模型版本</dt><dd>{{ currentRegime?.modelVersion || '—' }}</dd></div>
+            <div><dt>准入结果</dt><dd>{{ verdictLabel }}</dd></div>
+            <div><dt>准入门槛</dt><dd>{{ currentRegime?.thresholdUsed?.toFixed(1) || '—' }}</dd></div>
             <div><dt>数据健康</dt><dd>{{ dashboard.dataHealth }}</dd></div>
           </dl>
         </div>
@@ -161,8 +194,10 @@ function pct(value: number | null) {
         </div>
         <div v-if="componentRows.length" class="score-bars">
           <div v-for="row in componentRows" :key="row.key" class="score-bar">
-            <div><span>{{ row.label }}</span><strong>{{ row.value.toFixed(0) }}</strong></div>
-            <div class="progress-track"><span :style="{ width: `${row.value}%` }" /></div>
+            <div><span>{{ row.label }}</span><strong>{{ scoreLabel(row.value) }}</strong></div>
+            <div class="progress-track"><span :style="{ width: `${row.value || 0}%` }" /></div>
+            <small v-if="row.value == null">数据源未接入，本维度不计分</small>
+            <small v-else>有效权重 {{ (row.weight * 100).toFixed(1) }}% · 贡献 {{ row.contribution.toFixed(2) }} 分</small>
           </div>
         </div>
         <div v-else class="empty-state empty-state--compact">
@@ -171,6 +206,29 @@ function pct(value: number | null) {
         </div>
       </section>
     </div>
+
+    <section v-if="currentRegime" class="panel" aria-labelledby="cost-economics-title">
+      <div class="panel__header">
+        <div>
+          <p class="eyebrow">交易经济性</p>
+          <h2 id="cost-economics-title">计划格距减去全部预计成本</h2>
+        </div>
+        <StatusBadge
+          :tone="currentRegime.verdict === 'BLOCKED_COST' ? 'danger' : 'neutral'"
+          :label="`成本得分 ${Number(cost.cost_score || 0).toFixed(1)}`"
+        />
+      </div>
+      <div class="metric-grid metric-grid--cost">
+        <div><span>计划格距</span><strong>{{ pct(Number(cost.planned_step_pct || 0)) }}</strong></div>
+        <div><span>Maker 往返费</span><strong>{{ pct(Number(cost.maker_round_trip_pct || 0)) }}</strong></div>
+        <div><span>逆向选择缓冲</span><strong>{{ pct(Number(cost.adverse_selection_pct || 0)) }}</strong></div>
+        <div><span>滑点缓冲</span><strong>{{ pct(Number(cost.slippage_pct || 0)) }}</strong></div>
+        <div><span>安全边际</span><strong>{{ pct(Number(cost.safety_margin_pct || 0)) }}</strong></div>
+        <div><span>预计资金费</span><strong>{{ pct(Number(cost.projected_funding_pct || 0)) }}</strong></div>
+        <div><span>预计总成本</span><strong>{{ pct(Number(cost.total_cost_pct || 0)) }}</strong></div>
+        <div><span>净边际</span><strong>{{ pct(Number(cost.net_edge_pct || 0)) }}</strong></div>
+      </div>
+    </section>
 
     <div class="content-grid">
       <section class="panel" aria-labelledby="decision-reasons-title">
@@ -257,10 +315,15 @@ function pct(value: number | null) {
               <td>{{ pct(item.spreadPct) }}</td>
               <td>{{ pct(item.currentVolatility) }}</td>
               <td>
-                <span class="inline-status" :class="{ 'inline-status--danger': item.dataStale }">
-                  <TriangleAlert v-if="item.dataStale" :size="15" />
-                  {{ item.dataStale ? '过期' : '新鲜' }}
-                </span>
+                <div class="data-evidence">
+                  <span class="inline-status" :class="{ 'inline-status--danger': item.dataStale }">
+                    <TriangleAlert v-if="item.dataStale" :size="15" />
+                    {{ item.dataStale ? '过期' : item.klineQualityStatus || '新鲜' }}
+                  </span>
+                  <small>Binance Futures REST + WebSocket</small>
+                  <small>末根 {{ item.lastKlineCloseAt || '—' }} · 年龄 {{ item.klineAgeSeconds == null ? '—' : `${Math.round(item.klineAgeSeconds)}s` }}</small>
+                  <small>缺口 {{ item.klineMissingCount ?? '—' }} · {{ item.blockCode || '无错误码' }}</small>
+                </div>
               </td>
             </tr>
             <tr v-if="!candidates.length">
@@ -272,3 +335,40 @@ function pct(value: number | null) {
     </section>
   </div>
 </template>
+
+<style scoped>
+.score-bar small {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.75rem;
+}
+
+.metric-grid--cost > div {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 0.65rem;
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.metric-grid--cost span {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.78rem;
+}
+
+.metric-grid--cost strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.data-evidence {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 13rem;
+}
+
+.data-evidence small {
+  color: var(--text-muted, #94a3b8);
+  white-space: nowrap;
+}
+</style>

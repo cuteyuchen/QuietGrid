@@ -575,11 +575,17 @@ def test_v2_event_and_regime_snapshots_round_trip(tmp_path) -> None:
         symbol="BTCUSDT",
         as_of_time=now,
         state="QUIET_RANGE",
+        verdict="ALLOWED",
         grid_score=88.0,
+        threshold_used=75.0,
         allowed=True,
         reasons=["低波动"],
         hard_blocks=[],
-        component_scores={"trend": 90.0},
+        component_scores={"trend": 90.0, "event": None},
+        cost_breakdown={"planned_step_pct": 0.003, "total_cost_pct": 0.001},
+        effective_weights={"trend": 0.2, "event": 0.0},
+        score_contributions={"trend": 18.0, "event": 0.0},
+        event_source_available=False,
         model_version="regime-v2",
         feature_snapshot_id=feature_id,
     )
@@ -589,7 +595,13 @@ def test_v2_event_and_regime_snapshots_round_trip(tmp_path) -> None:
     regime = repo.latest_regime_decision("BTCUSDT")
     assert regime is not None
     assert regime["allowed"] == 1
+    assert regime["verdict"] == "ALLOWED"
+    assert regime["threshold_used"] == 75.0
     assert regime["reasons"] == ["低波动"]
+    assert regime["component_scores"]["event"] is None
+    assert regime["cost_breakdown"]["planned_step_pct"] == 0.003
+    assert regime["effective_weights"]["event"] == 0.0
+    assert regime["score_contributions"]["trend"] == 18.0
     assert repo.regime_decision_history("BTCUSDT")[0]["grid_score"] == 88.0
 
 

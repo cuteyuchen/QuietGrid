@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import {
   CheckCircle2,
-  CircleStop,
-  Play,
   RefreshCw,
-  ServerCog,
   ShieldCheck,
   Trash2,
   TriangleAlert,
 } from '@lucide/vue'
 import StatusBadge from '../components/StatusBadge.vue'
+import TraderProcessCard from '../components/runtime/TraderProcessCard.vue'
 import type { ConsoleSummary, TraderProcessState, VerificationRow } from '../mock'
 
 defineProps<{
@@ -38,36 +36,18 @@ function verificationTone(status: string) {
         <p>这里只放运维动作；策略决策和参数配置不与系统维护混在一起。</p>
       </div>
       <StatusBadge
-        :tone="process.state === 'running' ? 'good' : 'warning'"
-        :label="`交易进程 ${process.state}`"
+        :tone="(process.processState || process.state) === 'ONLINE' || process.state === 'running' ? 'good' : 'warning'"
+        :label="`交易进程 ${process.processState || process.state}`"
       />
     </section>
 
     <div class="content-grid">
-      <section class="panel" aria-labelledby="process-title">
-        <div class="panel__header">
-          <div>
-            <p class="eyebrow">服务状态</p>
-            <h2 id="process-title">交易进程</h2>
-          </div>
-          <ServerCog :size="22" />
-        </div>
-        <dl class="metadata-list">
-          <div><dt>服务</dt><dd>{{ process.service }}</dd></div>
-          <div><dt>运行方式</dt><dd>{{ process.mode }}</dd></div>
-          <div><dt>当前状态</dt><dd>{{ process.state }}</dd></div>
-          <div><dt>最后心跳</dt><dd>{{ summary.heartbeat }}</dd></div>
-          <div><dt>说明</dt><dd>{{ process.detail || '—' }}</dd></div>
-        </dl>
-        <div class="button-row">
-          <button class="button button--secondary" type="button" @click="emit('action', 'trader-restart')">
-            <Play :size="17" />请求重启
-          </button>
-          <button class="button button--danger-outline" type="button" @click="emit('action', 'trader-stop')">
-            <CircleStop :size="17" />停止循环
-          </button>
-        </div>
-      </section>
+      <TraderProcessCard
+        :process="process"
+        @start="emit('action', 'trader-start')"
+        @stop="emit('action', 'trader-stop')"
+        @restart="emit('action', 'trader-restart')"
+      />
 
       <section class="panel" aria-labelledby="environment-title">
         <div class="panel__header">

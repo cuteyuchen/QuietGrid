@@ -154,6 +154,13 @@ class FakeBinanceAsyncClient:
     async def futures_funding_rate(self, symbol: str, limit: int) -> list[dict[str, str]]:
         return [{"fundingRate": "0.0001"}]
 
+    async def futures_mark_price(self, symbol: str) -> dict[str, str | int]:
+        return {
+            "symbol": symbol,
+            "lastFundingRate": "0.0001",
+            "nextFundingTime": 1_789_776_000_000,
+        }
+
     async def futures_commission_rate(self, symbol: str) -> dict[str, str]:
         return {"symbol": symbol, "makerCommissionRate": "0.000000", "takerCommissionRate": "0.000500"}
 
@@ -695,6 +702,10 @@ def test_binance_adapter_maps_core_calls() -> None:
         assert order_trades[0]["commission"] == "0.04"
         assert len(await client.get_klines("AAPLUSDT", "1m", 2)) == 2
         assert await client.get_funding_rate("AAPLUSDT") == 0.0001
+        assert await client.get_funding_context("AAPLUSDT") == {
+            "funding_rate": 0.0001,
+            "next_funding_time": 1_789_776_000_000,
+        }
         assert await client.get_commission_rate("AAPLUSDT") == {"maker": 0.0, "taker": 0.0005}
 
         await client.place_limit_order_post_only("AAPLUSDT", "BUY", 100.0, 1.0, "cid")
@@ -2392,6 +2403,34 @@ def test_run_price_stream_reconnects_after_socket_error() -> None:
 
         await client.run_price_stream(
             ["AAPLUSDT"],
+            events.append,
+            socket_factory=factory,
+            reconnect_delay_seconds=0,
+            max_reconnects=1,
+        )
+
+        assert calls == 2
+        assert [event["price"] for event in events] == [100.0, 101.0]
+
+    asyncio.run(run())
+
+
+def test_run_price_stream_reconnects_after_clean_socket_close() -> None:
+    async def run() -> None:
+        client = BinanceFuturesClient(FakeBinanceAsyncClient())
+        calls = 0
+        events: list[dict[str, Any]] = []
+
+        def factory():
+            nonlocal calls
+            calls += 1
+            price = "100" if calls == 1 else "101"
+            return FakeSocket(
+                [{"e": "markPriceUpdate", "E": 1780000000000 + calls, "s": "BTCUSDT", "p": price}]
+            )
+
+        await client.run_price_stream(
+            ["BTCUSDT"],
             events.append,
             socket_factory=factory,
             reconnect_delay_seconds=0,

@@ -85,6 +85,17 @@ class ExchangeClient(ABC):
     @abstractmethod
     async def get_funding_rate(self, symbol: str) -> float: ...
 
+    async def get_funding_context(self, symbol: str) -> dict[str, Any]:
+        """返回当前资金费率及下一结算时间。
+
+        旧适配器只实现资金费率时仍可运行；没有明确结算时间就不能把资金费
+        无条件计入每一轮网格成本。
+        """
+        return {
+            "funding_rate": await self.get_funding_rate(symbol),
+            "next_funding_time": None,
+        }
+
     @abstractmethod
     async def get_commission_rate(self, symbol: str) -> dict[str, float]: ...
 

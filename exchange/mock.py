@@ -11,6 +11,7 @@ class MockExchangeClient(ExchangeClient):
         self.order_statuses: dict[str, str] = {}
         self.stop_orders: dict[str, list[dict[str, Any]]] = {}
         self.positions: dict[str, float] = {}
+        self.hedge_positions: dict[str, dict[str, float]] = {}
         self.market_orders: list[dict[str, Any]] = []
         self.order_trades: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self.balance = 10_000.0
@@ -51,6 +52,13 @@ class MockExchangeClient(ExchangeClient):
         }
 
     async def get_position(self, symbol: str) -> dict[str, Any]:
+        if symbol in self.hedge_positions:
+            hedge = self.hedge_positions[symbol]
+            return {
+                "symbol": symbol,
+                "long_qty": hedge.get("LONG", 0.0),
+                "short_qty": hedge.get("SHORT", 0.0),
+            }
         return {"symbol": symbol, "qty": self.positions.get(symbol, 0.0)}
 
     async def get_open_orders(self, symbol: str) -> list[dict[str, Any]]:
@@ -104,19 +112,38 @@ class MockExchangeClient(ExchangeClient):
             "qty": qty,
             "reduce_only": reduce_only,
             "status": "filled",
+            "executedQty": qty,
+            "avgPrice": 100.0,
         }
         if position_side is not None:
             order["position_side"] = position_side
         if client_id is not None:
             order["client_id"] = client_id
         self.market_orders.append(order)
-        if reduce_only:
+        if position_side is not None:
+            hedge = self.hedge_positions.setdefault(symbol, {"LONG": 0.0, "SHORT": 0.0})
+            if position_side == "LONG":
+                hedge["LONG"] = (
+                    max(0.0, hedge["LONG"] - qty)
+                    if side == "SELL"
+                    else hedge["LONG"] + qty
+                )
+            elif position_side == "SHORT":
+                hedge["SHORT"] = (
+                    max(0.0, hedge["SHORT"] - qty)
+                    if side == "BUY"
+                    else hedge["SHORT"] + qty
+                )
+        elif reduce_only:
             current = self.positions.get(symbol, 0.0)
             if side == "SELL":
                 self.positions[symbol] = max(0.0, current - qty) if current > 0 else current
             else:
                 self.positions[symbol] = min(0.0, current + qty) if current < 0 else current
-        return {**order, "orderId": f"market-{len(self.market_orders)}"}
+        response = {**order, "orderId": f"market-{len(self.market_orders)}"}
+        if client_id is not None:
+            response["clientOrderId"] = client_id
+        return response
 
     async def place_stop_market_order(
         self,
@@ -170,8 +197,16 @@ class MockExchangeClient(ExchangeClient):
         self.stop_orders[symbol] = []
 
     async def get_klines(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+        # 不含 open_time 时由 RecentMarketHistoryService 按 as_of 合成已闭合时间轴，
+        # 以兼容测试中传入的固定历史 now。
         return [
-            {"open": 100, "high": 100.1, "low": 99.9, "close": 100 + ((idx % 5) - 2) * 0.03}
+            {
+                "open": 100,
+                "high": 100.1,
+                "low": 99.9,
+                "close": 100 + ((idx % 5) - 2) * 0.03,
+                "volume": 10.0,
+            }
             for idx in range(limit)
         ]
 

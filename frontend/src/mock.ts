@@ -76,6 +76,39 @@ export type LiquidityCandidate = {
   marketUpdatedAt: string
   lastKlineCloseAt: string
   dataStale: boolean
+  klineRequiredCount?: number | null
+  klineActualCount?: number | null
+  klineAgeSeconds?: number | null
+  klineMissingCount?: number | null
+  klineQualityStatus?: string
+  regimeScore?: number | null
+  regimeAllowed?: boolean | null
+  blockCode?: string
+  marketState?: string
+  verdict?: string
+  softBreachCount?: number
+  gridPreview?: {
+    lower?: number | null
+    upper?: number | null
+    gridCount?: number | null
+    levelCount?: number | null
+  }
+  economics?: {
+    makerFeeRate?: number | null
+    makerFeeSource?: string
+    makerFeeCheckedAt?: string
+    makerRoundTripPct?: number | null
+    projectedFundingPct?: number | null
+    grossStepPct?: number | null
+    hardCostPct?: number | null
+    feeNetEdgePct?: number | null
+    riskDiscountPct?: number | null
+    estimatedCrossingsPerHour?: number | null
+    objectiveValue?: number | null
+    plannedMinOrderNotional?: number | null
+    minimumOrderNotional?: number | null
+    rejectedReason?: string
+  }
 }
 
 export type GridRound = {
@@ -96,6 +129,7 @@ export type GridSession = {
   symbol: string
   state: SessionState | string
   stateLabel: string
+  softBreachCount?: number
   upper: number
   lower: number
   gridNum: number
@@ -228,6 +262,19 @@ export type TraderProcessState = {
   service: string
   state: string
   detail: string
+  processState?: string
+  alive?: boolean
+  pid?: number | null
+  runtimeId?: string
+  runtimeState?: string
+  startedAt?: string
+  heartbeatAt?: string
+  heartbeatAgeSeconds?: number | null
+  uptimeSeconds?: number | null
+  lastStatus?: string
+  lastError?: string
+  processControlAvailable?: boolean
+  processControlMode?: string
 }
 
 export type StrategySettings = {
@@ -348,11 +395,24 @@ export const controlState: ControlState = {
 }
 
 export const traderProcessState: TraderProcessState = {
-  available: false,
-  mode: 'unavailable',
+  available: true,
+  mode: 'local',
   service: 'quietgrid-trader',
-  state: 'unavailable',
-  detail: '当前运行环境未配置 systemd 交易进程控制。',
+  state: 'stopped',
+  detail: 'Trader 离线',
+  processState: 'OFFLINE',
+  alive: false,
+  pid: null,
+  runtimeId: '',
+  runtimeState: '',
+  startedAt: '',
+  heartbeatAt: '',
+  heartbeatAgeSeconds: null,
+  uptimeSeconds: null,
+  lastStatus: '',
+  lastError: '',
+  processControlAvailable: true,
+  processControlMode: 'local',
 }
 
 export const strategyConfig: StrategyConfigData = {

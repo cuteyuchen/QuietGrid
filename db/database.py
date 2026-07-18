@@ -40,6 +40,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     open_time       DATETIME,
     close_time      DATETIME,
     close_reason    TEXT,
+    direction_mode TEXT NOT NULL DEFAULT 'NEUTRAL',
+    seed_position_side TEXT,
+    seed_qty        REAL NOT NULL DEFAULT 0,
+    seed_entry_price REAL,
+    seed_slippage_pct REAL,
+    seed_fee        REAL NOT NULL DEFAULT 0,
+    last_retention_decision_at DATETIME,
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -72,6 +79,8 @@ CREATE TABLE IF NOT EXISTS orders (
     qty             REAL NOT NULL,
     status          TEXT NOT NULL,
     entry_price     REAL,
+    position_side   TEXT,
+    order_intent    TEXT NOT NULL DEFAULT 'OPEN',
     created_at      DATETIME NOT NULL,
     filled_at       DATETIME,
     fill_price      REAL,
@@ -191,11 +200,17 @@ CREATE TABLE IF NOT EXISTS regime_decisions (
     symbol              TEXT NOT NULL,
     as_of_time          DATETIME NOT NULL,
     state               TEXT NOT NULL,
+    verdict             TEXT NOT NULL DEFAULT '',
     grid_score          REAL NOT NULL,
+    threshold_used      REAL,
     allowed             INTEGER NOT NULL,
     reasons_json        TEXT NOT NULL,
     hard_blocks_json    TEXT NOT NULL,
     component_scores_json TEXT NOT NULL,
+    cost_breakdown_json TEXT NOT NULL DEFAULT '{}',
+    effective_weights_json TEXT NOT NULL DEFAULT '{}',
+    score_contributions_json TEXT NOT NULL DEFAULT '{}',
+    event_source_available INTEGER NOT NULL DEFAULT 0,
     model_version       TEXT NOT NULL,
     feature_snapshot_id INTEGER REFERENCES feature_snapshots(id),
     created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -216,6 +231,7 @@ CREATE TABLE IF NOT EXISTS grid_plans (
     cost_floor_pct      REAL NOT NULL DEFAULT 0,
     regime_score        REAL,
     parameter_version   TEXT NOT NULL,
+    direction_mode      TEXT NOT NULL DEFAULT 'NEUTRAL',
     expires_at          DATETIME,
     created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -461,6 +477,23 @@ SESSION_COLUMN_MIGRATIONS = {
     "grid_mode": "TEXT",
     "cost_floor_pct": "REAL",
     "parameter_version": "TEXT",
+    "soft_breach_count": "INTEGER NOT NULL DEFAULT 0",
+    "direction_mode": "TEXT NOT NULL DEFAULT 'NEUTRAL'",
+    "seed_position_side": "TEXT",
+    "seed_qty": "REAL NOT NULL DEFAULT 0",
+    "seed_entry_price": "REAL",
+    "seed_slippage_pct": "REAL",
+    "seed_fee": "REAL NOT NULL DEFAULT 0",
+    "last_retention_decision_at": "DATETIME",
+}
+
+ORDER_COLUMN_MIGRATIONS = {
+    "position_side": "TEXT",
+    "order_intent": "TEXT NOT NULL DEFAULT 'OPEN'",
+}
+
+GRID_PLAN_COLUMN_MIGRATIONS = {
+    "direction_mode": "TEXT NOT NULL DEFAULT 'NEUTRAL'",
 }
 
 WINDOW_COLUMN_MIGRATIONS = {
@@ -492,6 +525,38 @@ BACKTEST_DATASET_COLUMN_MIGRATIONS = {
     "funding_file_path": "TEXT",
 }
 
+ROUND_CANDIDATE_COLUMN_MIGRATIONS = {
+    "kline_required_count": "INTEGER",
+    "kline_actual_count": "INTEGER",
+    "kline_last_close_at": "DATETIME",
+    "kline_age_seconds": "REAL",
+    "kline_missing_count": "INTEGER",
+    "kline_quality_status": "TEXT",
+    "regime_score": "REAL",
+    "regime_allowed": "INTEGER",
+    "block_code": "TEXT",
+    "block_reasons_json": "TEXT",
+    "evaluation_started_at": "DATETIME",
+    "evaluation_completed_at": "DATETIME",
+    "market_state": "TEXT",
+    "verdict": "TEXT",
+    "soft_breach_count": "INTEGER NOT NULL DEFAULT 0",
+    "grid_preview_json": "TEXT NOT NULL DEFAULT '{}'",
+    "economics_json": "TEXT NOT NULL DEFAULT '{}'",
+    "maker_fee_rate": "REAL",
+    "maker_fee_source": "TEXT",
+    "maker_fee_checked_at": "DATETIME",
+}
+
+REGIME_DECISION_COLUMN_MIGRATIONS = {
+    "verdict": "TEXT NOT NULL DEFAULT ''",
+    "threshold_used": "REAL",
+    "cost_breakdown_json": "TEXT NOT NULL DEFAULT '{}'",
+    "effective_weights_json": "TEXT NOT NULL DEFAULT '{}'",
+    "score_contributions_json": "TEXT NOT NULL DEFAULT '{}'",
+    "event_source_available": "INTEGER NOT NULL DEFAULT 0",
+}
+
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
     path = Path(db_path)
@@ -510,6 +575,8 @@ def init_db(db_path: str | Path) -> None:
         conn.executescript(TABLE_SCHEMA_SQL)
         _ensure_columns(conn, "windows", WINDOW_COLUMN_MIGRATIONS)
         _ensure_session_columns(conn)
+        _ensure_columns(conn, "orders", ORDER_COLUMN_MIGRATIONS)
+        _ensure_columns(conn, "grid_plans", GRID_PLAN_COLUMN_MIGRATIONS)
         _ensure_columns(conn, "backtest_runs", BACKTEST_RUN_COLUMN_MIGRATIONS)
         _ensure_columns(
             conn,
@@ -521,6 +588,8 @@ def init_db(db_path: str | Path) -> None:
             "backtest_datasets",
             BACKTEST_DATASET_COLUMN_MIGRATIONS,
         )
+        _ensure_columns(conn, "round_candidates", ROUND_CANDIDATE_COLUMN_MIGRATIONS)
+        _ensure_columns(conn, "regime_decisions", REGIME_DECISION_COLUMN_MIGRATIONS)
         conn.executescript(INDEX_SCHEMA_SQL)
         conn.commit()
 

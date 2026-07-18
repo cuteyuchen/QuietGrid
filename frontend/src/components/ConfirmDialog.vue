@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { AlertTriangle, X } from '@lucide/vue'
 
 const props = defineProps<{
   open: boolean
   title: string
   description: string
-  confirmationText: string
+  confirmationText?: string
   busy?: boolean
   danger?: boolean
 }>()
@@ -16,10 +16,8 @@ const emit = defineEmits<{
   confirm: [reason: string]
 }>()
 
-const input = ref('')
 const reason = ref('控制台人工操作')
-const confirmationInput = ref<HTMLInputElement | null>(null)
-const canSubmit = computed(() => input.value.trim() === props.confirmationText && !props.busy)
+const confirmButton = ref<HTMLButtonElement | null>(null)
 
 watch(
   () => props.open,
@@ -27,17 +25,15 @@ watch(
     if (!open) {
       return
     }
-    input.value = ''
     reason.value = '控制台人工操作'
     await nextTick()
-    confirmationInput.value?.focus()
+    confirmButton.value?.focus()
   },
 )
 
 function submit() {
-  if (canSubmit.value) {
-    emit('confirm', reason.value.trim() || '控制台人工操作')
-  }
+  if (props.busy) return
+  emit('confirm', reason.value.trim() || '控制台人工操作')
 }
 </script>
 
@@ -64,18 +60,11 @@ function submit() {
         </header>
 
         <label class="field">
-          <span>操作原因</span>
-          <input v-model="reason" type="text" autocomplete="off">
-        </label>
-
-        <label class="field">
-          <span>输入 <strong>{{ confirmationText }}</strong> 以确认</span>
+          <span>操作原因（可选）</span>
           <input
-            ref="confirmationInput"
-            v-model="input"
+            v-model="reason"
             type="text"
             autocomplete="off"
-            :aria-invalid="input.length > 0 && input.trim() !== confirmationText"
             @keydown.enter.prevent="submit"
           >
         </label>
@@ -85,10 +74,11 @@ function submit() {
             取消
           </button>
           <button
+            ref="confirmButton"
             class="button"
             :class="danger ? 'button--danger' : 'button--primary'"
             type="button"
-            :disabled="!canSubmit"
+            :disabled="busy"
             @click="submit"
           >
             {{ busy ? '正在提交…' : '确认执行' }}

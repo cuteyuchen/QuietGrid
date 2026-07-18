@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
-from core.models import GridOrder
+from core.models import GridDirectionMode, GridOrder
 from db.database import connect
 
 
@@ -21,8 +21,9 @@ class RoundStartConflict(RuntimeError):
 ORDER_UPSERT_SQL = """
 INSERT INTO orders
     (session_id, symbol, order_id, client_id, grid_index, side, price, qty,
-     status, entry_price, created_at, filled_at, fill_price, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+     status, entry_price, position_side, order_intent, created_at, filled_at,
+     fill_price, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(session_id, client_id) DO UPDATE SET
     order_id = excluded.order_id,
     grid_index = excluded.grid_index,
@@ -31,6 +32,8 @@ ON CONFLICT(session_id, client_id) DO UPDATE SET
     qty = excluded.qty,
     status = excluded.status,
     entry_price = excluded.entry_price,
+    position_side = excluded.position_side,
+    order_intent = excluded.order_intent,
     filled_at = excluded.filled_at,
     fill_price = excluded.fill_price,
     updated_at = CURRENT_TIMESTAMP
@@ -49,6 +52,8 @@ def _order_upsert_params(session_id: int, order: GridOrder) -> tuple[Any, ...]:
         order.qty,
         order.status.value,
         order.entry_price,
+        order.position_side,
+        order.order_intent.value,
         order.created_at.isoformat(),
         order.filled_at.isoformat() if order.filled_at else None,
         order.fill_price,
@@ -191,14 +196,21 @@ class Repository:
         capital: float,
         leverage: int,
         open_time: datetime,
+        direction_mode: GridDirectionMode | str = GridDirectionMode.NEUTRAL,
     ) -> int:
+        mode = (
+            direction_mode.value
+            if isinstance(direction_mode, GridDirectionMode)
+            else GridDirectionMode(str(direction_mode).upper()).value
+        )
         with connect(self.db_path) as conn:
             cur = conn.execute(
                 """
-                INSERT INTO sessions (window_id, symbol, state, capital, leverage, open_time)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO sessions
+                    (window_id, symbol, state, capital, leverage, open_time, direction_mode)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (window_id, symbol, state, capital, leverage, open_time.isoformat()),
+                (window_id, symbol, state, capital, leverage, open_time.isoformat(), mode),
             )
             conn.commit()
             return int(cur.lastrowid)
@@ -304,6 +316,68 @@ class Repository:
             conn.execute("UPDATE sessions SET state = ? WHERE id = ?", (state, session_id))
             conn.commit()
 
+    def update_session_soft_breach_count(self, session_id: int, count: int) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE sessions SET soft_breach_count = ? WHERE id = ?",
+                (max(0, int(count)), session_id),
+            )
+            conn.commit()
+
+    def update_session_retention(
+        self,
+        session_id: int,
+        count: int,
+        decision_at: datetime | None,
+    ) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE sessions
+                SET soft_breach_count = ?,
+                    last_retention_decision_at = ?
+                WHERE id = ?
+                """,
+                (
+                    max(0, int(count)),
+                    decision_at.isoformat() if decision_at else None,
+                    session_id,
+                ),
+            )
+            conn.commit()
+
+    def update_session_seed(
+        self,
+        session_id: int,
+        *,
+        position_side: str | None,
+        qty: float,
+        entry_price: float | None,
+        slippage_pct: float | None,
+        fee: float,
+    ) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE sessions
+                SET seed_position_side = ?,
+                    seed_qty = ?,
+                    seed_entry_price = ?,
+                    seed_slippage_pct = ?,
+                    seed_fee = ?
+                WHERE id = ?
+                """,
+                (
+                    position_side,
+                    float(qty),
+                    entry_price,
+                    slippage_pct,
+                    float(fee),
+                    session_id,
+                ),
+            )
+            conn.commit()
+
     def update_session_pnl(self, session_id: int, realized_pnl: float) -> None:
         with connect(self.db_path) as conn:
             conn.execute("UPDATE sessions SET realized_pnl = ? WHERE id = ?", (realized_pnl, session_id))
@@ -327,7 +401,7 @@ class Repository:
                 """
                 SELECT * FROM sessions
                 WHERE close_time IS NULL
-                  AND state IN ('OBSERVING', 'RUNNING', 'COOLDOWN', 'CLOSING')
+                  AND state IN ('OBSERVING', 'RUNNING', 'DEFENSIVE', 'COOLDOWN', 'CLOSING')
                 ORDER BY id ASC
                 """
             ).fetchall()
@@ -484,7 +558,15 @@ class Repository:
             result[str(row["key"])] = {"value": value, "updated_at": row["updated_at"]}
         return result
 
-    def register_runtime(self, runtime_id: str, started_at: datetime) -> dict[str, Any]:
+    def register_runtime(
+        self,
+        runtime_id: str,
+        started_at: datetime,
+        *,
+        pid: int | None = None,
+        git_commit: str = "",
+        state: str = "BOOTING",
+    ) -> dict[str, Any]:
         normalized_runtime_id = str(runtime_id).strip()
         if not normalized_runtime_id:
             raise ValueError("runtime_id must not be empty")
@@ -492,16 +574,199 @@ class Repository:
             conn.execute("BEGIN IMMEDIATE")
             current = _control_value(conn, "trader_runtime")
             if isinstance(current, dict) and str(current.get("runtime_id") or "") == normalized_runtime_id:
+                merged = dict(current)
+                if pid is not None:
+                    merged["pid"] = int(pid)
+                if git_commit:
+                    merged["git_commit"] = str(git_commit)
+                if state and not merged.get("state"):
+                    merged["state"] = str(state)
+                merged["heartbeat_at"] = started_at.isoformat()
+                merged.setdefault("account_id", self.account_id)
+                merged.setdefault("last_status", "")
+                merged.setdefault("last_error", "")
+                merged.setdefault("stopped_at", None)
+                _upsert_control_value(conn, "trader_runtime", merged, started_at)
                 conn.commit()
-                return dict(current)
+                return merged
             runtime = {
                 "runtime_id": normalized_runtime_id,
+                "account_id": self.account_id,
+                "pid": int(pid) if pid is not None else None,
                 "started_at": started_at.isoformat(),
+                "heartbeat_at": started_at.isoformat(),
+                "state": str(state or "BOOTING"),
+                "last_status": "",
+                "last_error": "",
+                "git_commit": str(git_commit or ""),
+                "stopped_at": None,
             }
             _upsert_control_value(conn, "trader_runtime", runtime, started_at)
             conn.execute("DELETE FROM control_state WHERE key IN ('round_start_request', 'round_stop_request', 'round_runtime')")
             conn.commit()
             return runtime
+
+    def update_runtime_heartbeat(
+        self,
+        runtime_id: str,
+        heartbeat_at: datetime,
+        *,
+        state: str = "",
+        last_status: str = "",
+        last_error: str = "",
+    ) -> None:
+        normalized_runtime_id = str(runtime_id).strip()
+        if not normalized_runtime_id:
+            raise ValueError("runtime_id must not be empty")
+        with connect(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            current = _control_value(conn, "trader_runtime")
+            if not isinstance(current, dict) or str(current.get("runtime_id") or "") != normalized_runtime_id:
+                conn.commit()
+                return
+            runtime = dict(current)
+            runtime["heartbeat_at"] = heartbeat_at.isoformat()
+            if state:
+                runtime["state"] = str(state)
+            if last_status != "":
+                runtime["last_status"] = str(last_status)
+            if last_error != "":
+                runtime["last_error"] = str(last_error)
+            runtime["stopped_at"] = None
+            _upsert_control_value(conn, "trader_runtime", runtime, heartbeat_at)
+            conn.commit()
+
+    def mark_runtime_stopped(
+        self,
+        runtime_id: str,
+        stopped_at: datetime,
+        *,
+        state: str = "STOPPED",
+        last_error: str = "",
+    ) -> None:
+        normalized_runtime_id = str(runtime_id).strip()
+        if not normalized_runtime_id:
+            raise ValueError("runtime_id must not be empty")
+        with connect(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            current = _control_value(conn, "trader_runtime")
+            if not isinstance(current, dict) or str(current.get("runtime_id") or "") != normalized_runtime_id:
+                conn.commit()
+                return
+            runtime = dict(current)
+            runtime["state"] = str(state or "STOPPED")
+            runtime["stopped_at"] = stopped_at.isoformat()
+            runtime["heartbeat_at"] = stopped_at.isoformat()
+            if last_error != "":
+                runtime["last_error"] = str(last_error)
+            _upsert_control_value(conn, "trader_runtime", runtime, stopped_at)
+            conn.commit()
+
+    def trader_runtime(self) -> dict[str, Any] | None:
+        state = self.get_control_state()
+        runtime_entry = state.get("trader_runtime")
+        runtime = runtime_entry.get("value") if isinstance(runtime_entry, dict) else None
+        return dict(runtime) if isinstance(runtime, dict) else None
+
+    def set_process_operation(self, operation: dict[str, Any], updated_at: datetime) -> None:
+        with connect(self.db_path) as conn:
+            _upsert_control_value(conn, "process_operation", dict(operation), updated_at)
+            conn.commit()
+
+    def process_operation(self) -> dict[str, Any] | None:
+        state = self.get_control_state()
+        entry = state.get("process_operation")
+        value = entry.get("value") if isinstance(entry, dict) else None
+        return dict(value) if isinstance(value, dict) else None
+
+    def set_auto_trading_control(self, control: dict[str, Any], updated_at: datetime) -> None:
+        with connect(self.db_path) as conn:
+            _upsert_control_value(conn, "auto_trading_control", dict(control), updated_at)
+            conn.commit()
+
+    def ensure_auto_trading_control(
+        self,
+        control: dict[str, Any],
+        updated_at: datetime,
+    ) -> tuple[dict[str, Any], bool]:
+        """以事务方式切换自动交易开关，重复请求不产生状态变更。"""
+        requested = dict(control)
+        requested_enabled = bool(requested.get("enabled"))
+        with connect(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            current = _control_value(conn, "auto_trading_control")
+            if isinstance(current, dict) and bool(current.get("enabled")) == requested_enabled:
+                conn.commit()
+                return dict(current), False
+            _upsert_control_value(conn, "auto_trading_control", requested, updated_at)
+            conn.commit()
+            return requested, True
+
+    def auto_trading_control(self) -> dict[str, Any] | None:
+        state = self.get_control_state()
+        entry = state.get("auto_trading_control")
+        value = entry.get("value") if isinstance(entry, dict) else None
+        return dict(value) if isinstance(value, dict) else None
+
+    def ensure_round_start_request(
+        self,
+        *,
+        runtime_id: str,
+        reason: str,
+        request_id: str,
+        window_key: str,
+        requested_at: datetime,
+    ) -> tuple[dict[str, Any], bool]:
+        normalized_runtime_id = str(runtime_id).strip()
+        if not normalized_runtime_id:
+            raise RoundStartConflict("交易服务尚未启动，当前不能创建网格轮次。")
+        with connect(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            runtime = _control_value(conn, "trader_runtime")
+            if not isinstance(runtime, dict) or str(runtime.get("runtime_id") or "") != normalized_runtime_id:
+                raise RoundStartConflict("交易服务运行实例已变化，请刷新页面后重试。")
+            current = _control_value(conn, "round_start_request")
+            if (
+                isinstance(current, dict)
+                and str(current.get("runtime_id") or "") == normalized_runtime_id
+                and str(current.get("status") or "") in {"requested", "running"}
+                and (
+                    str(current.get("window_key") or "") == str(window_key)
+                    or str(current.get("request_id") or "") == str(request_id)
+                )
+            ):
+                conn.commit()
+                return dict(current), False
+            round_runtime = _control_value(conn, "round_runtime")
+            if (
+                isinstance(round_runtime, dict)
+                and str(round_runtime.get("runtime_id") or "") == normalized_runtime_id
+                and str(round_runtime.get("round_state") or "IDLE").upper() not in {"IDLE", "STOPPED"}
+                and str(round_runtime.get("window_key") or "") == str(window_key)
+            ):
+                conn.commit()
+                synthetic = {
+                    "runtime_id": normalized_runtime_id,
+                    "reason": str(reason),
+                    "request_id": str(request_id),
+                    "window_key": str(window_key),
+                    "status": "running",
+                    "requested_at": requested_at.isoformat(),
+                    "updated_at": requested_at.isoformat(),
+                }
+                return synthetic, False
+            request = {
+                "runtime_id": normalized_runtime_id,
+                "reason": str(reason),
+                "request_id": str(request_id),
+                "window_key": str(window_key),
+                "status": "requested",
+                "requested_at": requested_at.isoformat(),
+                "updated_at": requested_at.isoformat(),
+            }
+            _upsert_control_value(conn, "round_start_request", request, requested_at)
+            conn.commit()
+            return request, True
 
     def runtime_state(self) -> dict[str, Any]:
         state = self.get_control_state()
@@ -535,6 +800,12 @@ class Repository:
         return {
             "runtime_id": runtime_id,
             "runtime_started_at": str(runtime.get("started_at") or "") if isinstance(runtime, dict) else "",
+            "runtime_pid": runtime.get("pid") if isinstance(runtime, dict) else None,
+            "runtime_heartbeat_at": str(runtime.get("heartbeat_at") or "") if isinstance(runtime, dict) else "",
+            "runtime_loop_state": str(runtime.get("state") or "") if isinstance(runtime, dict) else "",
+            "runtime_last_status": str(runtime.get("last_status") or "") if isinstance(runtime, dict) else "",
+            "runtime_last_error": str(runtime.get("last_error") or "") if isinstance(runtime, dict) else "",
+            "runtime_stopped_at": str(runtime.get("stopped_at") or "") if isinstance(runtime, dict) else "",
             "round_start_available": bool(runtime_id)
             and not request_busy
             and (current_round_id is None or round_state in {"IDLE", "STOPPED"}),
@@ -619,15 +890,24 @@ class Repository:
         *,
         last_scan_at: datetime | None = None,
         next_scan_at: datetime | None = None,
+        window_key: str | None = None,
+        window_kind: str | None = None,
+        last_status: str | None = None,
     ) -> None:
         runtime = self.runtime_state()
+        existing = self.get_control_state().get("round_runtime")
+        existing_value = existing.get("value") if isinstance(existing, dict) else None
+        prev = dict(existing_value) if isinstance(existing_value, dict) else {}
         payload = {
             "runtime_id": runtime["runtime_id"],
             "current_round_id": int(window_id),
             "round_state": str(state).upper(),
-            "round_started_at": runtime.get("round_started_at") or updated_at.isoformat(),
-            "last_scan_at": last_scan_at.isoformat() if last_scan_at else runtime.get("last_scan_at", ""),
-            "next_scan_at": next_scan_at.isoformat() if next_scan_at else runtime.get("next_scan_at", ""),
+            "round_started_at": prev.get("round_started_at") or runtime.get("round_started_at") or updated_at.isoformat(),
+            "last_scan_at": last_scan_at.isoformat() if last_scan_at else prev.get("last_scan_at") or runtime.get("last_scan_at", ""),
+            "next_scan_at": next_scan_at.isoformat() if next_scan_at else prev.get("next_scan_at") or runtime.get("next_scan_at", ""),
+            "window_key": window_key if window_key is not None else prev.get("window_key", ""),
+            "window_kind": window_kind if window_kind is not None else prev.get("window_kind", ""),
+            "last_status": last_status if last_status is not None else prev.get("last_status", ""),
         }
         with connect(self.db_path) as conn:
             conn.execute("UPDATE windows SET status = ? WHERE id = ?", (payload["round_state"], int(window_id)))
@@ -672,12 +952,24 @@ class Repository:
             "volatility_window", "range_lower", "range_upper", "range_width_pct", "threshold_met",
             "session_id", "stage", "error", "last_kline_close_at", "market_updated_at", "calculated_at",
             "data_stale",
+            "kline_required_count", "kline_actual_count", "kline_last_close_at", "kline_age_seconds",
+            "kline_missing_count", "kline_quality_status", "regime_score", "regime_allowed",
+            "block_code", "block_reasons_json", "evaluation_started_at", "evaluation_completed_at",
+            "market_state", "verdict", "soft_breach_count", "grid_preview_json",
+            "economics_json", "maker_fee_rate", "maker_fee_source", "maker_fee_checked_at",
         }
         normalized = {key: value for key, value in values.items() if key in columns}
         if "threshold_met" in normalized:
             normalized["threshold_met"] = int(bool(normalized["threshold_met"]))
         if "data_stale" in normalized:
             normalized["data_stale"] = int(bool(normalized["data_stale"]))
+        if "regime_allowed" in normalized:
+            normalized["regime_allowed"] = int(bool(normalized["regime_allowed"]))
+        if "block_reasons_json" in normalized and not isinstance(normalized["block_reasons_json"], str):
+            normalized["block_reasons_json"] = json.dumps(normalized["block_reasons_json"], ensure_ascii=False)
+        for json_field in ("grid_preview_json", "economics_json"):
+            if json_field in normalized and not isinstance(normalized[json_field], str):
+                normalized[json_field] = _json(normalized[json_field])
         normalized["updated_at"] = updated_at.isoformat()
         names = ["window_id", "symbol", *normalized.keys()]
         placeholders = ", ".join("?" for _ in names)
@@ -726,7 +1018,16 @@ class Repository:
                 """,
                 (int(window_id),),
             ).fetchall()
-            return [dict(row) for row in rows]
+            return [
+                _decoded_row(
+                    row,
+                    "block_reasons_json",
+                    "grid_preview_json",
+                    "economics_json",
+                )
+                or {}
+                for row in rows
+            ]
 
     def mark_round_candidates_stale(self, window_id: int, stale_before: datetime, updated_at: datetime) -> int:
         with connect(self.db_path) as conn:
@@ -1398,29 +1699,44 @@ class Repository:
         allowed: bool,
         reasons: list[str] | tuple[str, ...],
         hard_blocks: list[str] | tuple[str, ...],
-        component_scores: dict[str, float],
+        component_scores: dict[str, float | None],
         model_version: str,
         feature_snapshot_id: int | None,
+        verdict: str = "",
+        threshold_used: float | None = None,
+        cost_breakdown: dict[str, float] | None = None,
+        effective_weights: dict[str, float] | None = None,
+        score_contributions: dict[str, float] | None = None,
+        event_source_available: bool = False,
     ) -> int:
         with connect(self.db_path) as conn:
             cur = conn.execute(
                 """
                 INSERT INTO regime_decisions
-                    (session_id, symbol, as_of_time, state, grid_score, allowed,
+                    (session_id, symbol, as_of_time, state, verdict, grid_score,
+                     threshold_used, allowed,
                      reasons_json, hard_blocks_json, component_scores_json,
+                     cost_breakdown_json, effective_weights_json,
+                     score_contributions_json, event_source_available,
                      model_version, feature_snapshot_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
                     symbol.strip().upper(),
                     as_of_time.isoformat(),
                     state,
+                    str(verdict or ""),
                     grid_score,
+                    threshold_used,
                     int(allowed),
                     _json(list(reasons)),
                     _json(list(hard_blocks)),
                     _json(component_scores),
+                    _json(cost_breakdown or {}),
+                    _json(effective_weights or {}),
+                    _json(score_contributions or {}),
+                    int(event_source_available),
                     model_version,
                     feature_snapshot_id,
                 ),
@@ -1435,8 +1751,8 @@ class Repository:
                 INSERT INTO grid_plans
                     (session_id, symbol, as_of_time, center, lower_price, upper_price,
                      step_pct, grid_num, prices_json, qty_weights_json, cost_floor_pct,
-                     regime_score, parameter_version, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     regime_score, parameter_version, direction_mode, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -1452,6 +1768,7 @@ class Repository:
                     params.cost_floor_pct,
                     params.regime_score,
                     params.parameter_version,
+                    params.direction_mode.value,
                     None,
                 ),
             )
@@ -1574,12 +1891,7 @@ class Repository:
         sql += " ORDER BY id DESC LIMIT 1"
         with connect(self.db_path) as conn:
             row = conn.execute(sql, params).fetchone()
-            return _decoded_row(
-                row,
-                "reasons_json",
-                "hard_blocks_json",
-                "component_scores_json",
-            )
+            return _normalized_regime_decision_row(row)
 
     def regime_decision_history(
         self,
@@ -1604,16 +1916,7 @@ class Repository:
                 """,
                 (normalized_symbol, capped_limit),
             ).fetchall()
-            return [
-                _decoded_row(
-                    row,
-                    "reasons_json",
-                    "hard_blocks_json",
-                    "component_scores_json",
-                )
-                or {}
-                for row in rows
-            ]
+            return [_normalized_regime_decision_row(row) or {} for row in rows]
 
     def latest_inventory_snapshot(self, session_id: int | None = None) -> dict[str, Any] | None:
         sql = "SELECT * FROM inventory_snapshots"
@@ -2398,4 +2701,42 @@ def _decoded_row(row: sqlite3.Row | None, *json_fields: str) -> dict[str, Any] |
             result[field.removesuffix("_json")] = json.loads(str(raw))
         except json.JSONDecodeError:
             result[field.removesuffix("_json")] = raw
+    return result
+
+
+def _normalized_regime_decision_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    result = _decoded_row(
+        row,
+        "reasons_json",
+        "hard_blocks_json",
+        "component_scores_json",
+        "cost_breakdown_json",
+        "effective_weights_json",
+        "score_contributions_json",
+    )
+    if result is None:
+        return None
+    hard_blocks = result.get("hard_blocks")
+    if not isinstance(hard_blocks, list):
+        hard_blocks = []
+    verdict = str(result.get("verdict") or "").strip()
+    if not verdict:
+        state = str(result.get("state") or "")
+        allowed = bool(result.get("allowed"))
+        if allowed:
+            verdict = "ALLOWED"
+        elif state == "UNKNOWN_DATA" or any(
+            "过期" in str(block) or "数据" in str(block)
+            for block in hard_blocks
+        ):
+            verdict = "BLOCKED_DATA"
+        elif hard_blocks:
+            verdict = "BLOCKED_HARD"
+        else:
+            verdict = "BLOCKED_SCORE"
+    result["verdict"] = verdict
+    result["event_source_available"] = bool(result.get("event_source_available"))
+    result.setdefault("cost_breakdown", {})
+    result.setdefault("effective_weights", {})
+    result.setdefault("score_contributions", {})
     return result

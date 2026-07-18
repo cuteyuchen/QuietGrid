@@ -12,6 +12,7 @@ from db.database import init_db
 from db.repository import Repository
 from exchange.mock import MockExchangeClient
 from trader import (
+    RuntimeStreamHealthReporter,
     _build_controller,
     _run_backtest_csv,
     _run_backtest_dir,
@@ -33,6 +34,7 @@ from trader import (
     _run_binance_test_run,
     _create_binance_client_for_module,
     _run_dynamic_price_stream,
+    _run_supervised_user_stream,
     _json_log_detail,
     _sanitize_direct_transport_error,
     main,
@@ -535,6 +537,9 @@ class FakeController:
     async def handle_price_update_event(self, event: dict[str, Any]) -> None:
         self.price_events.append(event)
 
+    async def handle_order_filled_event(self, event: dict[str, Any]) -> None:
+        return None
+
 
 class FakeExchange:
     def __init__(self) -> None:
@@ -566,6 +571,26 @@ class FinishedPriceStreamExchange(FakeExchange):
         return None
 
 
+class ReconnectableFinishedUserStreamExchange:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.reconnected = asyncio.Event()
+
+    async def run_user_stream(self, handler):
+        self.calls += 1
+        if self.calls >= 2:
+            self.reconnected.set()
+        return None
+
+
+class CapturingStreamHealth:
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    async def handle(self, event: dict[str, Any]) -> None:
+        self.events.append(dict(event))
+
+
 def test_dynamic_price_stream_restarts_when_active_symbols_change() -> None:
     async def run() -> None:
         exchange = FakeExchange()
@@ -591,38 +616,109 @@ def test_dynamic_price_stream_restarts_when_active_symbols_change() -> None:
     asyncio.run(run())
 
 
-def test_dynamic_price_stream_fails_when_inner_stream_finishes() -> None:
+def test_dynamic_price_stream_reconnects_when_inner_stream_finishes() -> None:
     async def run() -> None:
         exchange = FinishedPriceStreamExchange()
         controller = FakeController()
         controller.active_sessions["AAPLUSDT"] = object()
-
+        task = asyncio.create_task(
+            _run_dynamic_price_stream(exchange, controller, poll_seconds=0.01)
+        )
+        for _ in range(100):
+            if len(exchange.subscriptions) >= 2:
+                break
+            await asyncio.sleep(0.01)
+        task.cancel()
         try:
-            await _run_dynamic_price_stream(exchange, controller, poll_seconds=0.01)
-        except RuntimeError as exc:
-            assert "price stream stopped unexpectedly" in str(exc)
-        else:
-            raise AssertionError("inner price stream completion should stop dynamic price stream")
+            await task
+        except asyncio.CancelledError:
+            pass
 
-        assert exchange.subscriptions == [["AAPLUSDT"]]
+        assert len(exchange.subscriptions) >= 2
+        assert exchange.subscriptions[:2] == [["AAPLUSDT"], ["AAPLUSDT"]]
 
     asyncio.run(run())
 
 
-def test_dynamic_price_stream_propagates_inner_stream_failure() -> None:
+def test_dynamic_price_stream_reconnects_after_inner_stream_failure() -> None:
     async def run() -> None:
         exchange = FailingPriceStreamExchange()
         controller = FakeController()
         controller.active_sessions["AAPLUSDT"] = object()
-
+        task = asyncio.create_task(
+            _run_dynamic_price_stream(exchange, controller, poll_seconds=0.01)
+        )
+        for _ in range(100):
+            if len(exchange.subscriptions) >= 2:
+                break
+            await asyncio.sleep(0.01)
+        task.cancel()
         try:
-            await _run_dynamic_price_stream(exchange, controller, poll_seconds=0.01)
-        except RuntimeError as exc:
-            assert "price stream failed" in str(exc)
-        else:
-            raise AssertionError("inner price stream failure should propagate")
+            await task
+        except asyncio.CancelledError:
+            pass
 
-        assert exchange.subscriptions == [["AAPLUSDT"]]
+        assert len(exchange.subscriptions) >= 2
+        assert exchange.subscriptions[:2] == [["AAPLUSDT"], ["AAPLUSDT"]]
+
+    asyncio.run(run())
+
+
+def test_supervised_user_stream_reconnects_after_clean_close() -> None:
+    async def run() -> None:
+        exchange = ReconnectableFinishedUserStreamExchange()
+        controller = FakeController()
+        health = CapturingStreamHealth()
+        task = asyncio.create_task(
+            _run_supervised_user_stream(exchange, controller, health)  # type: ignore[arg-type]
+        )
+        await asyncio.wait_for(exchange.reconnected.wait(), timeout=2)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        assert exchange.calls >= 2
+        assert health.events[0]["stream"] == "user"
+        assert health.events[0]["state"] == "DEGRADED"
+
+    asyncio.run(run())
+
+
+def test_stream_health_reporter_blocks_entries_until_stream_recovers(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+        repository = Repository(db_path)
+        now = datetime(2026, 7, 18, 10, 0, tzinfo=timezone.utc)
+        repository.register_runtime("trader-default", now)
+        reporter = RuntimeStreamHealthReporter(repository)
+
+        await reporter.handle(
+            {
+                "stream": "price",
+                "state": "DEGRADED",
+                "error": "socket closed",
+                "reconnect_count": 1,
+                "at": now,
+            }
+        )
+        assert reporter.allows_new_entries() is False
+        degraded = repository.get_control_state()["stream_health"]["value"]
+        assert degraded["streams"]["price"]["state"] == "DEGRADED"
+
+        await reporter.handle(
+            {
+                "stream": "price",
+                "state": "ONLINE",
+                "reconnect_count": 1,
+                "at": now,
+            }
+        )
+        assert reporter.allows_new_entries() is True
+        recovered = repository.get_control_state()["stream_health"]["value"]
+        assert recovered["streams"]["price"]["state"] == "ONLINE"
 
     asyncio.run(run())
 
@@ -1319,7 +1415,7 @@ def test_binance_entrypoints_require_api_credentials(monkeypatch, tmp_path) -> N
     asyncio.run(run())
 
 
-def test_binance_loop_exits_and_cleans_up_when_user_stream_fails(monkeypatch, tmp_path) -> None:
+def test_binance_loop_keeps_running_when_user_stream_fails_and_reconnects(monkeypatch, tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "trader.db"
         init_db(db_path)
@@ -1358,23 +1454,22 @@ def test_binance_loop_exits_and_cleans_up_when_user_stream_fails(monkeypatch, tm
             },
         )
 
-        try:
-            await _run_binance_loop(config)
-        except RuntimeError as exc:
-            assert "user stream failed" in str(exc)
-        else:
-            raise AssertionError("user stream failure should stop Binance loop")
+        result = await _run_binance_loop(config, max_seconds=0.02)
 
+        assert result == ["loop_timeout"]
         assert controller.loop_cancelled is True
         assert controller.cleaned_reason == "binance_loop_shutdown_cleanup"
         assert controller.active_sessions == {}
         assert price_stream_cancelled is True
         assert exchange.closed is True
+        stream_health = Repository(db_path).get_control_state()["stream_health"]["value"]
+        assert stream_health["streams"]["user"]["state"] == "DEGRADED"
+        assert "user stream failed" in stream_health["streams"]["user"]["last_error"]
 
     asyncio.run(run())
 
 
-def test_binance_loop_logs_when_user_stream_stops_without_error(monkeypatch, tmp_path) -> None:
+def test_binance_loop_reconnects_when_user_stream_stops_without_error(monkeypatch, tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "trader.db"
         init_db(db_path)
@@ -1414,21 +1509,16 @@ def test_binance_loop_logs_when_user_stream_stops_without_error(monkeypatch, tmp
             },
         )
 
-        try:
-            await _run_binance_loop(config)
-        except RuntimeError as exc:
-            assert "user stream stopped unexpectedly" in str(exc)
-        else:
-            raise AssertionError("user stream completion should stop Binance loop")
+        result = await _run_binance_loop(config, max_seconds=0.02)
 
-        logs = Repository(db_path).recent_rows("system_logs", limit=1)
-        assert logs[0]["level"] == "ERROR"
-        assert logs[0]["module"] == "binance_loop"
-        assert "user stream stopped unexpectedly" in logs[0]["message"]
+        assert result == ["loop_timeout"]
         assert controller.loop_cancelled is True
         assert price_stream_cancelled is True
         assert controller.cleaned_reason == "binance_loop_shutdown_cleanup"
         assert exchange.closed is True
+        stream_health = Repository(db_path).get_control_state()["stream_health"]["value"]
+        assert stream_health["streams"]["user"]["state"] == "DEGRADED"
+        assert "已结束" in stream_health["streams"]["user"]["last_error"]
 
     asyncio.run(run())
 

@@ -2,17 +2,30 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from math import isfinite
 from typing import Any
 
-from core.models import GridOrder, GridParams, GridState, OrderSide, OrderStatus, RiskAction, SymbolSession
+from core.models import (
+    GridDirectionMode,
+    GridOrder,
+    GridParams,
+    GridState,
+    OrderSide,
+    OrderStatus,
+    RiskAction,
+    SymbolSession,
+)
 from core.scheduler import Scheduler
 from db.repository import Repository
 from exchange.base import ExchangeClient
 from strategy.cooldown import CooldownConfig, CooldownEvaluator
-from strategy.adaptive_grid import AdaptiveGridConfig, AdaptiveGridGenerator
+from strategy.adaptive_grid import (
+    AdaptiveGridConfig,
+    AdaptiveGridGenerator,
+    GridEconomicsError,
+)
 from strategy.grid_calculator import SUPPORTED_RANGE_METHODS, GridCalculationError, GridConfig
 from strategy.grid_calculator import calculate_grid_params, calculate_volatility_metric
 from strategy.grid_engine import (
@@ -23,10 +36,13 @@ from strategy.grid_engine import (
     _is_post_only_rejection,
     _is_recovered_order,
     _response_order_id,
+    GridEngineConfig,
 )
+from data_sources.runtime_market import assert_runtime_provider
+from strategy.market_history import RecentMarketHistoryService
 from strategy.observer import ObservationAborted, Observer, ObserverConfig
 from strategy.inventory import InventoryAction, InventoryConfig, InventoryManager, InventorySnapshot
-from strategy.regime import REGIME_MODEL_VERSION, RegimeConfig, RegimeDecision, RegimeEngine
+from strategy.regime import RegimeConfig, RegimeDecision, RegimeEngine
 from strategy.risk import RiskConfig, RiskManager
 from strategy.selector import SelectionConfig, Selector
 from strategy.state_machine import StateMachine
@@ -77,6 +93,10 @@ class ControllerConfig:
     max_consecutive_session_losses: int = 0
     max_window_stop_count: int = 0
     block_risk_increase_hot_reload: bool = True
+    direction_mode: GridDirectionMode = GridDirectionMode.NEUTRAL
+    direction_overrides: dict[str, GridDirectionMode] = field(default_factory=dict)
+    seed_execution: str = "MARKET"
+    seed_max_slippage_pct: float = 0.002
 
 
 @dataclass(frozen=True)
@@ -101,6 +121,14 @@ class StartupCheck:
     balance: float
 
 
+class RegimeAdmissionError(GridCalculationError):
+    """网格已经完成求解，但最终 Regime 准入未通过。"""
+
+    def __init__(self, message: str, *, params: GridParams) -> None:
+        super().__init__(message)
+        self.params = params
+
+
 class TradingController:
     def __init__(
         self,
@@ -117,14 +145,24 @@ class TradingController:
         adaptive_grid_config: AdaptiveGridConfig | None = None,
         inventory_config: InventoryConfig | None = None,
     ) -> None:
-        self.exchange = exchange
+        self.exchange = assert_runtime_provider(exchange)
+        self.market_history = RecentMarketHistoryService(
+            self.exchange,
+            max_data_age_seconds=float(getattr(regime_config or RegimeConfig(), "max_data_age_seconds", 90.0)),
+        )
         self.scheduler = scheduler
         self.repository = repository
         self.selector = Selector(exchange, selector_config)
         self.observer = Observer(exchange, observer_config, grid_config)
         self.grid_config = grid_config
         self.cooldown = CooldownEvaluator(cooldown_config or CooldownConfig())
-        self.engine = GridEngine(exchange, log_system=repository.log_system)
+        self.engine = GridEngine(
+            exchange,
+            GridEngineConfig(
+                seed_max_slippage_pct=controller_config.seed_max_slippage_pct,
+            ),
+            log_system=repository.log_system,
+        )
         self.state_machine = StateMachine()
         self.config = controller_config
         self.feature_flags = feature_flags or V2FeatureFlags()
@@ -171,12 +209,16 @@ class TradingController:
         self.round_candidate_symbols: set[str] = set()
         self.round_stopped_symbols: set[str] = set()
         self._processed_kline_close_at: dict[str, datetime] = {}
+        self._last_round_scan_bar_at: datetime | None = None
         self._next_round_scan_at: datetime | None = None
         self._round_scan_lock = asyncio.Lock()
         self._volatility_refreshed_at: dict[int, datetime] = {}
         self._grid_recalculated_at: dict[int, datetime] = {}
         self._session_event_locks: dict[str, asyncio.Lock] = {}
         self._last_maker_fee_by_symbol: dict[str, float] = {}
+        self._last_taker_fee_by_symbol: dict[str, float] = {}
+        self._symbol_rules_by_symbol: dict[str, dict[str, Any]] = {}
+        self._last_kline_quality_by_symbol: dict[str, dict[str, Any]] = {}
         self._regime_by_symbol: dict[str, RegimeDecision] = {}
         self._inventory_by_symbol: dict[str, InventorySnapshot] = {}
         self._account_equity: float | None = None
@@ -210,6 +252,8 @@ class TradingController:
             or not _positive_finite_number(self.config.take_profit_usdt)
             or not _non_negative_finite_number(self.config.max_maker_fee_rate)
             or not _non_negative_finite_number(self.config.maker_fee_check_interval_seconds)
+            or not 0 <= float(self.config.seed_max_slippage_pct) < 1
+            or str(self.config.seed_execution).upper() != "MARKET"
         ):
             result = StartupCheck(False, "启动交易参数不是有效数字。", 0.0)
             self.repository.log_system(
@@ -220,7 +264,9 @@ class TradingController:
                     f"leverage={self.config.leverage}, "
                     f"take_profit_usdt={self.config.take_profit_usdt}, "
                     f"max_maker_fee_rate={self.config.max_maker_fee_rate}, "
-                    f"maker_fee_check_interval_seconds={self.config.maker_fee_check_interval_seconds}"
+                    f"maker_fee_check_interval_seconds={self.config.maker_fee_check_interval_seconds}, "
+                    f"seed_execution={self.config.seed_execution}, "
+                    f"seed_max_slippage_pct={self.config.seed_max_slippage_pct}"
                 ),
                 current_time,
             )
@@ -428,6 +474,7 @@ class TradingController:
         )
         observation_sessions: list[tuple[int, str]] = []
         for symbol in fee_eligible_symbols:
+            direction_mode = self._direction_mode_for_symbol(symbol)
             session_id = self.repository.create_session(
                 window_id=window_id,
                 symbol=symbol,
@@ -435,6 +482,7 @@ class TradingController:
                 capital=self.config.capital_per_symbol,
                 leverage=self.config.leverage,
                 open_time=current_time,
+                direction_mode=direction_mode,
             )
             self.state_machine.transition(symbol, GridState.OBSERVING, "window_open", at=current_time)
             self.repository.log_state(
@@ -516,6 +564,10 @@ class TradingController:
                 )
                 continue
             current_price, params = observation_result
+            params = replace(
+                params,
+                direction_mode=self._direction_mode_for_symbol(symbol),
+            )
             self._persist_session_grid(session_id, params)
             prepared.append((session_id, symbol, current_price, params))
 
@@ -558,9 +610,11 @@ class TradingController:
                 leverage=self.config.leverage,
                 open_time=current_time,
                 state_entered_at=current_time,
+                direction_mode=params.direction_mode,
             )
             try:
                 await self.engine.start(session, current_price)
+                self._persist_seed_execution(session, current_time)
             except Exception as exc:
                 self._persist_session_orders(session)
                 if any(order.status == OrderStatus.OPEN for order in session.orders):
@@ -647,11 +701,58 @@ class TradingController:
         self.round_candidate_symbols.clear()
         self.round_stopped_symbols.clear()
         self._processed_kline_close_at.clear()
+        self._last_round_scan_bar_at = None
+        window_key = ""
+        window_kind = ""
+        classify = getattr(self.scheduler, "classify_window", None)
+        if callable(classify):
+            try:
+                window = classify(current_time)
+                window_key = str(getattr(window, "window_key", "") or "")
+                kind = getattr(window, "kind", "")
+                window_kind = getattr(kind, "value", str(kind or ""))
+            except Exception:
+                pass
+        self.repository.set_round_runtime_state(
+            window_id,
+            "SCANNING",
+            current_time,
+            last_scan_at=current_time,
+            window_key=window_key,
+            window_kind=window_kind,
+            last_status="round_started",
+        )
         return await self.scan_round_once(current_time)
 
-    async def scan_round_once(self, now: datetime | None = None) -> RunOnceResult:
+    async def scan_round_once(
+        self,
+        now: datetime | None = None,
+        *,
+        trigger_close_at: datetime | None = None,
+    ) -> RunOnceResult:
+        current_time = now or datetime.now(timezone.utc)
         async with self._round_scan_lock:
-            return await self._scan_round_once_locked(now)
+            if (
+                trigger_close_at is not None
+                and self._last_round_scan_bar_at is not None
+                and trigger_close_at <= self._last_round_scan_bar_at
+            ):
+                return RunOnceResult("scan_coalesced", [], [])
+            if (
+                trigger_close_at is None
+                and self._last_round_scan_bar_at is not None
+                and self._next_round_scan_at is not None
+                and current_time >= self._last_round_scan_bar_at
+                and current_time < self._next_round_scan_at
+            ):
+                return RunOnceResult("scan_coalesced", [], [])
+            result = await self._scan_round_once_locked(current_time)
+            if trigger_close_at is not None and result.status not in {
+                "round_inactive",
+                "round_stopped",
+            }:
+                self._last_round_scan_bar_at = trigger_close_at
+            return result
 
     async def _scan_round_once_locked(self, now: datetime | None = None) -> RunOnceResult:
         current_time = now or datetime.now(timezone.utc)
@@ -674,13 +775,23 @@ class TradingController:
         self.round_candidate_symbols.update(selected_symbols)
         self._log_selection(selected, current_time)
         disabled_symbols = self.repository.disabled_symbols()
-        entries_paused = self.repository.new_entries_paused()
+        stream_health = getattr(self, "stream_health_reporter", None)
+        stream_entries_blocked = bool(
+            stream_health is not None
+            and callable(getattr(stream_health, "allows_new_entries", None))
+            and not stream_health.allows_new_entries()
+        )
+        entries_paused = self.repository.new_entries_paused() or stream_entries_blocked
+        entry_pause_reason = (
+            "行情数据流正在重连，暂停新开仓"
+            if stream_entries_blocked
+            else "新开仓已暂停"
+        )
         analyzable = [
             item
             for item in selected
             if item.symbol.upper() not in disabled_symbols
             and item.symbol not in self.round_stopped_symbols
-            and item.symbol not in self.active_sessions
         ]
         fee_eligible = set(
             await self._filter_symbols_by_maker_fee([item.symbol for item in analyzable], current_time)
@@ -720,6 +831,7 @@ class TradingController:
                 }
                 if not isinstance(analysis, BaseException):
                     current_price, params, snapshot = analysis
+                    active_regime = self._regime_by_symbol.get(symbol)
                     active_values.update(
                         {
                             "price": current_price,
@@ -730,6 +842,18 @@ class TradingController:
                             "range_upper": snapshot[1],
                             "range_width_pct": snapshot[2],
                             "calculated_at": params.calculated_at.isoformat(),
+                            "regime_score": active_regime.grid_score if active_regime else None,
+                            "regime_allowed": bool(active_regime.allowed) if active_regime else None,
+                            "market_state": active_regime.state if active_regime else None,
+                            "verdict": active_regime.verdict if active_regime else None,
+                            "soft_breach_count": active.soft_breach_count,
+                            "grid_preview_json": {
+                                "lower": params.lower,
+                                "upper": params.upper,
+                                "grid_count": params.grid_num,
+                                "level_count": params.grid_num + 1,
+                            },
+                            "economics_json": params.economics,
                         }
                     )
                     self.repository.update_session_current_volatility(
@@ -762,23 +886,106 @@ class TradingController:
                 )
                 continue
             if isinstance(analysis, BaseException):
+                error_text = str(analysis)
+                stage = "error"
+                block_code = ""
+                extra_values: dict[str, Any] = {}
+                if isinstance(analysis, GridEconomicsError):
+                    stage = "blocked_economics"
+                    block_code = "BLOCKED_ECONOMICS"
+                    economics = dict(analysis.economics)
+                    extra_values = {
+                        "economics_json": economics,
+                        "grid_preview_json": {
+                            "lower": economics.get("lower"),
+                            "upper": economics.get("upper"),
+                            "grid_count": economics.get("grid_count"),
+                            "level_count": economics.get("level_count"),
+                        },
+                    }
+                elif isinstance(analysis, RegimeAdmissionError):
+                    stage = "blocked_regime"
+                    regime = self._regime_by_symbol.get(symbol)
+                    block_code = regime.verdict if regime else "BLOCKED_SCORE"
+                    params = analysis.params
+                    extra_values = {
+                        "volatility_method": params.volatility_method,
+                        "volatility_value": params.volatility_value,
+                        "volatility_window": params.volatility_window,
+                        "range_lower": params.lower,
+                        "range_upper": params.upper,
+                        "range_width_pct": (params.upper - params.lower) / params.lower,
+                        "grid_preview_json": {
+                            "lower": params.lower,
+                            "upper": params.upper,
+                            "grid_count": params.grid_num,
+                            "level_count": params.grid_num + 1,
+                        },
+                        "economics_json": params.economics,
+                        "maker_fee_rate": params.economics.get("maker_fee_rate"),
+                        "maker_fee_source": params.economics.get("maker_fee_source"),
+                        "maker_fee_checked_at": params.economics.get("maker_fee_checked_at"),
+                    }
+                elif isinstance(analysis, GridCalculationError):
+                    upper = error_text.upper()
+                    if "DATA_" in upper or "KLINE" in upper:
+                        stage = "data_invalid"
+                        prefix = upper.split(":", 1)[0].strip()
+                        block_code = prefix if prefix.startswith("DATA_") else "DATA_INVALID"
+                    elif "REGIME" in upper:
+                        stage = "blocked_regime"
+                        block_code = "BLOCKED_REGIME"
+                    elif "PRICE_DRIFT" in upper:
+                        stage = "blocked_price_drift"
+                        block_code = "PRICE_DRIFT"
+                    else:
+                        stage = "below_threshold"
+                        block_code = "BELOW_THRESHOLD"
+                quality = self._last_kline_quality_by_symbol.get(symbol, {})
+                regime = self._regime_by_symbol.get(symbol)
+                if block_code.startswith("DATA_") and regime is None:
+                    self._persist_data_blocked_regime(symbol, error_text, current_time)
                 self.repository.upsert_round_candidate(
                     self.current_window_id,
                     symbol,
                     current_time,
                     **base,
+                    **quality,
                     threshold_met=False,
-                    stage="below_threshold" if isinstance(analysis, GridCalculationError) else "error",
-                    error=str(analysis),
+                    stage=stage,
+                    error=error_text,
                     calculated_at=current_time.isoformat(),
+                    evaluation_completed_at=current_time.isoformat(),
+                    regime_score=regime.grid_score if regime else None,
+                    regime_allowed=(
+                        False
+                        if block_code == "BLOCKED_ECONOMICS"
+                        else bool(regime.allowed)
+                        if regime
+                        else None
+                    ),
+                    block_code=block_code or stage.upper(),
+                    block_reasons_json=[error_text],
+                    market_state=regime.state if regime else None,
+                    verdict=(
+                        block_code
+                        if block_code == "BLOCKED_ECONOMICS"
+                        else regime.verdict
+                        if regime
+                        else block_code or stage.upper()
+                    ),
+                    **extra_values,
                 )
                 continue
             current_price, params, snapshot = analysis
+            quality = self._last_kline_quality_by_symbol.get(symbol, {})
+            regime = self._regime_by_symbol.get(symbol)
             self.repository.upsert_round_candidate(
                 self.current_window_id,
                 symbol,
                 current_time,
                 **base,
+                **quality,
                 price=current_price,
                 volatility_method=params.volatility_method,
                 volatility_value=params.volatility_value,
@@ -788,8 +995,31 @@ class TradingController:
                 range_width_pct=snapshot[2],
                 threshold_met=True,
                 stage="eligible",
-                error="新开仓已暂停" if entries_paused else None,
+                error=entry_pause_reason if entries_paused else None,
                 calculated_at=params.calculated_at.isoformat(),
+                evaluation_completed_at=current_time.isoformat(),
+                regime_score=regime.grid_score if regime else None,
+                regime_allowed=bool(regime.allowed) if regime else True,
+                market_state=regime.state if regime else None,
+                verdict=regime.verdict if regime else "ALLOWED",
+                grid_preview_json={
+                    "lower": params.lower,
+                    "upper": params.upper,
+                    "grid_count": params.grid_num,
+                    "level_count": params.grid_num + 1,
+                },
+                economics_json=params.economics,
+                maker_fee_rate=params.economics.get("maker_fee_rate"),
+                maker_fee_source=params.economics.get("maker_fee_source"),
+                maker_fee_checked_at=params.economics.get("maker_fee_checked_at"),
+                block_code=(
+                    "STREAM_DEGRADED"
+                    if stream_entries_blocked
+                    else "NEW_ENTRIES_PAUSED"
+                    if entries_paused
+                    else None
+                ),
+                block_reasons_json=[entry_pause_reason] if entries_paused else None,
             )
             if not entries_paused:
                 eligible.append((item, current_price, params))
@@ -805,12 +1035,14 @@ class TradingController:
         next_scan = current_time + timedelta(minutes=1)
         self._next_round_scan_at = next_scan
         round_state = "RUNNING" if self.active_sessions else "SCANNING"
+        last_status = "started" if started else ("no_eligible_symbol" if selected_symbols else "scanning")
         self.repository.set_round_runtime_state(
             self.current_window_id,
             round_state,
             current_time,
             last_scan_at=current_time,
             next_scan_at=next_scan,
+            last_status=last_status,
         )
         return RunOnceResult("started" if started else "scanning", selected_symbols, started)
 
@@ -821,107 +1053,447 @@ class TradingController:
         grid_config: GridConfig,
         calculated_at: datetime,
     ) -> tuple[float, GridParams, tuple[float, float, float]]:
+        self._regime_by_symbol.pop(item.symbol, None)
         current_price = (float(item.bid_price) + float(item.ask_price)) / 2
-        limit = max(
+        required_bars = max(
             int(observer_config.observe_hours * 60),
             observer_config.min_samples,
             self.regime.config.long_window + 1 if self.feature_flags.regime_v2 else 0,
         )
-        klines, funding_rate = await asyncio.gather(
-            self.exchange.get_klines(item.symbol, "1m", limit),
-            self.exchange.get_funding_rate(item.symbol),
+        try:
+            batch = await self.market_history.load_closed_klines(
+                item.symbol,
+                interval=str(observer_config.kline_interval or "1m"),
+                required_bars=required_bars,
+                as_of=calculated_at,
+                buffer_bars=2,
+            )
+        except Exception as exc:
+            raise GridCalculationError(
+                f"DATA_PROVIDER_ERROR: {type(exc).__name__}: {exc}"
+            ) from exc
+        klines = list(batch.rows)
+        self._last_kline_quality_by_symbol[item.symbol] = {
+            "kline_required_count": batch.quality.required_bars,
+            "kline_actual_count": batch.quality.actual_bars,
+            "kline_last_close_at": batch.last_close_time.isoformat(),
+            "kline_age_seconds": batch.age_seconds,
+            "kline_missing_count": batch.missing_count,
+            "kline_quality_status": "ok" if batch.quality.valid else "invalid",
+            "last_kline_close_at": batch.last_close_time.isoformat(),
+        }
+        try:
+            funding_context = await self.exchange.get_funding_context(item.symbol)
+        except Exception as exc:
+            raise GridCalculationError(
+                f"DATA_FUNDING_ERROR: {type(exc).__name__}: {exc}"
+            ) from exc
+        funding_rate = float(funding_context.get("funding_rate") or 0.0)
+        projected_funding_cost = self._projected_funding_cost(
+            funding_rate,
+            funding_context.get("next_funding_time"),
+            calculated_at,
+        )
+        if item.symbol not in self._last_maker_fee_by_symbol:
+            try:
+                commission = await self.exchange.get_commission_rate(item.symbol)
+                self._last_maker_fee_by_symbol[item.symbol] = _non_negative_float(
+                    commission.get("maker"),
+                    "maker commission rate",
+                )
+                self._last_taker_fee_by_symbol[item.symbol] = _non_negative_float(
+                    commission.get("taker", 0.0),
+                    "taker commission rate",
+                )
+            except Exception as exc:
+                raise GridCalculationError(
+                    "DATA_COMMISSION_ERROR: 未取得交易所按标的返回的 Maker 费率。"
+                ) from exc
+        maker_fee_rate = self._last_maker_fee_by_symbol[item.symbol]
+        if item.symbol not in self._symbol_rules_by_symbol:
+            try:
+                self._symbol_rules_by_symbol[item.symbol] = dict(
+                    await self.exchange.get_symbol_rules(item.symbol)
+                )
+            except Exception as exc:
+                raise GridCalculationError(
+                    "DATA_SYMBOL_RULES_ERROR: 未取得交易所按标的返回的下单规则。"
+                ) from exc
+        symbol_rules = self._symbol_rules_by_symbol[item.symbol]
+        cost_breakdown = self._grid_cost_breakdown(
+            maker_fee_rate,
+            projected_funding_cost,
         )
         regime_decision: RegimeDecision | None = None
+        structural_decision: RegimeDecision | None = None
         if self.feature_flags.regime_v2:
-            maker_fee_rate = self._last_maker_fee_by_symbol.get(
+            structural_decision = self.regime.evaluate(
                 item.symbol,
-                self.config.max_maker_fee_rate,
+                klines,
+                spread_pct=float(item.spread_pct),
+                depth_usdt=float(item.depth_usdt),
+                funding_rate=float(funding_rate),
+                expected_step_pct=grid_config.min_step_pct,
+                cost_floor_pct=0.0,
+                running=item.symbol in self.active_sessions,
+                include_cost=False,
+                as_of=calculated_at,
             )
-            cost_floor_pct = (
-                max(0.0, maker_fee_rate) * 2
-                + abs(float(funding_rate))
-                + self.adaptive_grid.config.adverse_selection_buffer_pct
-                + self.adaptive_grid.config.slippage_buffer_pct
-                + self.adaptive_grid.config.safety_margin_pct
+            self._regime_by_symbol[item.symbol] = structural_decision
+            if structural_decision.hard_blocks:
+                self._persist_regime_decision(item.symbol, structural_decision, calculated_at)
+                raise GridCalculationError(
+                    "Regime Engine 禁止启动网格: "
+                    + "；".join(structural_decision.hard_blocks)
+                )
+        lows = [float(row["low"]) for row in klines]
+        highs = [float(row["high"]) for row in klines]
+        lower = min(lows)
+        upper = max(highs)
+        range_width_pct = (upper - lower) / lower
+        active_session = self.active_sessions.get(item.symbol)
+        if active_session is not None and active_session.params is not None:
+            params = replace(
+                active_session.params,
+                calculated_at=calculated_at,
+                volatility_value=(
+                    max(
+                        structural_decision.features.atr_pct,
+                        structural_decision.features.volatility_long,
+                    )
+                    if structural_decision is not None
+                    else active_session.params.volatility_value
+                ),
+                volatility_window=len(klines),
             )
+        elif self.feature_flags.adaptive_grid_v2:
+            try:
+                params = self.adaptive_grid.generate(
+                    item.symbol,
+                    klines,
+                    current_price=current_price,
+                    funding_rate=float(funding_rate),
+                    funding_cost_rate=projected_funding_cost,
+                    maker_fee_rate=maker_fee_rate,
+                    regime_score=structural_decision.grid_score if structural_decision else 100.0,
+                    capital=self.config.capital_per_symbol,
+                    leverage=self.config.leverage,
+                    tick_size=_non_negative_float(
+                        symbol_rules.get("tick_size", 0.0),
+                        "tick_size",
+                    ),
+                    step_size=_non_negative_float(
+                        symbol_rules.get("step_size", 0.0),
+                        "step_size",
+                    ),
+                    min_qty=_non_negative_float(
+                        symbol_rules.get("min_qty", 0.0),
+                        "min_qty",
+                    ),
+                    min_notional=_non_negative_float(
+                        symbol_rules.get("min_notional", 0.0),
+                        "min_notional",
+                    ),
+                    calculated_at=calculated_at,
+                )
+            except GridEconomicsError as exc:
+                economics = dict(exc.economics)
+                gross_step = float(
+                    economics.get("gross_step_pct")
+                    or grid_config.min_step_pct
+                )
+                economics.update(
+                    {
+                        **cost_breakdown,
+                        "maker_fee_rate": maker_fee_rate,
+                        "maker_fee_source": "binance_commission_rate",
+                        "maker_fee_checked_at": calculated_at.isoformat(),
+                        "gross_step_pct": gross_step,
+                        "fee_net_edge_pct": (
+                            gross_step - cost_breakdown["hard_cost_pct"]
+                        ),
+                    }
+                )
+                exc.economics = economics
+                if structural_decision is not None:
+                    blocked_decision = self.regime.evaluate(
+                        item.symbol,
+                        klines,
+                        spread_pct=float(item.spread_pct),
+                        depth_usdt=float(item.depth_usdt),
+                        funding_rate=float(funding_rate),
+                        expected_step_pct=gross_step,
+                        cost_floor_pct=float(cost_breakdown["hard_cost_pct"]),
+                        running=False,
+                        cost_breakdown=self._regime_cost_breakdown(economics),
+                        as_of=calculated_at,
+                    )
+                    blocked_decision = replace(
+                        blocked_decision,
+                        allowed=False,
+                        verdict="BLOCKED_ECONOMICS",
+                        reasons=blocked_decision.reasons + (str(exc),),
+                    )
+                    self._regime_by_symbol[item.symbol] = blocked_decision
+                    self._persist_regime_decision(
+                        item.symbol,
+                        blocked_decision,
+                        calculated_at,
+                    )
+                raise
+        else:
+            params = calculate_grid_params(
+                item.symbol,
+                klines,
+                current_price,
+                projected_funding_cost,
+                replace(grid_config, min_samples=observer_config.min_samples),
+                calculated_at=calculated_at,
+            )
+            params = replace(
+                params,
+                cost_floor_pct=cost_breakdown["hard_cost_pct"],
+            )
+        economics = dict(params.economics)
+        economics.update(
+            {
+                **cost_breakdown,
+                "maker_fee_rate": maker_fee_rate,
+                "maker_fee_source": "binance_commission_rate",
+                "maker_fee_checked_at": calculated_at.isoformat(),
+                "gross_step_pct": params.step_pct,
+                "fee_net_edge_pct": params.step_pct - cost_breakdown["hard_cost_pct"],
+            }
+        )
+        regime_cost_breakdown = self._regime_cost_breakdown(economics)
+        if self.feature_flags.regime_v2:
             regime_decision = self.regime.evaluate(
                 item.symbol,
                 klines,
                 spread_pct=float(item.spread_pct),
                 depth_usdt=float(item.depth_usdt),
                 funding_rate=float(funding_rate),
-                expected_step_pct=max(grid_config.min_step_pct, cost_floor_pct),
-                cost_floor_pct=cost_floor_pct,
-                running=item.symbol in self.active_sessions,
+                expected_step_pct=float(params.step_pct),
+                cost_floor_pct=float(cost_breakdown["hard_cost_pct"]),
+                running=active_session is not None,
+                cost_breakdown=regime_cost_breakdown,
                 as_of=calculated_at,
             )
+            params = replace(
+                params,
+                regime_score=regime_decision.grid_score,
+                cost_floor_pct=cost_breakdown["hard_cost_pct"],
+                economics=economics,
+            )
             self._regime_by_symbol[item.symbol] = regime_decision
-            active = self.active_sessions.get(item.symbol)
-            feature_snapshot_id = self.repository.create_feature_snapshot(
-                session_id=active.session_id if active else None,
-                symbol=item.symbol,
-                as_of_time=regime_decision.as_of,
-                source_time=calculated_at,
-                features=asdict(regime_decision.features),
-                feature_version=REGIME_MODEL_VERSION,
-            )
-            self.repository.create_regime_decision(
-                session_id=active.session_id if active else None,
-                symbol=item.symbol,
-                as_of_time=regime_decision.as_of,
-                state=regime_decision.state,
-                grid_score=regime_decision.grid_score,
-                allowed=regime_decision.allowed,
-                reasons=regime_decision.reasons,
-                hard_blocks=regime_decision.hard_blocks,
-                component_scores=regime_decision.component_scores,
-                model_version=regime_decision.model_version,
-                feature_snapshot_id=feature_snapshot_id,
-            )
-            self.repository.append_event(
-                "REGIME_CHANGED",
-                regime_decision.as_of,
-                {
-                    "state": regime_decision.state,
-                    "grid_score": regime_decision.grid_score,
-                    "allowed": regime_decision.allowed,
-                    "reasons": regime_decision.reasons,
-                    "hard_blocks": regime_decision.hard_blocks,
-                },
-                session_id=active.session_id if active else None,
-                symbol=item.symbol,
-            )
+            self._persist_regime_decision(item.symbol, regime_decision, calculated_at)
             if not regime_decision.allowed:
                 detail = regime_decision.hard_blocks or regime_decision.reasons
-                raise GridCalculationError("Regime Engine 禁止启动网格: " + "；".join(detail))
-        lows = [float(row["low"]) for row in klines]
-        highs = [float(row["high"]) for row in klines]
-        lower = min(lows)
-        upper = max(highs)
-        range_width_pct = (upper - lower) / lower
-        if self.feature_flags.adaptive_grid_v2:
-            params = self.adaptive_grid.generate(
-                item.symbol,
-                klines,
-                current_price=current_price,
-                funding_rate=float(funding_rate),
-                maker_fee_rate=self._last_maker_fee_by_symbol.get(
-                    item.symbol,
-                    self.config.max_maker_fee_rate,
-                ),
-                regime_score=regime_decision.grid_score if regime_decision else 100.0,
-                calculated_at=calculated_at,
-            )
-        else:
-            params = calculate_grid_params(
-                item.symbol,
-                klines,
-                current_price,
-                funding_rate,
-                replace(grid_config, min_samples=observer_config.min_samples),
-                calculated_at=calculated_at,
-            )
+                raise RegimeAdmissionError(
+                    "Regime Engine 禁止启动网格: " + "；".join(detail),
+                    params=params,
+                )
         return current_price, params, (lower, upper, range_width_pct)
+
+    def _persist_data_blocked_regime(
+        self,
+        symbol: str,
+        error: str,
+        at: datetime,
+    ) -> None:
+        self.repository.create_regime_decision(
+            session_id=None,
+            symbol=symbol,
+            as_of_time=at,
+            state="UNKNOWN_DATA",
+            verdict="BLOCKED_DATA",
+            grid_score=0.0,
+            threshold_used=self.regime.config.enter_threshold,
+            allowed=False,
+            reasons=[error],
+            hard_blocks=[error],
+            component_scores={
+                "volatility": None,
+                "trend": None,
+                "liquidity": None,
+                "mean_reversion": None,
+                "cost": None,
+                "event": None,
+            },
+            cost_breakdown={},
+            effective_weights={},
+            score_contributions={},
+            event_source_available=self.regime.config.event_source_available,
+            model_version="regime-data-block-v2.1.1",
+            feature_snapshot_id=None,
+        )
+
+    def _grid_cost_breakdown(
+        self,
+        maker_fee_rate: float,
+        projected_funding_cost: float,
+    ) -> dict[str, float]:
+        config = self.adaptive_grid.config
+        result = {
+            "maker_round_trip_pct": max(0.0, float(maker_fee_rate)) * 2,
+            "adverse_selection_pct": max(0.0, float(config.adverse_selection_buffer_pct)),
+            "slippage_pct": max(0.0, float(config.slippage_buffer_pct)),
+            "safety_margin_pct": max(0.0, float(config.safety_margin_pct)),
+            "projected_funding_pct": max(0.0, float(projected_funding_cost)),
+        }
+        result["hard_cost_pct"] = (
+            result["maker_round_trip_pct"] + result["projected_funding_pct"]
+        )
+        result["risk_discount_pct"] = (
+            result["adverse_selection_pct"]
+            + result["slippage_pct"]
+            + result["safety_margin_pct"]
+        )
+        result["total_cost_pct"] = (
+            result["hard_cost_pct"] + result["risk_discount_pct"]
+        )
+        return result
+
+    @staticmethod
+    def _regime_cost_breakdown(economics: dict[str, Any]) -> dict[str, float]:
+        supported = {
+            "maker_round_trip_pct",
+            "projected_funding_pct",
+            "hard_cost_pct",
+            "adverse_selection_pct",
+            "slippage_pct",
+            "safety_margin_pct",
+            "risk_discount_pct",
+            "gross_step_pct",
+            "fee_net_edge_pct",
+            "inventory_risk_discount_pct",
+            "execution_risk_discount_pct",
+            "estimated_crossings_per_hour",
+        }
+        return {
+            key: float(value)
+            for key, value in economics.items()
+            if key in supported and isinstance(value, (int, float))
+        }
+
+    def _projected_funding_cost(
+        self,
+        funding_rate: float,
+        next_funding_time: Any,
+        at: datetime,
+    ) -> float:
+        if next_funding_time in (None, ""):
+            return 0.0
+        try:
+            if isinstance(next_funding_time, datetime):
+                settlement = next_funding_time
+            else:
+                settlement = datetime.fromtimestamp(
+                    float(next_funding_time) / 1000.0,
+                    tz=timezone.utc,
+                )
+            if settlement.tzinfo is None:
+                settlement = settlement.replace(tzinfo=timezone.utc)
+            settlement = settlement.astimezone(timezone.utc)
+            window = self.scheduler.classify_window(at)
+            force_close_at = getattr(window, "force_close_at", None)
+            if force_close_at is None:
+                return 0.0
+            force_close_utc = force_close_at.astimezone(timezone.utc)
+            at_utc = at.astimezone(timezone.utc)
+            if at_utc < settlement <= force_close_utc:
+                return abs(float(funding_rate))
+        except (AttributeError, TypeError, ValueError, OSError):
+            return 0.0
+        return 0.0
+
+    def _persist_regime_decision(
+        self,
+        symbol: str,
+        decision: RegimeDecision,
+        source_time: datetime,
+        *,
+        session_id: int | None = None,
+    ) -> None:
+        active = self.active_sessions.get(symbol)
+        resolved_session_id = session_id if session_id is not None else (
+            active.session_id if active else None
+        )
+        feature_snapshot_id = self.repository.create_feature_snapshot(
+            session_id=resolved_session_id,
+            symbol=symbol,
+            as_of_time=decision.as_of,
+            source_time=source_time,
+            features=asdict(decision.features),
+            feature_version=decision.feature_version,
+        )
+        self.repository.create_regime_decision(
+            session_id=resolved_session_id,
+            symbol=symbol,
+            as_of_time=decision.as_of,
+            state=decision.state,
+            verdict=decision.verdict,
+            grid_score=decision.grid_score,
+            threshold_used=decision.threshold_used,
+            allowed=decision.allowed,
+            reasons=decision.reasons,
+            hard_blocks=decision.hard_blocks,
+            component_scores=decision.component_scores,
+            cost_breakdown=decision.cost_breakdown,
+            effective_weights=decision.effective_weights,
+            score_contributions=decision.score_contributions,
+            event_source_available=decision.event_source_available,
+            model_version=decision.model_version,
+            feature_snapshot_id=feature_snapshot_id,
+        )
+        self.repository.append_event(
+            "REGIME_CHANGED",
+            decision.as_of,
+            {
+                "state": decision.state,
+                "verdict": decision.verdict,
+                "grid_score": decision.grid_score,
+                "threshold_used": decision.threshold_used,
+                "allowed": decision.allowed,
+                "reasons": decision.reasons,
+                "hard_blocks": decision.hard_blocks,
+                "cost_breakdown": decision.cost_breakdown,
+            },
+            session_id=resolved_session_id,
+            symbol=symbol,
+        )
+
+    def _entry_max_price_drift_pct(self) -> float:
+        raw = getattr(self, "_entry_config", None)
+        if isinstance(raw, dict):
+            try:
+                return max(0.0, float(raw.get("max_price_drift_pct", 0.002)))
+            except (TypeError, ValueError):
+                return 0.002
+        return 0.002
+
+    def _entry_revalidate_before_place(self) -> bool:
+        raw = getattr(self, "_entry_config", None)
+        if isinstance(raw, dict):
+            return bool(raw.get("revalidate_before_place", True))
+        return True
+
+    async def _revalidate_entry_price(self, symbol: str, planned_price: float, at: datetime) -> float:
+        if not self._entry_revalidate_before_place():
+            return planned_price
+        if not self.scheduler.is_in_window(at) or self.scheduler.should_force_close(at):
+            raise GridCalculationError("WINDOW_NOT_ALLOWED: 下单前窗口已失效")
+        ticker = await self.exchange.get_24h_ticker(symbol)
+        live_price = _ticker_last_price(ticker)
+        if planned_price <= 0:
+            raise GridCalculationError("planned price invalid")
+        drift = abs(live_price - planned_price) / planned_price
+        max_drift = self._entry_max_price_drift_pct()
+        if drift > max_drift:
+            raise GridCalculationError(
+                f"PRICE_DRIFT: 当前价相对规划价漂移 {drift:.4%} 超过 {max_drift:.4%}"
+            )
+        return live_price
 
     async def _start_round_session(
         self,
@@ -932,6 +1504,8 @@ class TradingController:
     ) -> bool:
         if self.current_window_id is None or symbol in self.round_stopped_symbols:
             return False
+        direction_mode = self._direction_mode_for_symbol(symbol)
+        params = replace(params, direction_mode=direction_mode)
         entry_risk = self.risk.can_open_new_symbol(
             list(self.active_sessions.values()),
             self.config.capital_per_symbol,
@@ -959,7 +1533,35 @@ class TradingController:
             )
             if entry_risk.action == RiskAction.HALT_WINDOW:
                 self.round_stopping = True
+            self.repository.upsert_round_candidate(
+                self.current_window_id,
+                symbol,
+                at,
+                stage="blocked_risk",
+                threshold_met=False,
+                error=entry_risk.reason,
+            )
             return False
+        try:
+            live_price = await self._revalidate_entry_price(symbol, current_price, at)
+        except Exception as exc:
+            self.repository.upsert_round_candidate(
+                self.current_window_id,
+                symbol,
+                at,
+                stage="blocked_price_drift" if "PRICE_DRIFT" in str(exc) else "error",
+                threshold_met=False,
+                error=str(exc),
+            )
+            self.repository.log_system(
+                "WARN",
+                "startup_entry",
+                "Entry revalidation blocked grid start.",
+                f"symbol={symbol}, reason={exc}",
+                at,
+            )
+            return False
+        self.repository.mark_round_candidate_stage(self.current_window_id, symbol, "planning", at)
         session_id = self.repository.create_session(
             self.current_window_id,
             symbol,
@@ -967,6 +1569,7 @@ class TradingController:
             self.config.capital_per_symbol,
             self.config.leverage,
             at,
+            direction_mode,
         )
         self.state_machine.transition(symbol, GridState.OBSERVING, "round_candidate_eligible", at=at)
         self.repository.log_state(
@@ -984,9 +1587,12 @@ class TradingController:
             leverage=self.config.leverage,
             open_time=at,
             state_entered_at=at,
+            direction_mode=direction_mode,
         )
+        self.repository.mark_round_candidate_stage(self.current_window_id, symbol, "placing_orders", at, session_id)
         try:
-            await self.engine.start(session, current_price)
+            await self.engine.start(session, live_price)
+            self._persist_seed_execution(session, at)
         except Exception as exc:
             self._persist_session_orders(session)
             self.active_sessions[symbol] = session
@@ -1043,6 +1649,7 @@ class TradingController:
         self.current_window_id = None
         self.round_active = False
         self.round_stopping = False
+        self._last_round_scan_bar_at = None
         self._next_round_scan_at = None
         return closed
 
@@ -1050,6 +1657,7 @@ class TradingController:
         draft = self.repository.strategy_config_draft()
         if not draft:
             return self.observer.observer_config, self.grid_config, self.config.max_concurrent
+
         try:
             volatility_method = str(draft.get("volatility_method", self.grid_config.range_method)).strip().lower()
             if volatility_method not in SUPPORTED_RANGE_METHODS:
@@ -1118,6 +1726,17 @@ class TradingController:
             ),
             max_concurrent,
         )
+
+    def _direction_mode_for_symbol(self, symbol: str) -> GridDirectionMode:
+        normalized = str(symbol).strip().upper()
+        draft = self.repository.strategy_config_draft() or {}
+        raw_mode = draft.get("direction_mode", self.config.direction_mode.value)
+        raw_overrides = draft.get("direction_overrides", self.config.direction_overrides)
+        overrides = raw_overrides if isinstance(raw_overrides, dict) else {}
+        selected = overrides.get(normalized, raw_mode)
+        if isinstance(selected, GridDirectionMode):
+            return selected
+        return GridDirectionMode(str(selected).strip().upper())
 
     def _effective_scan_candidate_count(self, max_concurrent: int) -> int:
         draft = self.repository.strategy_config_draft() or {}
@@ -1324,6 +1943,13 @@ class TradingController:
                 continue
             checked = True
             self._last_maker_fee_by_symbol[symbol] = maker_fee
+            try:
+                self._last_taker_fee_by_symbol[symbol] = _non_negative_float(
+                    commission.get("taker", 0.0),
+                    "taker",
+                )
+            except ValueError:
+                self._last_taker_fee_by_symbol[symbol] = 0.0
             if maker_fee > self.config.max_maker_fee_rate:
                 self.repository.log_system(
                     "WARN",
@@ -1588,6 +2214,21 @@ class TradingController:
         if partial_order is None:
             await self._close_session(session, "部分成交订单无法匹配本地网格，执行安全平仓。", event_time)
             return
+        local_order_qty = partial_order.qty
+        if (
+            confirmed_summary is not None
+            and confirmed_summary["qty"] + _fill_qty_tolerance(local_order_qty) >= local_order_qty
+        ):
+            await self._continue_after_reconciled_partial_fill(
+                session,
+                partial_order,
+                event,
+                order_id,
+                confirmed_summary,
+                event_time,
+                reconciliation="成交明细已确认完全成交，跳过撤单。",
+            )
+            return
         try:
             cancel_response = await self.exchange.cancel_order(session.symbol, partial_order.order_id)
             cancel_executed_qty = _non_negative_float(
@@ -1605,34 +2246,36 @@ class TradingController:
             )
             if final_summary is None or final_summary["qty"] > partial_order.qty + 1e-12:
                 raise ValueError("撤单后无法取得有效累计成交明细")
-            partial_order.qty = final_summary["qty"]
-            final_event = {
-                **event,
-                "status": "FILLED",
-                "price": final_summary["price"],
-                "qty": final_summary["qty"],
-                "fee": final_summary["fee"],
-                "realized_pnl": final_summary["realized_pnl"],
-                "trade_time": final_summary["trade_time"],
-            }
-            self.repository.log_system(
-                "INFO",
-                "partial_fill",
-                "Partial fill remainder cancelled; continuing grid with final filled quantity.",
-                json.dumps(
-                    {
-                        "session_id": session.session_id,
-                        "symbol": session.symbol,
-                        "order_id": order_id,
-                        "final_qty": final_summary["qty"],
-                        "final_price": final_summary["price"],
-                    },
-                    ensure_ascii=False,
-                ),
+            await self._continue_after_reconciled_partial_fill(
+                session,
+                partial_order,
+                event,
+                order_id,
+                final_summary,
                 event_time,
+                reconciliation="剩余委托已撤销，按最终累计成交量继续网格。",
             )
-            await self._handle_order_filled_event_locked(final_event)
         except Exception as exc:
+            if _is_unknown_order_cancel_error(exc):
+                reconciled = await self._reconcile_unknown_partial_cancel(
+                    session,
+                    partial_order,
+                    order_id,
+                )
+                if reconciled is not None:
+                    await self._continue_after_reconciled_partial_fill(
+                        session,
+                        partial_order,
+                        event,
+                        order_id,
+                        reconciled["summary"],
+                        event_time,
+                        reconciliation=(
+                            "撤单返回 -2011；已通过订单与成交明细完成对账，"
+                            f"最终状态 {reconciled['status']}。"
+                        ),
+                    )
+                    return
             latest_summary = await self._load_order_trade_summary(session.symbol, order_id, attempts=3)
             if latest_summary is not None and (
                 confirmed_summary is None or latest_summary["qty"] > confirmed_summary["qty"]
@@ -1648,6 +2291,82 @@ class TradingController:
                 event_time,
             )
             await self._close_session(session, "部分成交撤单或累计成交对账失败，执行安全平仓。", event_time)
+
+    async def _continue_after_reconciled_partial_fill(
+        self,
+        session: SymbolSession,
+        order: GridOrder,
+        event: dict[str, Any],
+        order_id: str,
+        summary: dict[str, Any],
+        event_time: datetime,
+        *,
+        reconciliation: str,
+    ) -> None:
+        order.qty = float(summary["qty"])
+        final_event = {
+            **event,
+            "status": "FILLED",
+            "price": summary["price"],
+            "qty": summary["qty"],
+            "fee": summary["fee"],
+            "realized_pnl": summary["realized_pnl"],
+            "trade_time": summary["trade_time"],
+        }
+        self.repository.log_system(
+            "INFO",
+            "partial_fill",
+            "Partial fill reconciled; continuing grid with confirmed quantity.",
+            json.dumps(
+                {
+                    "session_id": session.session_id,
+                    "symbol": session.symbol,
+                    "order_id": order_id,
+                    "final_qty": summary["qty"],
+                    "final_price": summary["price"],
+                    "reconciliation": reconciliation,
+                    "recoverable": True,
+                },
+                ensure_ascii=False,
+            ),
+            event_time,
+        )
+        await self._handle_order_filled_event_locked(final_event)
+
+    async def _reconcile_unknown_partial_cancel(
+        self,
+        session: SymbolSession,
+        order: GridOrder,
+        order_id: str,
+    ) -> dict[str, Any] | None:
+        order_snapshot: dict[str, Any] = {}
+        try:
+            order_snapshot = await self.exchange.get_order(
+                session.symbol,
+                order_id,
+                order.client_id,
+            )
+        except Exception:
+            order_snapshot = {}
+        summary = await self._load_order_trade_summary(
+            session.symbol,
+            order_id,
+            attempts=5,
+        )
+        if summary is None:
+            return None
+        tolerance = _fill_qty_tolerance(order.qty)
+        if summary["qty"] > order.qty + tolerance:
+            return None
+        status = str(order_snapshot.get("status") or "UNKNOWN").upper()
+        fully_filled = summary["qty"] + tolerance >= order.qty
+        terminal_partial = status in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED"}
+        if not fully_filled and not terminal_partial:
+            return None
+        return {
+            "status": "FILLED" if fully_filled else status,
+            "summary": summary,
+        }
 
     async def _handle_stop_order_filled_event(self, session: SymbolSession, event: dict[str, Any]) -> None:
         trade_time = event.get("trade_time")
@@ -1760,8 +2479,8 @@ class TradingController:
                 last_kline_close_at=close_time.isoformat(),
                 data_stale=False,
             )
-        await self.scan_round_once(close_time)
-        return "scanned"
+        result = await self.scan_round_once(close_time, trigger_close_at=close_time)
+        return "coalesced" if result.status == "scan_coalesced" else "scanned"
 
     def market_stream_symbols(self) -> list[str]:
         return sorted(self.round_candidate_symbols | set(self.active_sessions))
@@ -1926,26 +2645,35 @@ class TradingController:
                 actions.append((symbol, reconcile_action))
                 await self._close_session(session, "持仓对账异常，强制同步平仓。", current_time)
                 continue
-            regrid_action = await self._recalculate_session_grid_if_due(session, current_time)
-            if regrid_action is not None:
-                actions.append((symbol, regrid_action))
-                if regrid_action != "rolling_regrid_skipped":
-                    continue
+            if session.state != GridState.DEFENSIVE:
+                regrid_action = await self._recalculate_session_grid_if_due(session, current_time)
+                if regrid_action is not None:
+                    actions.append((symbol, regrid_action))
+                    if regrid_action != "rolling_regrid_skipped":
+                        continue
             await self._refresh_session_current_volatility_if_due(session, current_time)
             last_price = await self._current_price(symbol)
             regime_decision = self._regime_by_symbol.get(symbol)
-            if (
-                self.feature_flags.regime_v2
-                and regime_decision is not None
-                and not regime_decision.allowed
-            ):
-                await self._enter_cooldown(
+            if self.feature_flags.regime_v2 and regime_decision is not None:
+                should_cooldown, retention_reason = self._update_regime_retention(
                     session,
-                    f"Regime 已不适合网格: {regime_decision.state}",
-                    current_time,
+                    regime_decision,
                 )
-                actions.append((symbol, RiskAction.COOLDOWN.value))
-                continue
+                if should_cooldown:
+                    if regime_decision.verdict == "BLOCKED_SCORE":
+                        await self._enter_defensive(session, retention_reason, current_time)
+                        actions.append((symbol, RiskAction.DEFEND.value))
+                    else:
+                        await self._close_session(
+                            session,
+                            f"Regime 硬性阻断: {retention_reason}",
+                            current_time,
+                        )
+                        actions.append((symbol, RiskAction.CLOSE.value))
+                    continue
+                if session.state == GridState.DEFENSIVE and regime_decision.allowed:
+                    if await self._recover_from_defensive(session, current_time):
+                        actions.append((symbol, "defensive_recovered"))
 
             inventory_snapshot: InventorySnapshot | None = None
             if self.feature_flags.inventory_manager:
@@ -2105,6 +2833,13 @@ class TradingController:
                 }
             )
             self._last_maker_fee_by_symbol[symbol] = maker_fee
+            try:
+                self._last_taker_fee_by_symbol[symbol] = _non_negative_float(
+                    commission.get("taker", 0.0),
+                    "taker",
+                )
+            except ValueError:
+                self._last_taker_fee_by_symbol[symbol] = 0.0
 
         error_count = sum(1 for item in details if item["status"] == "error")
         warn_count = sum(1 for item in details if item["status"] == "warn")
@@ -2152,6 +2887,9 @@ class TradingController:
                 await sleep_fn(self.config.loop_interval_seconds)
                 continue
 
+            auto_actions = self.bootstrap_auto_entry(current_time)
+            if auto_actions:
+                statuses.extend(auto_actions)
             request = self.repository.round_start_request()
             if request is None:
                 statuses.append("idle_waiting_start")
@@ -2167,6 +2905,40 @@ class TradingController:
             statuses.append(result.status)
             await sleep_fn(self.config.loop_interval_seconds)
         return statuses
+
+    def bootstrap_auto_entry(self, now: datetime | None = None) -> list[str]:
+        current_time = now or datetime.now(timezone.utc)
+        control = self.repository.auto_trading_control()
+        if not isinstance(control, dict) or not bool(control.get("enabled")):
+            return []
+        classify = getattr(self.scheduler, "classify_window", None)
+        if callable(classify):
+            window = classify(current_time)
+            allowed = bool(getattr(window, "allowed", False))
+            window_key = str(getattr(window, "window_key", "") or "")
+            kind = getattr(getattr(window, "kind", None), "value", getattr(window, "kind", ""))
+        else:
+            allowed = bool(self.scheduler.is_in_window(current_time))
+            window_key = f"LEGACY:{current_time.date().isoformat()}"
+            kind = "LEGACY"
+        if not allowed:
+            return [f"auto_waiting_window:{kind}"]
+        runtime = self.repository.runtime_state()
+        runtime_id = str(runtime.get("runtime_id") or "")
+        if not runtime_id:
+            return ["auto_missing_runtime"]
+        request_id = f"auto-round:{self.repository.account_id}:{window_key or kind}"
+        try:
+            _request, created = self.repository.ensure_round_start_request(
+                runtime_id=runtime_id,
+                reason="auto_trading_window",
+                request_id=request_id,
+                window_key=window_key or str(kind),
+                requested_at=current_time,
+            )
+        except Exception as exc:
+            return [f"auto_request_failed:{exc}"]
+        return [f"auto_round_requested:{window_key}" if created else f"auto_round_exists:{window_key}"]
 
     async def process_control_commands_once(
         self,
@@ -2640,6 +3412,9 @@ class TradingController:
                 )
                 self._persist_session_orders(session)
             return
+        if action == RiskAction.DEFEND:
+            await self._enter_defensive(session, reason, at)
+            return
         if action == RiskAction.COOLDOWN:
             await self._enter_cooldown(session, reason, at)
 
@@ -2730,6 +3505,152 @@ class TradingController:
                     long_qty -= order.qty
         return max(0.0, long_qty), max(0.0, short_qty)
 
+    def _update_regime_retention(
+        self,
+        session: SymbolSession,
+        decision: RegimeDecision,
+    ) -> tuple[bool, str]:
+        if (
+            session.last_retention_decision_at is not None
+            and decision.as_of <= session.last_retention_decision_at
+        ):
+            return False, "同一 Regime 快照已经消费。"
+        session.last_retention_decision_at = decision.as_of
+        if decision.allowed:
+            session.soft_breach_count = 0
+            self.repository.update_session_retention(
+                session.session_id,
+                0,
+                decision.as_of,
+            )
+            return False, ""
+        if decision.verdict == "BLOCKED_SCORE":
+            session.soft_breach_count += 1
+            self.repository.update_session_retention(
+                session.session_id,
+                session.soft_breach_count,
+                decision.as_of,
+            )
+            limit = self.regime.config.soft_breach_limit
+            return (
+                session.soft_breach_count >= limit,
+                "Regime 连续软性不达标 "
+                f"{session.soft_breach_count}/{limit}: {decision.state}",
+            )
+        self.repository.update_session_retention(
+            session.session_id,
+            session.soft_breach_count,
+            decision.as_of,
+        )
+        return (
+            True,
+            f"Regime 硬性阻断 {decision.verdict}: {decision.state}",
+        )
+
+    async def _enter_defensive(
+        self,
+        session: SymbolSession,
+        reason: str,
+        at: datetime,
+    ) -> None:
+        if session.state == GridState.DEFENSIVE:
+            return
+        position = await self.exchange.get_position(session.symbol)
+        tolerance = await self._position_tolerance(session.symbol)
+        cancelled = await self.engine.enter_defensive(
+            session,
+            has_inventory=_position_exposure(position) > tolerance,
+        )
+        self._persist_session_orders(session)
+        old_state = session.state
+        session.state = GridState.DEFENSIVE
+        session.state_entered_at = at
+        self.repository.update_session_state(session.session_id, GridState.DEFENSIVE.value)
+        if self.round_active and self.current_window_id is not None:
+            self.repository.mark_round_candidate_stage(
+                self.current_window_id,
+                session.symbol,
+                "defensive",
+                at,
+                session.session_id,
+            )
+        self.state_machine.transition(
+            session.symbol,
+            GridState.DEFENSIVE,
+            "regime_soft_defensive",
+            reason,
+            at,
+        )
+        self.repository.log_state(
+            session.session_id,
+            session.symbol,
+            old_state.value,
+            GridState.DEFENSIVE.value,
+            "regime_soft_defensive",
+            f"{reason}; cancelled_opening_orders={len(cancelled)}",
+            at,
+        )
+
+    async def _recover_from_defensive(
+        self,
+        session: SymbolSession,
+        at: datetime,
+    ) -> bool:
+        if session.state != GridState.DEFENSIVE:
+            return False
+        mismatch = await self._reconcile_active_session_position(session, at)
+        if mismatch is not None:
+            await self._close_session(
+                session,
+                "防御状态恢复前订单或持仓无法对账，执行安全退出。",
+                at,
+            )
+            return False
+        try:
+            restored = await self.engine.restore_defensive_orders(
+                session,
+                client_id_tag=str(int(at.timestamp())),
+            )
+        except Exception as exc:
+            self.repository.log_system(
+                "WARN",
+                "defensive",
+                "Defensive grid restore failed; session remains defensive.",
+                f"session_id={session.session_id}, symbol={session.symbol}, error={exc}",
+                at,
+            )
+            return False
+        self._persist_session_orders(session)
+        old_state = session.state
+        session.state = GridState.RUNNING
+        session.state_entered_at = at
+        self.repository.update_session_state(session.session_id, GridState.RUNNING.value)
+        if self.round_active and self.current_window_id is not None:
+            self.repository.mark_round_candidate_stage(
+                self.current_window_id,
+                session.symbol,
+                "trading",
+                at,
+                session.session_id,
+            )
+        self.state_machine.transition(
+            session.symbol,
+            GridState.RUNNING,
+            "regime_defensive_recovered",
+            f"restored_orders={len(restored)}",
+            at,
+        )
+        self.repository.log_state(
+            session.session_id,
+            session.symbol,
+            old_state.value,
+            GridState.RUNNING.value,
+            "regime_defensive_recovered",
+            f"restored_orders={len(restored)}",
+            at,
+        )
+        return True
+
     async def _enter_cooldown(self, session: SymbolSession, reason: str, at: datetime) -> None:
         close_orders = await self.engine.force_close(session, reason)
         await self._record_force_close_trades(session, close_orders or [], at)
@@ -2774,7 +3695,7 @@ class TradingController:
         decision = self.cooldown.evaluate(
             klines,
             baseline_atr=session.params.baseline_atr,
-            min_step_pct=self.grid_config.min_step_pct,
+            min_step_pct=session.params.step_pct,
             cooldown_started_at=session.state_entered_at,
             now=at,
         )
@@ -2832,64 +3753,106 @@ class TradingController:
 
         regime_decision: RegimeDecision | None = None
         funding_rate = 0.0
+        projected_funding_cost = 0.0
+        prepared_params: GridParams | None = None
         if self.feature_flags.regime_v2 or self.feature_flags.adaptive_grid_v2:
             try:
-                orderbook, funding_rate = await asyncio.gather(
+                orderbook, funding_context = await asyncio.gather(
                     self.exchange.get_orderbook_depth(
                         session.symbol,
                         self.selector.config.depth_levels,
                     ),
-                    self.exchange.get_funding_rate(session.symbol),
+                    self.exchange.get_funding_context(session.symbol),
+                )
+                funding_rate = float(funding_context.get("funding_rate") or 0.0)
+                projected_funding_cost = self._projected_funding_cost(
+                    funding_rate,
+                    funding_context.get("next_funding_time"),
+                    at,
                 )
                 spread_pct, depth_usdt = _orderbook_liquidity(
                     orderbook,
                     self.selector.config.depth_levels,
                 )
+                maker_fee_rate = self._last_maker_fee_by_symbol.get(
+                    session.symbol,
+                    self.config.max_maker_fee_rate,
+                )
+                structural_decision: RegimeDecision | None = None
                 if self.feature_flags.regime_v2:
-                    maker_fee_rate = self._last_maker_fee_by_symbol.get(
-                        session.symbol,
-                        self.config.max_maker_fee_rate,
-                    )
-                    cost_floor_pct = (
-                        max(0.0, maker_fee_rate) * 2
-                        + abs(float(funding_rate))
-                        + self.adaptive_grid.config.adverse_selection_buffer_pct
-                        + self.adaptive_grid.config.slippage_buffer_pct
-                        + self.adaptive_grid.config.safety_margin_pct
-                    )
-                    regime_decision = self.regime.evaluate(
+                    structural_decision = self.regime.evaluate(
                         session.symbol,
                         klines,
                         spread_pct=spread_pct,
                         depth_usdt=depth_usdt,
                         funding_rate=float(funding_rate),
                         data_age_seconds=_kline_data_age_seconds(klines, at),
-                        expected_step_pct=max(self.grid_config.min_step_pct, cost_floor_pct),
-                        cost_floor_pct=cost_floor_pct,
+                        expected_step_pct=self.grid_config.min_step_pct,
+                        cost_floor_pct=0.0,
                         running=False,
+                        include_cost=False,
                         as_of=at,
                     )
-                    self._regime_by_symbol[session.symbol] = regime_decision
-                    feature_snapshot_id = self.repository.create_feature_snapshot(
-                        session_id=session.session_id,
-                        symbol=session.symbol,
-                        as_of_time=regime_decision.as_of,
-                        source_time=at,
-                        features=asdict(regime_decision.features),
-                        feature_version=REGIME_MODEL_VERSION,
+                    if structural_decision.hard_blocks:
+                        self._regime_by_symbol[session.symbol] = structural_decision
+                        self._persist_regime_decision(
+                            session.symbol,
+                            structural_decision,
+                            at,
+                            session_id=session.session_id,
+                        )
+                        return False
+                if self.feature_flags.adaptive_grid_v2:
+                    current_price = await self._current_price(session.symbol)
+                    prepared_params = self.adaptive_grid.generate(
+                        session.symbol,
+                        klines,
+                        current_price=current_price,
+                        funding_rate=funding_rate,
+                        funding_cost_rate=projected_funding_cost,
+                        maker_fee_rate=maker_fee_rate,
+                        regime_score=structural_decision.grid_score if structural_decision else 100.0,
+                        calculated_at=at,
                     )
-                    self.repository.create_regime_decision(
-                        session_id=session.session_id,
+                if self.feature_flags.regime_v2:
+                    if prepared_params is None:
+                        current_price = await self._current_price(session.symbol)
+                        prepared_params = calculate_grid_params(
+                            session.symbol,
+                            klines,
+                            current_price,
+                            projected_funding_cost,
+                            self.grid_config,
+                            calculated_at=at,
+                        )
+                    cost_breakdown = self._grid_cost_breakdown(
+                        maker_fee_rate,
+                        projected_funding_cost,
+                    )
+                    regime_decision = self.regime.evaluate(
                         symbol=session.symbol,
-                        as_of_time=regime_decision.as_of,
-                        state=regime_decision.state,
-                        grid_score=regime_decision.grid_score,
-                        allowed=regime_decision.allowed,
-                        reasons=regime_decision.reasons,
-                        hard_blocks=regime_decision.hard_blocks,
-                        component_scores=regime_decision.component_scores,
-                        model_version=regime_decision.model_version,
-                        feature_snapshot_id=feature_snapshot_id,
+                        klines=klines,
+                        spread_pct=spread_pct,
+                        depth_usdt=depth_usdt,
+                        funding_rate=funding_rate,
+                        data_age_seconds=_kline_data_age_seconds(klines, at),
+                        expected_step_pct=prepared_params.step_pct,
+                        cost_floor_pct=cost_breakdown["total_cost_pct"],
+                        running=False,
+                        cost_breakdown=cost_breakdown,
+                        as_of=at,
+                    )
+                    prepared_params = replace(
+                        prepared_params,
+                        regime_score=regime_decision.grid_score,
+                        cost_floor_pct=cost_breakdown["total_cost_pct"],
+                    )
+                    self._regime_by_symbol[session.symbol] = regime_decision
+                    self._persist_regime_decision(
+                        session.symbol,
+                        regime_decision,
+                        at,
+                        session_id=session.session_id,
                     )
             except Exception as exc:
                 self.repository.log_system(
@@ -2951,16 +3914,20 @@ class TradingController:
 
         current_price = await self._current_price(session.symbol)
         try:
-            if self.feature_flags.adaptive_grid_v2:
+            if prepared_params is not None:
+                params = prepared_params
+            elif self.feature_flags.adaptive_grid_v2:
+                if session.symbol not in self._last_maker_fee_by_symbol:
+                    raise GridCalculationError(
+                        "DATA_COMMISSION_ERROR: 冷却恢复前未取得交易所 Maker 费率。"
+                    )
                 params = self.adaptive_grid.generate(
                     session.symbol,
                     klines,
                     current_price=current_price,
                     funding_rate=float(funding_rate),
-                    maker_fee_rate=self._last_maker_fee_by_symbol.get(
-                        session.symbol,
-                        self.config.max_maker_fee_rate,
-                    ),
+                    funding_cost_rate=projected_funding_cost,
+                    maker_fee_rate=self._last_maker_fee_by_symbol[session.symbol],
                     regime_score=regime_decision.grid_score if regime_decision else 100.0,
                     calculated_at=at,
                 )
@@ -2979,7 +3946,9 @@ class TradingController:
         self._persist_session_orders(session)
         session.state = GridState.RUNNING
         session.state_entered_at = at
+        session.soft_breach_count = 0
         self.repository.update_session_state(session.session_id, GridState.RUNNING.value)
+        self.repository.update_session_soft_breach_count(session.session_id, 0)
         if self.round_active and self.current_window_id is not None:
             self.repository.mark_round_candidate_stage(
                 self.current_window_id, session.symbol, "trading", at, session.session_id
@@ -3282,6 +4251,48 @@ class TradingController:
     def _persist_session_orders(self, session: SymbolSession) -> None:
         self.repository.upsert_orders(session.session_id, session.orders)
 
+    def _persist_seed_execution(self, session: SymbolSession, at: datetime) -> None:
+        if session.seed_qty <= 0 or session.seed_entry_price is None:
+            return
+        session.seed_fee = (
+            session.seed_qty
+            * session.seed_entry_price
+            * self._last_taker_fee_by_symbol.get(session.symbol, 0.0)
+        )
+        self.repository.update_session_seed(
+            session.session_id,
+            position_side=session.seed_position_side,
+            qty=session.seed_qty,
+            entry_price=session.seed_entry_price,
+            slippage_pct=session.seed_slippage_pct,
+            fee=session.seed_fee,
+        )
+        seed_order = next(
+            (
+                order
+                for order in session.orders
+                if order.order_intent.value == "SEED"
+            ),
+            None,
+        )
+        if seed_order is None or self.repository.trade_exists(
+            session.session_id,
+            seed_order.order_id,
+        ):
+            return
+        self.repository.create_trade(
+            session.session_id,
+            session.symbol,
+            seed_order.order_id,
+            seed_order.side.value,
+            session.seed_entry_price,
+            session.seed_qty,
+            seed_order.grid_index,
+            None,
+            seed_order.filled_at or at,
+            fee=session.seed_fee,
+        )
+
     def _persist_session_grid(self, session_id: int, params) -> None:
         self.repository.update_session_grid(
             session_id,
@@ -3543,4 +4554,13 @@ class TradingController:
             json.dumps(detail, ensure_ascii=False),
             at,
         )
+
+
+def _fill_qty_tolerance(order_qty: float) -> float:
+    return max(1e-12, abs(float(order_qty)) * 1e-9)
+
+
+def _is_unknown_order_cancel_error(exc: BaseException) -> bool:
+    detail = str(exc).lower()
+    return "-2011" in detail or "unknown order" in detail
 

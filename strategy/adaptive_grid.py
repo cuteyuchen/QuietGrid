@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, ROUND_FLOOR
 from datetime import datetime, timezone
 from math import exp, floor, isfinite, log, sqrt
 from statistics import pstdev
 from typing import Any
 
-from core.models import GridParams
+from core.models import GridDirectionMode, GridParams
 from strategy.grid_calculator import GridCalculationError, calculate_atr
 
 
-ADAPTIVE_GRID_VERSION = "adaptive-grid-v2.1.0"
+ADAPTIVE_GRID_VERSION = "adaptive-grid-v2.1.2"
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class AdaptiveGridConfig:
     max_step_pct: float = 0.01
     k_atr_step: float = 0.50
     k_sigma_step: float = 0.80
-    min_grid_num: int = 6
+    min_grid_num: int = 3
     max_grid_num: int = 20
     expansion_rate: float = 0.08
     stop_buffer_pct: float = 0.015
@@ -35,6 +36,14 @@ class AdaptiveGridConfig:
     # 区间用 60 窗口、格距用 15 窗口造成的口径不一致（计划 §9.2）。
     horizon_bars: int = 60
     volatility_estimator: str = "ewma"
+
+
+class GridEconomicsError(GridCalculationError):
+    """网格几何可计算，但所有候选都没有正的手续费后边际。"""
+
+    def __init__(self, message: str, *, economics: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.economics = dict(economics or {})
 
 
 class AdaptiveGridGenerator:
@@ -49,8 +58,18 @@ class AdaptiveGridGenerator:
         *,
         current_price: float,
         funding_rate: float,
+        funding_cost_rate: float | None = None,
         maker_fee_rate: float,
         regime_score: float,
+        capital: float | None = None,
+        leverage: float = 1.0,
+        tick_size: float = 0.0,
+        step_size: float = 0.0,
+        min_qty: float = 0.0,
+        min_notional: float = 0.0,
+        direction_mode: GridDirectionMode = GridDirectionMode.NEUTRAL,
+        risk_budget: float | None = None,
+        taker_fee_rate: float = 0.0,
         calculated_at: datetime | None = None,
     ) -> GridParams:
         config = self.config
@@ -61,8 +80,33 @@ class AdaptiveGridGenerator:
         lows = [_positive(row.get("low"), "low") for row in klines]
         price = _positive(current_price, "current_price")
         funding = _finite(funding_rate, "funding_rate")
+        funding_cost = abs(funding) if funding_cost_rate is None else _non_negative(
+            funding_cost_rate,
+            "funding_cost_rate",
+        )
         maker_fee = _non_negative(maker_fee_rate, "maker_fee_rate")
         score = _bounded(regime_score, 0.0, 100.0, "regime_score")
+        sizing_enabled = capital is not None
+        total_notional = (
+            _positive(capital, "capital") * _positive(leverage, "leverage")
+            if sizing_enabled
+            else 0.0
+        )
+        price_tick = _non_negative(tick_size, "tick_size")
+        quantity_step = _non_negative(step_size, "step_size")
+        minimum_qty = _non_negative(min_qty, "min_qty")
+        minimum_notional = _non_negative(min_notional, "min_notional")
+        mode = (
+            direction_mode
+            if isinstance(direction_mode, GridDirectionMode)
+            else GridDirectionMode(str(direction_mode).upper())
+        )
+        session_risk_budget = (
+            _non_negative(risk_budget, "risk_budget")
+            if risk_budget is not None
+            else 0.0
+        )
+        taker_fee = _non_negative(taker_fee_rate, "taker_fee_rate")
 
         center = _ewma(closes, config.center_half_life_minutes)
         atr = calculate_atr(highs, lows, closes, 14)
@@ -82,55 +126,166 @@ class AdaptiveGridGenerator:
         q_low = _quantile(ordered, 0.05)
         q_high = _quantile(ordered, 0.95)
         quantile_band = max(center - q_low, q_high - center) / center
-        half_width_pct = max(
+        base_half_width_pct = max(
             config.k_atr_range * atr_pct,
             config.k_sigma_range * sigma_horizon,
             quantile_band,
-            config.min_step_pct * config.min_grid_num / 2,
+            config.min_step_pct * 1.5,
         )
         regime_multiplier = 0.75 + 0.25 * (score / 100.0)
-        half_width_pct = min(config.max_range_pct / 2, half_width_pct * regime_multiplier)
-        lower = center * (1.0 - half_width_pct)
-        upper = center * (1.0 + half_width_pct)
-        if not lower <= price <= upper:
+        base_half_width_pct *= regime_multiplier
+        price_distance_pct = abs(price / center - 1.0)
+        if price_distance_pct >= config.max_range_pct / 2:
             raise GridCalculationError("当前价格已漂移出自适应网格区间。")
 
-        cost_floor = (
-            maker_fee * 2
-            + abs(funding)
-            + config.adverse_selection_buffer_pct
+        hard_cost = maker_fee * 2 + funding_cost
+        risk_discount = (
+            config.adverse_selection_buffer_pct
             + config.slippage_buffer_pct
             + config.safety_margin_pct
         )
-        step = max(
-            cost_floor,
-            config.k_atr_step * atr_pct,
-            config.k_sigma_step * sigma_per_bar,
-            config.min_step_pct,
+        candidate_half_widths = _candidate_half_widths(
+            base_half_width_pct,
+            price_distance_pct,
+            config.max_range_pct / 2,
         )
-        step = min(step, config.max_step_pct)
-        raw_count = floor(log(upper / lower) / log(1.0 + step))
-        grid_num = min(config.max_grid_num, max(config.min_grid_num, raw_count))
-        grid_prices = _generate_expanding_prices(
-            center,
-            lower,
-            upper,
-            grid_num,
-            config.expansion_rate,
-        )
-        while grid_num > config.min_grid_num and _minimum_step_pct(grid_prices) < cost_floor:
-            grid_num -= 1
-            grid_prices = _generate_expanding_prices(
-                center,
-                lower,
-                upper,
-                grid_num,
-                config.expansion_rate,
+        evaluated: list[dict[str, Any]] = []
+        feasible: list[dict[str, Any]] = []
+        hours = max(len(klines) / 60.0, 1.0 / 60.0)
+        for half_width_pct in candidate_half_widths:
+            lower = center * (1.0 - half_width_pct)
+            upper = center * (1.0 + half_width_pct)
+            if not lower <= price <= upper:
+                continue
+            for grid_num in range(config.min_grid_num, config.max_grid_num + 1):
+                grid_prices = _generate_expanding_prices(
+                    center,
+                    lower,
+                    upper,
+                    grid_num,
+                    config.expansion_rate,
+                )
+                actual_step = _minimum_step_pct(grid_prices)
+                fee_net_edge = actual_step - hard_cost
+                crossings_per_hour = _estimated_crossings_per_hour(
+                    highs,
+                    lows,
+                    grid_prices,
+                    hours=hours,
+                )
+                inventory_penalty = 0.35 + 0.65 * grid_num / config.max_grid_num
+                execution_penalty = 1.0 / max(crossings_per_hour + 1.0, 1.0)
+                inventory_risk_discount = risk_discount * inventory_penalty
+                execution_risk_discount = risk_discount * 0.25 * execution_penalty
+                objective_value = (
+                    crossings_per_hour * fee_net_edge
+                    - inventory_risk_discount
+                    - execution_risk_discount
+                )
+                qty_weights = _decreasing_level_weights(
+                    grid_prices,
+                    center,
+                    config.expansion_rate,
+                )
+                sizing = _candidate_order_sizing(
+                    grid_prices,
+                    qty_weights,
+                    current_price=price,
+                    total_notional=total_notional,
+                    tick_size=price_tick,
+                    step_size=quantity_step,
+                    min_qty=minimum_qty,
+                    min_notional=minimum_notional,
+                    configured_capital=float(capital or 0.0),
+                    leverage=float(leverage),
+                ) if sizing_enabled else {
+                    "planned_order_count": max(0, len(grid_prices) - 1),
+                    "planned_min_order_qty": None,
+                    "planned_min_order_notional": None,
+                    "minimum_order_qty": minimum_qty,
+                    "minimum_order_notional": minimum_notional,
+                    "sizing_rejected_reason": "",
+                }
+                stop_loss_price = lower * (1.0 - config.stop_buffer_pct)
+                upper_stop_loss_price = upper * (1.0 + config.stop_buffer_pct)
+                risk = _candidate_worst_case_risk(
+                    sizing.get("_sized_orders", []),
+                    current_price=price,
+                    lower_stop=stop_loss_price,
+                    upper_stop=upper_stop_loss_price,
+                    direction_mode=mode,
+                    taker_fee_rate=taker_fee,
+                )
+                rejected_reason = ""
+                if actual_step > config.max_step_pct:
+                    rejected_reason = "实际格距超过上限"
+                elif fee_net_edge <= 0:
+                    rejected_reason = "手续费后净边际不为正"
+                elif sizing["sizing_rejected_reason"]:
+                    rejected_reason = str(sizing["sizing_rejected_reason"])
+                elif (
+                    session_risk_budget > 0
+                    and risk["worst_case_stop_loss"] > session_risk_budget
+                ):
+                    rejected_reason = "最坏止损损失超过会话风险预算"
+                candidate = {
+                    "lower": lower,
+                    "upper": upper,
+                    "grid_count": grid_num,
+                    "level_count": grid_num + 1,
+                    "gross_step_pct": actual_step,
+                    "maker_fee_rate": maker_fee,
+                    "maker_round_trip_pct": maker_fee * 2,
+                    "projected_funding_pct": funding_cost,
+                    "hard_cost_pct": hard_cost,
+                    "fee_net_edge_pct": fee_net_edge,
+                    "risk_discount_pct": risk_discount,
+                    "inventory_risk_discount_pct": inventory_risk_discount,
+                    "execution_risk_discount_pct": execution_risk_discount,
+                    "estimated_crossings_per_hour": crossings_per_hour,
+                    "objective_value": objective_value,
+                    "rejected_reason": rejected_reason,
+                    "direction_mode": mode.value,
+                    "risk_budget": session_risk_budget,
+                    "grid_prices": grid_prices,
+                    "qty_weights": qty_weights,
+                    **sizing,
+                    **risk,
+                }
+                evaluated.append(candidate)
+                if not rejected_reason:
+                    feasible.append(candidate)
+
+        if not feasible:
+            best = max(evaluated, key=_candidate_sort_key, default=None)
+            economics = _public_economics(best, len(evaluated))
+            reasons = {
+                str(candidate["rejected_reason"])
+                for candidate in evaluated
+                if candidate["rejected_reason"]
+            }
+            if reasons and all("手续费后净边际" in reason for reason in reasons):
+                message = "没有网格候选具备正的手续费后净边际。"
+            elif reasons and all(
+                "最小下单量" in reason or "最小名义金额" in reason
+                for reason in reasons
+            ):
+                message = "没有网格候选满足交易所最小下单量或最小名义金额。"
+            else:
+                message = "没有网格候选同时满足经济性与交易所下单约束。"
+            raise GridEconomicsError(
+                message,
+                economics=economics,
             )
-        actual_step = _minimum_step_pct(grid_prices)
-        if actual_step < cost_floor:
-            raise GridCalculationError("自适应网格净价差低于成本地板。")
-        qty_weights = _decreasing_level_weights(grid_prices, center, config.expansion_rate)
+
+        selected = max(feasible, key=_candidate_sort_key)
+        lower = float(selected["lower"])
+        upper = float(selected["upper"])
+        grid_num = int(selected["grid_count"])
+        grid_prices = list(selected["grid_prices"])
+        actual_step = float(selected["gross_step_pct"])
+        economics = _public_economics(selected, len(evaluated))
+        qty_weights = tuple(float(value) for value in selected["qty_weights"])
         return GridParams(
             symbol=str(symbol).strip().upper(),
             upper=upper,
@@ -148,10 +303,210 @@ class AdaptiveGridGenerator:
             upper_stop_loss_price=upper * (1.0 + config.stop_buffer_pct),
             grid_mode="adaptive_v2",
             regime_score=score,
-            cost_floor_pct=cost_floor,
+            cost_floor_pct=hard_cost,
             qty_weights=qty_weights,
             parameter_version=ADAPTIVE_GRID_VERSION,
+            economics=economics,
+            direction_mode=mode,
         )
+
+
+def _candidate_half_widths(base: float, price_distance: float, maximum: float) -> list[float]:
+    minimum = max(price_distance * 1.05, 1e-9)
+    raw = [
+        max(minimum, base * multiplier)
+        for multiplier in (0.75, 1.0, 1.25, 1.5, 2.0)
+    ]
+    raw.append(maximum)
+    return sorted({min(maximum, value) for value in raw if min(maximum, value) >= minimum})
+
+
+def _estimated_crossings_per_hour(
+    highs: list[float],
+    lows: list[float],
+    prices: list[float],
+    *,
+    hours: float,
+) -> float:
+    internal_levels = prices[1:-1]
+    if not internal_levels:
+        return 0.0
+    crossings = sum(
+        1
+        for high, low in zip(highs, lows)
+        for level in internal_levels
+        if low <= level <= high
+    )
+    return crossings / len(internal_levels) / hours
+
+
+def _candidate_sort_key(candidate: dict[str, Any]) -> tuple[float, float, float]:
+    return (
+        float(candidate["objective_value"]),
+        float(candidate["fee_net_edge_pct"]),
+        -float(candidate["grid_count"]),
+    )
+
+
+def _public_economics(candidate: dict[str, Any] | None, evaluated_count: int) -> dict[str, Any]:
+    if candidate is None:
+        return {"evaluated_candidates": evaluated_count}
+    return {
+        key: value
+        for key, value in candidate.items()
+        if key not in {"grid_prices", "qty_weights", "_sized_orders"}
+    } | {"evaluated_candidates": evaluated_count}
+
+
+def _candidate_order_sizing(
+    grid_prices: list[float],
+    qty_weights: tuple[float, ...],
+    *,
+    current_price: float,
+    total_notional: float,
+    tick_size: float,
+    step_size: float,
+    min_qty: float,
+    min_notional: float,
+    configured_capital: float,
+    leverage: float,
+) -> dict[str, Any]:
+    order_levels = [
+        (index, _round_to_step(price, tick_size))
+        for index, price in enumerate(grid_prices)
+        if price != current_price
+    ]
+    selected_weight = sum(qty_weights[index] for index, _price in order_levels)
+    if not order_levels or selected_weight <= 0:
+        return {
+            "planned_order_count": 0,
+            "planned_min_order_qty": 0.0,
+            "planned_min_order_notional": 0.0,
+            "minimum_order_qty": min_qty,
+            "minimum_order_notional": min_notional,
+            "configured_capital": configured_capital,
+            "minimum_required_capital": 0.0,
+            "_sized_orders": [],
+            "sizing_rejected_reason": "网格没有可提交的订单层",
+        }
+    sized_orders = [
+        (
+            price,
+            _round_to_step(
+                total_notional * (qty_weights[index] / selected_weight) / price,
+                step_size,
+            ),
+        )
+        for index, price in order_levels
+    ]
+    quantities = [qty for _price, qty in sized_orders]
+    notionals = [price * qty for price, qty in sized_orders]
+    rejected_reason = ""
+    if any(qty <= 0 or qty < min_qty for qty in quantities):
+        rejected_reason = "每格下单量小于交易所最小下单量"
+    elif min_notional > 0 and any(notional < min_notional for notional in notionals):
+        rejected_reason = "每格名义金额小于交易所最小名义金额"
+    minimum_required_capital = 0.0
+    if configured_capital > 0 and leverage > 0:
+        required_scales = [1.0]
+        if min_qty > 0:
+            required_scales.extend(
+                min_qty / qty
+                for qty in quantities
+                if qty > 0
+            )
+        if min_notional > 0:
+            required_scales.extend(
+                min_notional / notional
+                for notional in notionals
+                if notional > 0
+            )
+        minimum_required_capital = configured_capital * max(required_scales)
+    return {
+        "planned_order_count": len(sized_orders),
+        "planned_min_order_qty": min(quantities),
+        "planned_min_order_notional": min(notionals),
+        "minimum_order_qty": min_qty,
+        "minimum_order_notional": min_notional,
+        "configured_capital": configured_capital,
+        "minimum_required_capital": minimum_required_capital,
+        "_sized_orders": [
+            {
+                "index": index,
+                "price": price,
+                "qty": qty,
+                "side": "BUY" if price < current_price else "SELL",
+            }
+            for (index, _rounded_price), (price, qty) in zip(order_levels, sized_orders)
+        ],
+        "sizing_rejected_reason": rejected_reason,
+    }
+
+
+def _candidate_worst_case_risk(
+    sized_orders: list[dict[str, Any]],
+    *,
+    current_price: float,
+    lower_stop: float,
+    upper_stop: float,
+    direction_mode: GridDirectionMode,
+    taker_fee_rate: float,
+) -> dict[str, float]:
+    buys = [order for order in sized_orders if order["side"] == "BUY"]
+    sells = [order for order in sized_orders if order["side"] == "SELL"]
+    buy_qty = sum(float(order["qty"]) for order in buys)
+    sell_qty = sum(float(order["qty"]) for order in sells)
+    seed_qty = 0.0
+    seed_fee = 0.0
+    long_loss = 0.0
+    short_loss = 0.0
+    if direction_mode == GridDirectionMode.LONG:
+        seed_qty = sell_qty
+        seed_fee = seed_qty * current_price * taker_fee_rate
+        long_loss = seed_qty * max(0.0, current_price - lower_stop)
+        long_loss += sum(
+            float(order["qty"]) * max(0.0, float(order["price"]) - lower_stop)
+            for order in buys
+        )
+        close_fee = (seed_qty + buy_qty) * lower_stop * taker_fee_rate
+    elif direction_mode == GridDirectionMode.SHORT:
+        seed_qty = buy_qty
+        seed_fee = seed_qty * current_price * taker_fee_rate
+        short_loss = seed_qty * max(0.0, upper_stop - current_price)
+        short_loss += sum(
+            float(order["qty"]) * max(0.0, upper_stop - float(order["price"]))
+            for order in sells
+        )
+        close_fee = (seed_qty + sell_qty) * upper_stop * taker_fee_rate
+    else:
+        long_loss = sum(
+            float(order["qty"]) * max(0.0, float(order["price"]) - lower_stop)
+            for order in buys
+        )
+        short_loss = sum(
+            float(order["qty"]) * max(0.0, upper_stop - float(order["price"]))
+            for order in sells
+        )
+        close_fee = (
+            buy_qty * lower_stop + sell_qty * upper_stop
+        ) * taker_fee_rate
+    return {
+        "seed_qty": seed_qty,
+        "estimated_seed_fee": seed_fee,
+        "estimated_close_fee": close_fee,
+        "worst_long_loss": long_loss,
+        "worst_short_loss": short_loss,
+        "worst_case_stop_loss": long_loss + short_loss + seed_fee + close_fee,
+    }
+
+
+def _round_to_step(value: float, step: float) -> float:
+    if step <= 0:
+        return value
+    value_decimal = Decimal(str(value))
+    step_decimal = Decimal(str(step))
+    units = (value_decimal / step_decimal).to_integral_value(rounding=ROUND_FLOOR)
+    return float(units * step_decimal)
 
 
 def _generate_expanding_prices(

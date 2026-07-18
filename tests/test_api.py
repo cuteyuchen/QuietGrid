@@ -1017,13 +1017,14 @@ def test_trader_process_status_uses_systemd_when_available(monkeypatch, tmp_path
 
     body = client.get("/api/process/trader").json()
 
-    assert body == {
-        "available": True,
-        "mode": "systemd",
-        "service": "quietgrid-trader",
-        "state": "running",
-        "detail": "active",
-    }
+    assert body["available"] is True
+    assert body["mode"] == "systemd"
+    assert body["service"] == "quietgrid-trader"
+    assert body["state"] == "running"
+    assert body["detail"] == "active"
+    assert body["process_control_available"] is True
+    assert body["process_state"] == "OFFLINE"
+    assert body["alive"] is False
 
 
 def test_trader_process_stop_action_runs_systemctl_with_audit(monkeypatch, tmp_path) -> None:

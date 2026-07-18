@@ -79,17 +79,17 @@ class RiskManager:
 
         if session.params is not None:
             if last_price <= session.params.stop_loss_price:
-                return RiskDecision(RiskAction.CLOSE, "价格跌破动态止损线。", 3)
+                return RiskDecision(RiskAction.COOLDOWN, "价格跌破区间外硬止损线。", 3)
             upper_stop_loss_price = (
                 session.params.upper_stop_loss_price
                 or session.params.upper * (1 + _stop_buffer_pct(session.params.lower, session.params.stop_loss_price))
             )
             if last_price >= upper_stop_loss_price:
-                return RiskDecision(RiskAction.CLOSE, "价格突破上方动态止损线。", 3)
+                return RiskDecision(RiskAction.COOLDOWN, "价格突破区间外硬止损线。", 3)
 
-        if session.state == GridState.RUNNING and session.params is not None:
+        if session.state in {GridState.RUNNING, GridState.DEFENSIVE} and session.params is not None:
             if last_price < session.params.lower or last_price > session.params.upper:
-                return RiskDecision(RiskAction.COOLDOWN, "价格击穿网格区间。", 4)
+                return RiskDecision(RiskAction.DEFEND, "价格离开普通网格区间，进入防御模式。", 4)
 
         return RiskDecision(RiskAction.NONE, "未触发风控。", 99)
 

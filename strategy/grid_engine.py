@@ -7,7 +7,14 @@ from decimal import Decimal, ROUND_FLOOR
 from math import floor, isfinite
 from typing import Callable
 
-from core.models import GridOrder, OrderSide, OrderStatus, SymbolSession
+from core.models import (
+    GridDirectionMode,
+    GridOrder,
+    OrderIntent,
+    OrderSide,
+    OrderStatus,
+    SymbolSession,
+)
 from exchange.base import ExchangeClient
 
 
@@ -15,6 +22,7 @@ from exchange.base import ExchangeClient
 class GridEngineConfig:
     qty_precision: int = 6
     price_precision: int = 6
+    seed_max_slippage_pct: float = 0.002
 
 
 @dataclass(frozen=True)
@@ -105,9 +113,24 @@ class GridEngine:
         await self.exchange.set_leverage(session.symbol, session.leverage)
 
         created: list[GridOrder] = []
+        if session.direction_mode != GridDirectionMode.NEUTRAL:
+            seed_order = await self._establish_seed_position(
+                session,
+                sized_order_specs,
+                current_price=current_price,
+                step_size=step_size,
+                min_qty=min_qty,
+                min_notional=min_notional,
+            )
+            session.orders.append(seed_order)
         for index, side, price, qty in sized_order_specs:
             tag = f"-{client_id_tag}" if client_id_tag else ""
             client_id = f"qg-{session.session_id}{tag}-{index}-{side.value.lower()}"
+            position_side, order_intent, entry_price = _initial_order_metadata(
+                session.direction_mode,
+                side,
+                session.seed_entry_price,
+            )
             try:
                 response = await self._place_limit_order_post_only_reconciled(
                     session.symbol,
@@ -115,7 +138,7 @@ class GridEngine:
                     price,
                     qty,
                     client_id,
-                    position_side=_initial_grid_position_side(side),
+                    position_side=position_side,
                 )
                 order_id = _response_order_id(response, client_id)
             except Exception as exc:
@@ -146,6 +169,9 @@ class GridEngine:
                 qty=qty,
                 status=OrderStatus.OPEN,
                 created_at=datetime.now(timezone.utc),
+                entry_price=entry_price,
+                position_side=position_side,
+                order_intent=order_intent,
             )
             created.append(order)
 
@@ -156,18 +182,18 @@ class GridEngine:
         if not place_protection:
             return created
         try:
-            await self._place_stop_protection_side(
-                session,
-                "long",
-                tick_size,
-                f"qg-{session.session_id}-stop-long",
-            )
-            await self._place_stop_protection_side(
-                session,
-                "short",
-                tick_size,
-                f"qg-{session.session_id}-stop-short",
-            )
+            protection_sides = {
+                GridDirectionMode.LONG: ("long",),
+                GridDirectionMode.SHORT: ("short",),
+                GridDirectionMode.NEUTRAL: ("long", "short"),
+            }[session.direction_mode]
+            for protection_side in protection_sides:
+                await self._place_stop_protection_side(
+                    session,
+                    protection_side,
+                    tick_size,
+                    f"qg-{session.session_id}-stop-{protection_side}",
+                )
         except Exception as exc:
             if _is_stop_requires_open_position(exc):
                 self._log_force_close_warning(
@@ -191,6 +217,83 @@ class GridEngine:
 
         return created
 
+    async def _establish_seed_position(
+        self,
+        session: SymbolSession,
+        order_specs: list[tuple[int, OrderSide, float, float]],
+        *,
+        current_price: float,
+        step_size: float,
+        min_qty: float,
+        min_notional: float,
+    ) -> GridOrder:
+        if session.direction_mode == GridDirectionMode.LONG:
+            seed_side = OrderSide.BUY
+            position_side = "LONG"
+            reduce_side = OrderSide.SELL
+        elif session.direction_mode == GridDirectionMode.SHORT:
+            seed_side = OrderSide.SELL
+            position_side = "SHORT"
+            reduce_side = OrderSide.BUY
+        else:
+            raise ValueError("中性网格不应建立种子仓位。")
+
+        seed_qty = self._round_to_step(
+            sum(qty for _index, side, _price, qty in order_specs if side == reduce_side),
+            step_size,
+        )
+        if seed_qty <= 0 or seed_qty < min_qty:
+            raise ValueError("方向网格种子仓位小于交易所最小下单量。")
+        if min_notional > 0 and current_price * seed_qty < min_notional:
+            raise ValueError("方向网格种子仓位小于交易所最小名义金额。")
+
+        client_id = f"qg-{session.session_id}-seed-{position_side.lower()}"
+        response = await self._place_market_order_reconciled(
+            session.symbol,
+            seed_side.value,
+            seed_qty,
+            reduce_only=False,
+            position_side=position_side,
+            client_id=client_id,
+        )
+        order_id = _response_order_id(response, client_id)
+        confirmed = response
+        if (
+            str(response.get("status") or "").upper() != "FILLED"
+            or _exchange_executed_qty(response) + _fill_qty_tolerance(seed_qty) < seed_qty
+        ):
+            confirmed = await self.exchange.get_order(session.symbol, order_id, client_id)
+        executed_qty = _exchange_executed_qty(confirmed)
+        if executed_qty + _fill_qty_tolerance(seed_qty) < seed_qty:
+            raise ValueError("方向网格种子仓位未完全成交，拒绝启动网格。")
+        fill_price = _exchange_order_price(confirmed, 0.0)
+        slippage_pct = abs(fill_price / current_price - 1.0)
+        if slippage_pct > self.config.seed_max_slippage_pct:
+            raise ValueError(
+                "方向网格种子仓位滑点超过上限："
+                f"{slippage_pct:.6f} > {self.config.seed_max_slippage_pct:.6f}"
+            )
+        session.seed_position_side = position_side
+        session.seed_qty = seed_qty
+        session.seed_entry_price = fill_price
+        session.seed_slippage_pct = slippage_pct
+        now = datetime.now(timezone.utc)
+        return GridOrder(
+            symbol=session.symbol,
+            order_id=order_id,
+            client_id=client_id,
+            grid_index=-1,
+            side=seed_side,
+            price=fill_price,
+            qty=seed_qty,
+            status=OrderStatus.FILLED,
+            created_at=now,
+            filled_at=now,
+            fill_price=fill_price,
+            position_side=position_side,
+            order_intent=OrderIntent.SEED,
+        )
+
     async def pause_grid_orders(self, session: SymbolSession) -> list[GridOrder]:
         cancelled = [order for order in session.orders if order.status == OrderStatus.OPEN]
         await self._cancel_grid_orders(session.symbol, cancelled)
@@ -209,11 +312,71 @@ class GridEngine:
             order
             for order in session.orders
             if order.status == OrderStatus.OPEN
-            and order.side == increasing_side
-            and order.entry_price is None
+            and order.order_intent == OrderIntent.OPEN
+            and (
+                order.side == increasing_side
+                or session.direction_mode != GridDirectionMode.NEUTRAL
+            )
         ]
         await self._cancel_grid_orders(session.symbol, cancelled)
         return cancelled
+
+    async def enter_defensive(
+        self,
+        session: SymbolSession,
+        *,
+        has_inventory: bool,
+    ) -> list[GridOrder]:
+        cancelled = [
+            order
+            for order in session.orders
+            if order.status == OrderStatus.OPEN
+            and order.order_intent not in {OrderIntent.PROTECTION, OrderIntent.SEED}
+            and (not has_inventory or order.order_intent == OrderIntent.OPEN)
+        ]
+        await self._cancel_grid_orders(session.symbol, cancelled)
+        return cancelled
+
+    async def restore_defensive_orders(
+        self,
+        session: SymbolSession,
+        *,
+        client_id_tag: str,
+    ) -> list[GridOrder]:
+        restored: list[GridOrder] = []
+        for order in [
+            item
+            for item in session.orders
+            if item.status == OrderStatus.CANCELLED
+            and item.order_intent in {OrderIntent.OPEN, OrderIntent.REDUCE}
+        ]:
+            client_id = f"{order.client_id}-d-{client_id_tag}"
+            response = await self._place_limit_order_post_only_reconciled(
+                session.symbol,
+                order.side.value,
+                order.price,
+                order.qty,
+                client_id,
+                position_side=order.position_side,
+            )
+            restored.append(
+                GridOrder(
+                    symbol=order.symbol,
+                    order_id=_response_order_id(response, client_id),
+                    client_id=client_id,
+                    grid_index=order.grid_index,
+                    side=order.side,
+                    price=order.price,
+                    qty=order.qty,
+                    status=OrderStatus.OPEN,
+                    created_at=datetime.now(timezone.utc),
+                    entry_price=order.entry_price,
+                    position_side=order.position_side,
+                    order_intent=order.order_intent,
+                )
+            )
+        session.orders.extend(restored)
+        return restored
 
     async def _cancel_grid_orders(self, symbol: str, orders: list[GridOrder]) -> None:
         for order in orders:
@@ -483,13 +646,21 @@ class GridEngine:
 
         rules = await self.exchange.get_symbol_rules(session.symbol)
         tick_size = _symbol_rule_positive_float(rules, "tick_size")
+        step_size = _symbol_rule_positive_float(rules, "step_size")
+        min_qty = _symbol_rule_non_negative_float(rules, "min_qty", default=0.0)
+        min_notional = _symbol_rule_non_negative_float(rules, "min_notional", default=0.0)
         price = self._round_to_step(session.params.grid_prices[next_index], tick_size)
+        refill_qty = self._round_to_step(filled_order.qty, step_size)
+        if refill_qty <= 0 or refill_qty < min_qty:
+            raise ValueError("补单数量小于交易所最小下单量。")
+        if min_notional > 0 and price * refill_qty < min_notional:
+            raise ValueError("补单名义金额小于交易所最小名义金额。")
         new_client_id = f"{filled_order.client_id}-re-{next_side.value.lower()}"
         response = await self._place_limit_order_post_only_reconciled(
             session.symbol,
             next_side.value,
             price,
-            filled_order.qty,
+            refill_qty,
             new_client_id,
             position_side=next_position_side,
         )
@@ -501,10 +672,14 @@ class GridEngine:
             grid_index=next_index,
             side=next_side,
             price=price,
-            qty=filled_order.qty,
+            qty=refill_qty,
             status=OrderStatus.OPEN,
             created_at=datetime.now(timezone.utc),
             entry_price=entry_price,
+            position_side=next_position_side,
+            order_intent=(
+                OrderIntent.REDUCE if entry_price is not None else OrderIntent.OPEN
+            ),
         )
         session.orders.append(new_order)
         return new_order
@@ -697,10 +872,34 @@ def _initial_grid_position_side(side: OrderSide) -> str:
     return "LONG" if side == OrderSide.BUY else "SHORT"
 
 
+def _initial_order_metadata(
+    mode: GridDirectionMode,
+    side: OrderSide,
+    seed_entry_price: float | None,
+) -> tuple[str, OrderIntent, float | None]:
+    if mode == GridDirectionMode.LONG:
+        return (
+            "LONG",
+            OrderIntent.OPEN if side == OrderSide.BUY else OrderIntent.REDUCE,
+            None if side == OrderSide.BUY else seed_entry_price,
+        )
+    if mode == GridDirectionMode.SHORT:
+        return (
+            "SHORT",
+            OrderIntent.REDUCE if side == OrderSide.BUY else OrderIntent.OPEN,
+            seed_entry_price if side == OrderSide.BUY else None,
+        )
+    return _initial_grid_position_side(side), OrderIntent.OPEN, None
+
+
 def _refill_grid_position_side(side: OrderSide, entry_price: float | None) -> str:
     if entry_price is None:
         return _initial_grid_position_side(side)
     return "SHORT" if side == OrderSide.BUY else "LONG"
+
+
+def _fill_qty_tolerance(order_qty: float) -> float:
+    return max(1e-12, abs(float(order_qty)) * 1e-9)
 
 
 def _force_close_client_id(session: SymbolSession, side: str, position_side: str | None) -> str:

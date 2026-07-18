@@ -5,6 +5,7 @@ import inspect
 import json
 import re
 import time
+from datetime import datetime, timezone
 from math import isfinite
 from typing import Any, Callable
 
@@ -13,6 +14,31 @@ from exchange.base import ExchangeClient
 
 class _HandlerError(Exception):
     pass
+
+
+async def _notify_stream_lifecycle(
+    handler: Callable[[dict[str, Any]], Any] | None,
+    stream_name: str,
+    state: str,
+    reconnect_count: int,
+    error: str = "",
+) -> None:
+    if handler is None:
+        return
+    payload = {
+        "stream": stream_name,
+        "state": state,
+        "reconnect_count": max(0, int(reconnect_count)),
+        "error": error,
+        "at": datetime.now(timezone.utc),
+    }
+    try:
+        result = handler(payload)
+        if inspect.isawaitable(result):
+            await result
+    except Exception:
+        # 监控通道不能反向打断交易所数据流。
+        return
 
 
 STOP_WORKING_TYPE = "CONTRACT_PRICE"
@@ -270,6 +296,7 @@ class BinanceFuturesClient(ExchangeClient):
             "side": side,
             "type": "MARKET",
             "quantity": qty,
+            "newOrderRespType": "RESULT",
         }
         if sent_reduce_only is not None:
             kwargs["reduceOnly"] = sent_reduce_only
@@ -427,6 +454,10 @@ class BinanceFuturesClient(ExchangeClient):
     async def get_funding_rate(self, symbol: str) -> float:
         response = await self._call(self.client.futures_funding_rate, symbol=symbol, limit=1)
         return _validate_funding_rate_response(response, symbol)
+
+    async def get_funding_context(self, symbol: str) -> dict[str, Any]:
+        response = await self._call(self.client.futures_mark_price, symbol=symbol)
+        return _validate_funding_context_response(response, symbol)
 
     async def get_commission_rate(self, symbol: str) -> dict[str, float]:
         commission_rate = getattr(self.client, "futures_commission_rate", None)
@@ -637,13 +668,18 @@ class BinanceFuturesClient(ExchangeClient):
         socket_factory: Callable[[], Any] | None = None,
         reconnect_delay_seconds: float = 5,
         max_reconnects: int | None = None,
+        lifecycle_handler: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
+        custom_socket = socket_factory is not None
         await self._run_socket_loop(
             socket_factory or self._user_socket,
             parse_order_trade_update,
             handler,
             reconnect_delay_seconds,
             max_reconnects,
+            reconnect_on_clean_close=not custom_socket or max_reconnects is not None,
+            lifecycle_handler=lifecycle_handler,
+            stream_name="user",
         )
 
     async def run_price_stream(
@@ -653,13 +689,18 @@ class BinanceFuturesClient(ExchangeClient):
         socket_factory: Callable[[], Any] | None = None,
         reconnect_delay_seconds: float = 5,
         max_reconnects: int | None = None,
+        lifecycle_handler: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
+        custom_socket = socket_factory is not None
         await self._run_socket_loop(
             socket_factory or (lambda: self._price_socket(symbols)),
             parse_price_update,
             handler,
             reconnect_delay_seconds,
             max_reconnects,
+            reconnect_on_clean_close=not custom_socket or max_reconnects is not None,
+            lifecycle_handler=lifecycle_handler,
+            stream_name="price",
         )
 
     async def run_kline_stream(
@@ -670,13 +711,18 @@ class BinanceFuturesClient(ExchangeClient):
         socket_factory: Callable[[], Any] | None = None,
         reconnect_delay_seconds: float = 5,
         max_reconnects: int | None = None,
+        lifecycle_handler: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
+        custom_socket = socket_factory is not None
         await self._run_socket_loop(
             socket_factory or (lambda: self._kline_socket(symbols, interval)),
             parse_kline_update,
             handler,
             reconnect_delay_seconds,
             max_reconnects,
+            reconnect_on_clean_close=not custom_socket or max_reconnects is not None,
+            lifecycle_handler=lifecycle_handler,
+            stream_name="kline",
         )
 
     async def _run_socket_loop(
@@ -686,26 +732,50 @@ class BinanceFuturesClient(ExchangeClient):
         handler: Callable[[dict[str, Any]], Any],
         reconnect_delay_seconds: float,
         max_reconnects: int | None,
+        *,
+        reconnect_on_clean_close: bool = True,
+        lifecycle_handler: Callable[[dict[str, Any]], Any] | None = None,
+        stream_name: str = "stream",
     ) -> None:
         reconnects = 0
-        while max_reconnects is None or reconnects <= max_reconnects:
+        while True:
             handler_error: Exception | None = None
+            socket_error: Exception | None = None
             try:
-                socket_error: Exception | None = None
+                await _notify_stream_lifecycle(
+                    lifecycle_handler,
+                    stream_name,
+                    "CONNECTING",
+                    reconnects,
+                )
                 socket = socket_factory()
                 try:
                     async with socket as stream:
+                        await _notify_stream_lifecycle(
+                            lifecycle_handler,
+                            stream_name,
+                            "ONLINE",
+                            reconnects,
+                        )
                         while True:
                             try:
                                 message = await stream.recv()
-                            except (asyncio.CancelledError, StopAsyncIteration):
+                            except asyncio.CancelledError:
                                 raise
+                            except StopAsyncIteration:
+                                break
                             except Exception as exc:
                                 socket_error = exc
                                 break
                             event = parser(_decode_socket_message(message))
                             if event is None:
                                 continue
+                            await _notify_stream_lifecycle(
+                                lifecycle_handler,
+                                stream_name,
+                                "MESSAGE",
+                                reconnects,
+                            )
                             try:
                                 result = handler(event)
                                 if inspect.isawaitable(result):
@@ -719,23 +789,52 @@ class BinanceFuturesClient(ExchangeClient):
                     raise
                 if handler_error is not None:
                     raise _HandlerError from handler_error
-                if socket_error is None:
+                if socket_error is None and not reconnect_on_clean_close:
+                    await _notify_stream_lifecycle(
+                        lifecycle_handler,
+                        stream_name,
+                        "STOPPED",
+                        reconnects,
+                    )
                     return
-                reconnects += 1
-                if max_reconnects is not None and reconnects > max_reconnects:
-                    raise socket_error
-                await asyncio.sleep(reconnect_delay_seconds)
             except asyncio.CancelledError:
                 raise
-            except StopAsyncIteration:
-                return
             except _HandlerError as exc:
+                await _notify_stream_lifecycle(
+                    lifecycle_handler,
+                    stream_name,
+                    "FAILED",
+                    reconnects,
+                    str(exc.__cause__ or exc),
+                )
                 raise exc.__cause__ or exc
-            except Exception:
-                reconnects += 1
-                if max_reconnects is not None and reconnects > max_reconnects:
-                    raise
-                await asyncio.sleep(reconnect_delay_seconds)
+            except Exception as exc:
+                socket_error = exc
+
+            await _notify_stream_lifecycle(
+                lifecycle_handler,
+                stream_name,
+                "DEGRADED",
+                reconnects + 1,
+                str(socket_error or "WebSocket 正常关闭，正在重连。"),
+            )
+            if max_reconnects is not None and reconnects >= max_reconnects:
+                if socket_error is not None:
+                    raise socket_error
+                await _notify_stream_lifecycle(
+                    lifecycle_handler,
+                    stream_name,
+                    "STOPPED",
+                    reconnects,
+                )
+                return
+            reconnects += 1
+            delay = min(
+                30.0,
+                max(0.0, float(reconnect_delay_seconds)) * (2 ** min(reconnects - 1, 6)),
+            )
+            if delay > 0:
+                await asyncio.sleep(delay)
 
     def _user_socket(self):
         try:
@@ -1036,6 +1135,26 @@ def _validate_funding_rate_response(response: Any, symbol: str) -> float:
     if echoed_symbol is not None and echoed_symbol != symbol:
         raise ValueError("Binance funding rate response symbol mismatch")
     return _required_float(row, ("fundingRate",), "funding rate")
+
+
+def _validate_funding_context_response(response: Any, symbol: str) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        raise ValueError("Binance funding context response must be an object")
+    echoed_symbol = _non_empty_str_or_none(response.get("symbol"))
+    if echoed_symbol is not None and echoed_symbol != symbol:
+        raise ValueError("Binance funding context response symbol mismatch")
+    rate = _required_float(response, ("lastFundingRate",), "last funding rate")
+    raw_time = response.get("nextFundingTime")
+    try:
+        next_funding_time = int(raw_time) if raw_time not in (None, "") else None
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Binance funding context response invalid next funding time") from exc
+    if next_funding_time is not None and next_funding_time <= 0:
+        raise ValueError("Binance funding context response invalid next funding time")
+    return {
+        "funding_rate": rate,
+        "next_funding_time": next_funding_time,
+    }
 
 
 def _validate_commission_rate_response(response: Any, symbol: str) -> dict[str, Any]:

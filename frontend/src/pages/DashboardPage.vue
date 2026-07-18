@@ -10,7 +10,7 @@ import {
 } from '@lucide/vue'
 import MetricCard from '../components/MetricCard.vue'
 import StatusBadge from '../components/StatusBadge.vue'
-import type { V2DashboardData } from '../api'
+import type { AutoTradingUiState, V2DashboardData } from '../api'
 import type { ConsoleSummary, ControlState, GridSession } from '../mock'
 
 const props = defineProps<{
@@ -18,6 +18,8 @@ const props = defineProps<{
   dashboard: V2DashboardData
   control: ControlState
   sessions: GridSession[]
+  autoTrading: AutoTradingUiState
+  actionBusy: boolean
   loading: boolean
   dataError: string
 }>()
@@ -81,6 +83,15 @@ const status = computed(() => {
       title: `${props.dashboard.activeSessions} 个会话正在运行`,
       text: '系统持续检查市场状态、库存利用率和窗口损失预算。',
       icon: CheckCircle2,
+    }
+  }
+  if (props.autoTrading.enabled) {
+    return {
+      tone: 'info' as const,
+      eyebrow: '自动扫描中',
+      title: '自动交易已开启，正在扫描机会',
+      text: props.dashboard.latestRegime?.reasons[0] || '暂无合适标的属于正常状态；系统会按分钟重新评估。',
+      icon: CirclePause,
     }
   }
   if (props.dashboard.latestRegime?.allowed) {
@@ -182,16 +193,34 @@ function pct(value: number | null | undefined) {
           恢复新开仓
         </button>
         <button
-          v-else-if="dashboard.activeSessions === 0 && dashboard.latestRegime?.allowed"
+          v-if="!control.newEntriesPaused && dashboard.activeSessions === 0 && !autoTrading.enabled"
           class="button button--primary"
+          type="button"
+          :disabled="!autoTrading.canStart || actionBusy"
+          @click="emit('action', 'auto-trading-start')"
+        >
+          {{ autoTrading.transitioning ? '正在启动…' : '启动自动交易' }}
+        </button>
+        <button
+          v-else-if="!control.newEntriesPaused && dashboard.activeSessions === 0 && autoTrading.enabled"
+          class="button button--danger-outline"
+          type="button"
+          :disabled="!autoTrading.canStop || actionBusy"
+          @click="emit('action', 'auto-trading-stop')"
+        >
+          {{ autoTrading.transitioning ? '正在停止…' : '停止自动交易' }}
+        </button>
+        <button
+          v-if="!control.newEntriesPaused && dashboard.activeSessions === 0 && !autoTrading.enabled"
+          class="button button--secondary"
           type="button"
           :disabled="!control.roundStartAvailable"
           @click="emit('action', 'start-round')"
         >
-          启动下一轮
+          启动本轮（高级）
         </button>
         <button
-          v-else-if="!control.newEntriesPaused"
+          v-if="!control.newEntriesPaused && dashboard.activeSessions > 0"
           class="button button--secondary"
           type="button"
           @click="emit('action', 'pause')"

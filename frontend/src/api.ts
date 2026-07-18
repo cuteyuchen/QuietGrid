@@ -76,11 +76,17 @@ type ApiAccountSummary = {
 type ApiV2RegimeDecision = {
   symbol: string
   state: string
+  verdict?: string
   grid_score: number
+  threshold_used?: number | null
   allowed: number | boolean
   reasons?: string[]
   hard_blocks?: string[]
-  component_scores?: Record<string, number>
+  component_scores?: Record<string, number | null>
+  cost_breakdown?: Record<string, number>
+  effective_weights?: Record<string, number>
+  score_contributions?: Record<string, number>
+  event_source_available?: number | boolean
   model_version?: string
   as_of_time?: string
 }
@@ -149,11 +155,17 @@ export type V2RiskPolicy = {
 export type V2RegimeDecision = {
   symbol: string
   state: string
+  verdict: string
   gridScore: number
+  thresholdUsed: number | null
   allowed: boolean
   reasons: string[]
   hardBlocks: string[]
-  componentScores: Record<string, number>
+  componentScores: Record<string, number | null>
+  costBreakdown: Record<string, number>
+  effectiveWeights: Record<string, number>
+  scoreContributions: Record<string, number>
+  eventSourceAvailable: boolean
   modelVersion: string
   asOfTime: string
 }
@@ -613,6 +625,24 @@ type ApiLiquidityCandidate = {
   market_updated_at?: string
   last_kline_close_at?: string
   data_stale?: boolean
+  kline_required_count?: number | null
+  kline_actual_count?: number | null
+  kline_age_seconds?: number | null
+  kline_missing_count?: number | null
+  kline_quality_status?: string
+  regime_score?: number | null
+  regime_allowed?: number | boolean | null
+  block_code?: string
+  market_state?: string
+  verdict?: string
+  soft_breach_count?: number
+  grid_preview?: Record<string, unknown>
+  grid_preview_json?: Record<string, unknown> | string
+  economics?: Record<string, unknown>
+  economics_json?: Record<string, unknown> | string
+  maker_fee_rate?: number | null
+  maker_fee_source?: string
+  maker_fee_checked_at?: string
 }
 
 type ApiSession = {
@@ -621,6 +651,7 @@ type ApiSession = {
   symbol: string
   state: string
   state_label: string
+  soft_breach_count?: number
   upper: number | null
   lower: number | null
   grid_num: number | null
@@ -775,6 +806,19 @@ type ApiTraderProcessState = {
   service: string
   state: string
   detail: string
+  process_state?: string
+  alive?: boolean
+  pid?: number | null
+  runtime_id?: string
+  runtime_state?: string
+  started_at?: string
+  heartbeat_at?: string
+  heartbeat_age_seconds?: number | null
+  uptime_seconds?: number | null
+  last_status?: string
+  last_error?: string
+  process_control_available?: boolean
+  process_control_mode?: string
 }
 
 type ApiStrategySettings = {
@@ -827,8 +871,11 @@ export type ConsoleAction =
   | 'session-pause'
   | 'session-resume'
   | 'environment-verify-readonly'
+  | 'trader-loop-start'
   | 'trader-loop-stop'
   | 'trader-loop-restart'
+  | 'auto-trading-start'
+  | 'auto-trading-stop'
 
 export type ConsoleActionPayload = {
   accountId?: string
@@ -1270,11 +1317,17 @@ function mapV2Regime(value: ApiV2RegimeDecision): V2RegimeDecision {
   return {
     symbol: value.symbol,
     state: value.state,
+    verdict: value.verdict || (Boolean(value.allowed) ? 'ALLOWED' : 'BLOCKED_SCORE'),
     gridScore: Number(value.grid_score || 0),
+    thresholdUsed: value.threshold_used == null ? null : Number(value.threshold_used),
     allowed: Boolean(value.allowed),
     reasons: Array.isArray(value.reasons) ? value.reasons : [],
     hardBlocks: Array.isArray(value.hard_blocks) ? value.hard_blocks : [],
     componentScores: value.component_scores || {},
+    costBreakdown: value.cost_breakdown || {},
+    effectiveWeights: value.effective_weights || {},
+    scoreContributions: value.score_contributions || {},
+    eventSourceAvailable: Boolean(value.event_source_available),
     modelVersion: value.model_version || '',
     asOfTime: value.as_of_time || '',
   }
@@ -1488,6 +1541,141 @@ export function consoleEventsUrl(accountId?: string): string {
   return accountUrl('/api/events', accountId)
 }
 
+export type AutoTradingUiState = {
+  enabled: boolean
+  transitioning: boolean
+  transitionState: string
+  canStart: boolean
+  canStop: boolean
+  blockedReason: string
+  mode?: string
+  requestId?: string
+}
+
+export type CurrentRoundSnapshot = {
+  trader: TraderProcessState
+  autoTrading: AutoTradingUiState
+  window: {
+    kind: string
+    allowed: boolean
+    windowKey: string
+    forceCloseAt: string
+    minutesToForceClose: number | null
+    testnetForceWindow: boolean
+    reason?: string
+  }
+  round: {
+    state: string
+    roundId: number | null
+    lastScanAt: string
+    nextScanAt: string
+    runtimeId: string
+    startRequest: Record<string, unknown> | null
+  }
+  candidates: LiquidityCandidate[]
+  streamHealth: {
+    updatedAt: string
+    streams: Record<string, {
+      state: string
+      reconnectCount: number
+      lastMessageAt: string
+      lastError: string
+      updatedAt: string
+    }>
+  }
+  recentEvents: Array<{ time: string; level: string; module: string; message: string }>
+  risk: { newEntriesPaused: boolean }
+}
+
+export async function getCurrentRound(accountId?: string): Promise<CurrentRoundSnapshot> {
+  const value = await fetchJson<{
+    trader: ApiTraderProcessState
+    auto_trading?: Record<string, unknown>
+    window?: Record<string, unknown>
+    round?: Record<string, unknown>
+    candidates?: ApiLiquidityCandidate[]
+    recent_events?: Array<Record<string, unknown>>
+    risk?: Record<string, unknown>
+    stream_health?: Record<string, unknown>
+  }>(accountUrl('/api/v2/current-round', accountId))
+  return {
+    trader: mapTraderProcessState(value.trader || {
+      available: false,
+      mode: 'unavailable',
+      service: 'quietgrid-trader',
+      state: 'unknown',
+      detail: '',
+    }),
+    autoTrading: {
+      enabled: Boolean(value.auto_trading?.enabled),
+      transitioning: false,
+      transitionState: String(
+        value.auto_trading?.transition_state
+        || (value.auto_trading?.enabled ? 'ENABLED' : 'DISABLED'),
+      ),
+      canStart: Boolean(value.auto_trading?.can_start ?? !value.auto_trading?.enabled),
+      canStop: Boolean(value.auto_trading?.can_stop ?? value.auto_trading?.enabled),
+      blockedReason: String(value.auto_trading?.blocked_reason || ''),
+      mode: String(value.auto_trading?.mode || ''),
+      requestId: String(value.auto_trading?.request_id || ''),
+    },
+    window: {
+      kind: String(value.window?.kind || ''),
+      allowed: Boolean(value.window?.allowed),
+      windowKey: String(value.window?.window_key || ''),
+      forceCloseAt: String(value.window?.force_close_at || ''),
+      minutesToForceClose:
+        value.window?.minutes_to_force_close == null
+          ? null
+          : Number(value.window.minutes_to_force_close),
+      testnetForceWindow: Boolean(value.window?.testnet_force_window),
+      reason: String(value.window?.reason || ''),
+    },
+    round: {
+      state: String(value.round?.state || 'IDLE'),
+      roundId: value.round?.round_id == null ? null : Number(value.round.round_id),
+      lastScanAt: String(value.round?.last_scan_at || ''),
+      nextScanAt: String(value.round?.next_scan_at || ''),
+      runtimeId: String(value.round?.runtime_id || ''),
+      startRequest: (value.round?.start_request as Record<string, unknown> | null) || null,
+    },
+    candidates: (value.candidates || []).map(mapLiquidityCandidate),
+    streamHealth: mapStreamHealth(value.stream_health),
+    recentEvents: (value.recent_events || []).map((row) => ({
+      time: String(row.time || ''),
+      level: String(row.level || ''),
+      module: String(row.module || ''),
+      message: String(row.message || ''),
+    })),
+    risk: {
+      newEntriesPaused: Boolean(value.risk?.new_entries_paused),
+    },
+  }
+}
+
+function mapStreamHealth(value: Record<string, unknown> | undefined): CurrentRoundSnapshot['streamHealth'] {
+  const rawStreams = (
+    value?.streams && typeof value.streams === 'object'
+      ? value.streams
+      : {}
+  ) as Record<string, unknown>
+  const streams: CurrentRoundSnapshot['streamHealth']['streams'] = {}
+  Object.entries(rawStreams).forEach(([name, raw]) => {
+    const item = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+    streams[name] = {
+      state: String(item.state || 'UNKNOWN'),
+      reconnectCount: Math.trunc(unknownNumber(item.reconnect_count)),
+      lastMessageAt: String(item.last_message_at || ''),
+      lastError: String(item.last_error || ''),
+      updatedAt: String(item.updated_at || ''),
+    }
+  })
+  return {
+    updatedAt: String(value?.updated_at || ''),
+    streams,
+  }
+}
+
 export async function loadConsoleData(accountId?: string, gridRoundId?: number): Promise<ConsoleData> {
   const [summary, controlState, strategyConfig, gridRoundResponse] = await Promise.all([
     fetchJson<ApiSummary>(accountUrl('/api/summary', accountId)),
@@ -1620,11 +1808,26 @@ export async function executeConsoleAction(
       loop_seconds: payload.loopSeconds,
     }),
   })
-  const body = (await response.json()) as ConsoleActionResult | { detail?: string }
+  const body = (await response.json()) as ConsoleActionResult | { detail?: string | Record<string, unknown> }
   if (!response.ok) {
-    throw new Error('detail' in body && body.detail ? body.detail : `请求失败：${response.status}`)
+    throw new Error(formatApiDetail((body as { detail?: string | Record<string, unknown> }).detail, response.status))
   }
   return body as ConsoleActionResult
+}
+
+function formatApiDetail(detail: string | Record<string, unknown> | undefined, status: number): string {
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (detail && typeof detail === 'object') {
+    const message = detail.message || detail.detail || detail.code
+    const code = detail.code ? `[${String(detail.code)}] ` : ''
+    if (message) return `${code}${String(message)}`
+    try {
+      return JSON.stringify(detail)
+    } catch {
+      return `请求失败：${status}`
+    }
+  }
+  return `请求失败：${status}`
 }
 
 function actionUrl(action: ConsoleAction, payload: ConsoleActionPayload): string {
@@ -1668,11 +1871,20 @@ function actionUrl(action: ConsoleAction, payload: ConsoleActionPayload): string
   if (action === 'environment-verify-readonly') {
     return '/api/actions/environment/verify-readonly'
   }
+  if (action === 'trader-loop-start') {
+    return '/api/actions/trader-loop/start'
+  }
   if (action === 'trader-loop-stop') {
     return '/api/actions/trader-loop/stop'
   }
   if (action === 'trader-loop-restart') {
     return '/api/actions/trader-loop/restart'
+  }
+  if (action === 'auto-trading-start') {
+    return '/api/actions/auto-trading/start'
+  }
+  if (action === 'auto-trading-stop') {
+    return '/api/actions/auto-trading/stop'
   }
   return `/api/actions/${action}`
 }
@@ -1753,6 +1965,19 @@ function mapTraderProcessState(value: ApiTraderProcessState): TraderProcessState
     service: value.service || 'quietgrid-trader',
     state: value.state || 'unknown',
     detail: value.detail || '',
+    processState: value.process_state || 'OFFLINE',
+    alive: Boolean(value.alive),
+    pid: value.pid ?? null,
+    runtimeId: value.runtime_id || '',
+    runtimeState: value.runtime_state || '',
+    startedAt: value.started_at || '',
+    heartbeatAt: value.heartbeat_at || '',
+    heartbeatAgeSeconds: value.heartbeat_age_seconds ?? null,
+    uptimeSeconds: value.uptime_seconds ?? null,
+    lastStatus: value.last_status || '',
+    lastError: value.last_error || '',
+    processControlAvailable: value.process_control_available ?? Boolean(value.available),
+    processControlMode: value.process_control_mode || value.mode || 'unavailable',
   }
 }
 
@@ -1795,6 +2020,20 @@ function mapAccountSummary(value: ApiAccountSummary | undefined): AccountSummary
 }
 
 export function mapLiquidityCandidate(value: ApiLiquidityCandidate): LiquidityCandidate {
+  const economics = (
+    value.economics && typeof value.economics === 'object'
+      ? value.economics
+      : value.economics_json && typeof value.economics_json === 'object'
+        ? value.economics_json
+        : {}
+  ) as Record<string, unknown>
+  const gridPreview = (
+    value.grid_preview && typeof value.grid_preview === 'object'
+      ? value.grid_preview
+      : value.grid_preview_json && typeof value.grid_preview_json === 'object'
+        ? value.grid_preview_json
+        : {}
+  ) as Record<string, unknown>
   return {
     rank: Math.trunc(toNumber(value.rank)),
     symbol: value.symbol,
@@ -1827,6 +2066,42 @@ export function mapLiquidityCandidate(value: ApiLiquidityCandidate): LiquidityCa
     marketUpdatedAt: compactTime(value.market_updated_at || ''),
     lastKlineCloseAt: compactTime(value.last_kline_close_at || ''),
     dataStale: Boolean(value.data_stale),
+    klineRequiredCount: nullableNumber(value.kline_required_count),
+    klineActualCount: nullableNumber(value.kline_actual_count),
+    klineAgeSeconds: nullableNumber(value.kline_age_seconds),
+    klineMissingCount: nullableNumber(value.kline_missing_count),
+    klineQualityStatus: value.kline_quality_status || '',
+    regimeScore: nullableNumber(value.regime_score),
+    regimeAllowed:
+      value.regime_allowed == null ? null : Boolean(value.regime_allowed),
+    blockCode: value.block_code || '',
+    marketState: value.market_state || '',
+    verdict: value.verdict || value.block_code || '',
+    softBreachCount: Math.trunc(toNumber(value.soft_breach_count)),
+    gridPreview: {
+      lower: nullableUnknownNumber(gridPreview.lower),
+      upper: nullableUnknownNumber(gridPreview.upper),
+      gridCount: nullableUnknownNumber(gridPreview.grid_count),
+      levelCount: nullableUnknownNumber(gridPreview.level_count),
+    },
+    economics: {
+      makerFeeRate: nullableUnknownNumber(economics.maker_fee_rate ?? value.maker_fee_rate),
+      makerFeeSource: String(economics.maker_fee_source || value.maker_fee_source || ''),
+      makerFeeCheckedAt: String(
+        economics.maker_fee_checked_at || value.maker_fee_checked_at || '',
+      ),
+      makerRoundTripPct: nullableUnknownNumber(economics.maker_round_trip_pct),
+      projectedFundingPct: nullableUnknownNumber(economics.projected_funding_pct),
+      grossStepPct: nullableUnknownNumber(economics.gross_step_pct),
+      hardCostPct: nullableUnknownNumber(economics.hard_cost_pct),
+      feeNetEdgePct: nullableUnknownNumber(economics.fee_net_edge_pct),
+      riskDiscountPct: nullableUnknownNumber(economics.risk_discount_pct),
+      estimatedCrossingsPerHour: nullableUnknownNumber(economics.estimated_crossings_per_hour),
+      objectiveValue: nullableUnknownNumber(economics.objective_value),
+      plannedMinOrderNotional: nullableUnknownNumber(economics.planned_min_order_notional),
+      minimumOrderNotional: nullableUnknownNumber(economics.minimum_order_notional),
+      rejectedReason: String(economics.rejected_reason || ''),
+    },
   }
 }
 
@@ -1876,6 +2151,7 @@ function mapSession(value: ApiSession): GridSession {
     symbol: value.symbol,
     state: value.state,
     stateLabel: value.state_label,
+    softBreachCount: Math.trunc(toNumber(value.soft_breach_count)),
     upper: toNumber(value.upper),
     lower: toNumber(value.lower),
     gridNum: Math.trunc(toNumber(value.grid_num)),

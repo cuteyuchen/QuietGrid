@@ -1155,6 +1155,29 @@ def test_grid_engine_handles_fill_by_placing_opposite_order() -> None:
     asyncio.run(run())
 
 
+def test_grid_engine_rounds_reconciled_refill_quantity_to_symbol_step_size() -> None:
+    async def run() -> None:
+        exchange = CoarseRulesExchange()
+        session = _session()
+        engine = GridEngine(exchange)
+
+        await engine.start(session, current_price=100.0)
+        buy_order = next(order for order in session.orders if order.side.value == "BUY")
+        buy_order.qty = 0.30000000000000004
+
+        new_order = await engine.handle_order_filled(
+            session,
+            buy_order.client_id,
+            fill_price=buy_order.price,
+        )
+
+        assert new_order is not None
+        assert new_order.qty == 0.3
+        assert exchange.orders["AAPLUSDT"][-1]["qty"] == 0.3
+
+    asyncio.run(run())
+
+
 def test_grid_engine_recovers_refill_order_after_unknown_create(monkeypatch) -> None:
     async def run() -> None:
         monkeypatch.setattr("strategy.grid_engine.ORDER_CREATE_RECOVERY_DELAY_SECONDS", 0)

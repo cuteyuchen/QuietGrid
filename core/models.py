@@ -12,6 +12,7 @@ class GridState(Enum):
     OBSERVING = "OBSERVING"
     READY = "READY"
     RUNNING = "RUNNING"
+    DEFENSIVE = "DEFENSIVE"
     REBALANCING = "REBALANCING"
     RECOVERING = "RECOVERING"
     PAUSED = "PAUSED"
@@ -23,6 +24,19 @@ class GridState(Enum):
 class OrderSide(Enum):
     BUY = "BUY"
     SELL = "SELL"
+
+
+class GridDirectionMode(str, Enum):
+    LONG = "LONG"
+    SHORT = "SHORT"
+    NEUTRAL = "NEUTRAL"
+
+
+class OrderIntent(str, Enum):
+    OPEN = "OPEN"
+    REDUCE = "REDUCE"
+    SEED = "SEED"
+    PROTECTION = "PROTECTION"
 
 
 class OrderStatus(Enum):
@@ -37,6 +51,7 @@ class RiskAction(Enum):
     NONE = "none"
     SKIP = "skip"
     REDUCE = "reduce"
+    DEFEND = "defend"
     BLOCK = "block"
     COOLDOWN = "cooldown"
     CLOSE = "close"
@@ -65,6 +80,8 @@ class GridParams:
     cost_floor_pct: float = 0.0
     qty_weights: tuple[float, ...] = ()
     parameter_version: str = "legacy-v1"
+    economics: dict[str, Any] = field(default_factory=dict)
+    direction_mode: GridDirectionMode = GridDirectionMode.NEUTRAL
 
 
 @dataclass
@@ -81,6 +98,8 @@ class GridOrder:
     filled_at: datetime | None = None
     fill_price: float | None = None
     entry_price: float | None = None
+    position_side: str | None = None
+    order_intent: OrderIntent = OrderIntent.OPEN
 
 
 @dataclass
@@ -97,6 +116,14 @@ class SymbolSession:
     kline_buffer: list[dict[str, Any]] = field(default_factory=list)
     state_entered_at: datetime | None = None
     stop_protection_sides: set[str] = field(default_factory=set)
+    soft_breach_count: int = 0
+    direction_mode: GridDirectionMode = GridDirectionMode.NEUTRAL
+    seed_position_side: str | None = None
+    seed_qty: float = 0.0
+    seed_entry_price: float | None = None
+    seed_slippage_pct: float | None = None
+    seed_fee: float = 0.0
+    last_retention_decision_at: datetime | None = None
 
 
 @dataclass(frozen=True)

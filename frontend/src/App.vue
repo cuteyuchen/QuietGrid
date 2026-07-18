@@ -22,11 +22,14 @@ import {
   consoleEventsUrl,
   executeConsoleAction,
   executeV2Command,
+  getCurrentRound,
   loadAccounts,
   loadConsoleData,
   loadV2Dashboard,
   saveStrategyConfigDraft,
   type ConsoleAction,
+  type AutoTradingUiState,
+  type CurrentRoundSnapshot,
   type V2CommandType,
   type V2DashboardData,
 } from './api'
@@ -127,6 +130,7 @@ const dataError = ref('')
 const actionMessage = ref('')
 const actionError = ref('')
 const actionBusy = ref(false)
+const autoTradingTransition = ref<'STARTING' | 'STOPPING' | ''>('')
 const strategyBusy = ref(false)
 const strategyError = ref('')
 const pendingAction = ref<PendingAction | null>(null)
@@ -173,6 +177,22 @@ const v2Dashboard = ref<V2DashboardData>({
     max_window_stop_count: 0,
     block_risk_increase_hot_reload: true,
   },
+})
+const currentRound = ref<CurrentRoundSnapshot | null>(null)
+const autoTradingState = computed<AutoTradingUiState>(() => {
+  const current = currentRound.value?.autoTrading
+  const enabled = Boolean(current?.enabled)
+  const transitioning = Boolean(autoTradingTransition.value)
+  return {
+    enabled,
+    transitioning,
+    transitionState: autoTradingTransition.value || current?.transitionState || (enabled ? 'ENABLED' : 'DISABLED'),
+    canStart: !transitioning && Boolean(current?.canStart ?? !enabled),
+    canStop: !transitioning && Boolean(current?.canStop ?? enabled),
+    blockedReason: current?.blockedReason || '',
+    mode: current?.mode,
+    requestId: current?.requestId,
+  }
 })
 
 const activePageMeta = computed(() => pageDescriptions[activePage.value])
@@ -233,9 +253,10 @@ async function refreshData(showInitial = false) {
     if (!selectedAccountId.value || !accountOptions.value.some((item) => item.id === selectedAccountId.value)) {
       selectedAccountId.value = accountsData.currentAccountId
     }
-    const [legacy, dashboard] = await Promise.all([
+    const [legacy, dashboard, roundSnapshot] = await Promise.all([
       loadConsoleData(selectedAccountId.value, selectedGridRoundId.value ?? undefined),
       loadV2Dashboard(selectedAccountId.value),
+      getCurrentRound(selectedAccountId.value).catch(() => null),
     ])
     summary.value = legacy.summary
     controlState.value = legacy.controlState
@@ -247,6 +268,23 @@ async function refreshData(showInitial = false) {
     auditLogs.value = legacy.auditLogs
     selectedGridRoundId.value = legacy.selectedGridRoundId
     v2Dashboard.value = dashboard
+    if (roundSnapshot) {
+      currentRound.value = roundSnapshot
+      traderProcessState.value = roundSnapshot.trader
+      if (roundSnapshot.round.state) {
+        controlState.value = {
+          ...controlState.value,
+          roundState: roundSnapshot.round.state,
+          nextScanAt: roundSnapshot.round.nextScanAt || controlState.value.nextScanAt,
+          lastScanAt: roundSnapshot.round.lastScanAt || controlState.value.lastScanAt,
+          currentRoundId: roundSnapshot.round.roundId ?? controlState.value.currentRoundId,
+          roundStartRequest: roundSnapshot.round.startRequest || controlState.value.roundStartRequest,
+        }
+      }
+      if (roundSnapshot.candidates.length) {
+        liquidityCandidates.value = roundSnapshot.candidates
+      }
+    }
     selectedAccountId.value = legacy.summary.accountId
     window.localStorage.setItem('quietgrid.accountId', selectedAccountId.value)
     hasLoadedData = true
@@ -254,6 +292,7 @@ async function refreshData(showInitial = false) {
     if (realtimeConnected.value) {
       realtimeError.value = ''
     }
+    scheduleStartingPoll()
   } catch (reason) {
     const message = reason instanceof Error ? reason.message : '无法连接 QuietGrid API'
     if (hasLoadedData) {
@@ -265,6 +304,25 @@ async function refreshData(showInitial = false) {
     refreshing.value = false
     initialLoading.value = false
   }
+}
+
+let startingPollTimer: number | undefined
+
+function scheduleStartingPoll() {
+  const state = (traderProcessState.value.processState || traderProcessState.value.state || '').toUpperCase()
+  const starting = state === 'STARTING' || state === 'START'
+  if (!starting) {
+    if (startingPollTimer != null) {
+      window.clearTimeout(startingPollTimer)
+      startingPollTimer = undefined
+    }
+    return
+  }
+  if (startingPollTimer != null) return
+  startingPollTimer = window.setTimeout(() => {
+    startingPollTimer = undefined
+    void refreshData()
+  }, 1500)
 }
 
 function handleAccountChange() {
@@ -362,6 +420,13 @@ function requestAction(key: string, session?: GridSession) {
       confirmationText: 'VERIFY',
       danger: false,
     },
+    'trader-start': {
+      key,
+      title: '启动交易进程',
+      description: '将在本地启动 trader.py --binance-loop，并等待首个心跳。不会直接下单。',
+      confirmationText: 'START-TRADER',
+      danger: false,
+    },
     'trader-restart': {
       key,
       title: '请求重启交易循环',
@@ -376,6 +441,20 @@ function requestAction(key: string, session?: GridSession) {
       confirmationText: 'STOP-TRADER',
       danger: true,
     },
+    'auto-trading-start': {
+      key,
+      title: '启动自动交易',
+      description: '开启自动交易总开关；Trader 离线时会尝试启动进程，并在有效周末/节假日窗口自动评估。',
+      confirmationText: 'START-AUTO',
+      danger: false,
+    },
+    'auto-trading-stop': {
+      key,
+      title: '停止自动交易',
+      description: '关闭未来新轮次。不会自动平仓。停止自动交易 ≠ 立即平仓。',
+      confirmationText: 'STOP-AUTO',
+      danger: false,
+    },
   }
   pendingAction.value = actions[key] || null
   actionError.value = ''
@@ -386,6 +465,8 @@ async function confirmAction(reason: string) {
   const action = pendingAction.value
   if (!action || actionBusy.value) return
   actionBusy.value = true
+  if (action.key === 'auto-trading-start') autoTradingTransition.value = 'STARTING'
+  if (action.key === 'auto-trading-stop') autoTradingTransition.value = 'STOPPING'
   actionError.value = ''
   actionMessage.value = ''
   try {
@@ -409,8 +490,11 @@ async function confirmAction(reason: string) {
       const legacyMap: Record<string, ConsoleAction> = {
         'start-round': 'grid-round-start',
         verify: 'environment-verify-readonly',
+        'trader-start': 'trader-loop-start',
         'trader-restart': 'trader-loop-restart',
         'trader-stop': 'trader-loop-stop',
+        'auto-trading-start': 'auto-trading-start',
+        'auto-trading-stop': 'auto-trading-stop',
       }
       const legacyAction = legacyMap[action.key]
       if (!legacyAction) throw new Error('不支持的控制操作')
@@ -426,6 +510,7 @@ async function confirmAction(reason: string) {
     actionError.value = reasonValue instanceof Error ? reasonValue.message : '操作失败'
   } finally {
     actionBusy.value = false
+    autoTradingTransition.value = ''
   }
 }
 
@@ -455,6 +540,10 @@ function componentProps() {
         control: controlState.value,
         sessions: sessions.value,
         candidates: liquidityCandidates.value,
+        currentRound: currentRound.value,
+        autoTrading: autoTradingState.value,
+        actionBusy: actionBusy.value,
+        traderProcess: traderProcessState.value,
         loading: initialLoading.value,
         dataError: dataError.value,
       }
@@ -464,6 +553,8 @@ function componentProps() {
         dashboard: v2Dashboard.value,
         control: controlState.value,
         sessions: sessions.value,
+        autoTrading: autoTradingState.value,
+        actionBusy: actionBusy.value,
         loading: refreshing.value,
         dataError: dataError.value,
       }
@@ -534,6 +625,10 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('hashchange', handleHashChange)
+  if (startingPollTimer != null) {
+    window.clearTimeout(startingPollTimer)
+    startingPollTimer = undefined
+  }
   closeEventStream()
   if (refreshTimer != null) window.clearInterval(refreshTimer)
 })
@@ -603,8 +698,12 @@ onUnmounted(() => {
             :label="isLiveEnvironment ? '真实盘 LIVE' : '测试网 TESTNET'"
           />
           <StatusBadge
-            :tone="traderProcessState.state === 'running' ? 'good' : 'warning'"
-            :label="`Trader ${traderProcessState.state}`"
+            :tone="(traderProcessState.processState || traderProcessState.state) === 'ONLINE' || traderProcessState.state === 'running' ? 'good' : 'warning'"
+            :label="`Trader ${traderProcessState.processState || traderProcessState.state}`"
+          />
+          <StatusBadge
+            :tone="controlState.roundState === 'RUNNING' ? 'good' : 'info'"
+            :label="`本轮 ${controlState.roundState || 'IDLE'}`"
           />
           <StatusBadge :tone="dataTone" :label="`数据 ${v2Dashboard.dataHealth}`" />
           <StatusBadge :tone="riskTone" :label="`风险 ${v2Dashboard.globalRiskLevel}`" />

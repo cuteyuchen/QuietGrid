@@ -24,6 +24,12 @@ from data_sources.models import (
     SourceSegmentMetadata,
 )
 from data_sources.registry import HistoricalDataSourceRegistry
+from data_sources.runtime_market import (
+    HistoricalBacktestProvider,
+    RuntimeMarketDataProvider,
+    assert_backtest_provider,
+    assert_runtime_provider,
+)
 from data_sources.window_slicer import (
     BacktestWindow,
     NyseWindowSlicer,
@@ -45,14 +51,18 @@ __all__ = [
     "DatasetRequest",
     "DatasetStatus",
     "FundingEvent",
+    "HistoricalBacktestProvider",
     "HistoricalDataSource",
     "HistoricalDataSourceRegistry",
     "HistoricalSymbol",
     "NormalizedKline",
     "NyseWindowSlicer",
     "RestUnavailableError",
+    "RuntimeMarketDataProvider",
     "FundingUnavailableError",
     "SourceSegmentMetadata",
+    "assert_backtest_provider",
+    "assert_runtime_provider",
     "normalized_klines_from_mappings",
     "read_legacy_backtest_csv",
 ]

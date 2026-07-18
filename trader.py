@@ -4,7 +4,9 @@ import argparse
 import asyncio
 import hashlib
 import hmac
+import inspect
 import json
+import os
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from math import isfinite, sqrt
@@ -32,6 +34,7 @@ from strategy.backtest import (
 )
 from strategy.cooldown import CooldownConfig
 from strategy.adaptive_grid import AdaptiveGridConfig
+from core.models import GridDirectionMode
 from strategy.controller import ControllerConfig, TradingController, V2FeatureFlags, _position_close_specs
 from strategy.grid_calculator import GridConfig, calculate_grid_params
 from strategy.inventory import InventoryConfig
@@ -62,6 +65,21 @@ class _TestnetAlwaysOpenScheduler:
 
     def minutes_to_next_open(self, now_utc: datetime | None = None) -> float:
         return float("inf")
+
+    def classify_window(self, now_utc: datetime | None = None, **kwargs):
+        from strategy.window_models import TradingWindow, WindowKind
+
+        return TradingWindow(
+            kind=WindowKind.WEEKEND,
+            allowed=True,
+            window_key="TESTNET_FORCE_WINDOW",
+            previous_market_close=None,
+            next_market_open=None,
+            next_premarket_open=None,
+            force_close_at=None,
+            minutes_to_force_close=float("inf"),
+            reason="强制测试窗口（testnet_force_window=true）。",
+        )
 
 
 def main() -> None:
@@ -293,13 +311,160 @@ async def _run_mock_once(config):
 
 async def _run_mock_loop(config, max_iterations: int | None = None, max_seconds: float | None = None):
     controller = _build_controller(MockExchangeClient(), config, live_observation=False)
-    controller.repository.register_runtime(TRADER_RUNTIME_ID, datetime.now(timezone.utc))
-    controller.repository.close_unfinished_windows(datetime.now(timezone.utc))
+    await _run_with_runtime_heartbeat(
+        config,
+        controller.repository,
+        lambda: _drive_controller_loop(controller, max_iterations=max_iterations, max_seconds=max_seconds),
+        initial_state="BOOTING",
+    )
+
+
+async def _drive_controller_loop(
+    controller: TradingController,
+    *,
+    max_iterations: int | None = None,
+    max_seconds: float | None = None,
+) -> Any:
     loop_task = controller.run_loop(max_iterations=max_iterations)
     if max_seconds is None:
-        await loop_task
-    else:
-        await asyncio.wait_for(loop_task, timeout=max_seconds)
+        return await loop_task
+    return await asyncio.wait_for(loop_task, timeout=max_seconds)
+
+
+def _runtime_heartbeat_settings(config) -> tuple[float, str]:
+    raw = config.raw.get("runtime", {}) if isinstance(getattr(config, "raw", None), dict) else {}
+    if not isinstance(raw, dict):
+        raw = {}
+    try:
+        interval = float(raw.get("heartbeat_interval_seconds", 5))
+    except (TypeError, ValueError):
+        interval = 5.0
+    return max(1.0, interval), str(getattr(config, "account_id", "default") or "default")
+
+
+async def _run_with_runtime_heartbeat(
+    config,
+    repository: Repository,
+    body,
+    *,
+    initial_state: str = "BOOTING",
+) -> Any:
+    now = datetime.now(timezone.utc)
+    repository.register_runtime(
+        TRADER_RUNTIME_ID,
+        now,
+        pid=os.getpid(),
+        state=initial_state,
+    )
+    repository.close_unfinished_windows(now)
+    interval, _account_id = _runtime_heartbeat_settings(config)
+    stop_event = asyncio.Event()
+
+    async def heartbeat_loop() -> None:
+        while not stop_event.is_set():
+            try:
+                # 仅刷新存活时间。运行阶段和最近状态由交易循环写入，心跳不得
+                # 用启动时捕获的 RECOVERING 覆盖 RUNNING/SCANNING。
+                repository.update_runtime_heartbeat(
+                    TRADER_RUNTIME_ID,
+                    datetime.now(timezone.utc),
+                )
+            except Exception as exc:
+                logger.warning("Failed to update trader runtime heartbeat: {}", exc)
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
+
+    heartbeat_task = asyncio.create_task(heartbeat_loop())
+    try:
+        repository.update_runtime_heartbeat(
+            TRADER_RUNTIME_ID,
+            datetime.now(timezone.utc),
+            state="RECOVERING",
+        )
+        result = await body()
+        repository.mark_runtime_stopped(
+            TRADER_RUNTIME_ID,
+            datetime.now(timezone.utc),
+            state="STOPPED",
+        )
+        return result
+    except Exception as exc:
+        repository.mark_runtime_stopped(
+            TRADER_RUNTIME_ID,
+            datetime.now(timezone.utc),
+            state="FAILED",
+            last_error=str(exc),
+        )
+        raise
+    finally:
+        stop_event.set()
+        await _cancel_and_drain_task(heartbeat_task)
+
+
+class RuntimeStreamHealthReporter:
+    def __init__(self, repository: Repository) -> None:
+        self.repository = repository
+        self._streams: dict[str, dict[str, Any]] = {}
+        self._lock = asyncio.Lock()
+        self._last_persisted_message_at: dict[str, datetime] = {}
+
+    async def handle(self, event: dict[str, Any]) -> None:
+        stream = str(event.get("stream") or "unknown")
+        raw_state = str(event.get("state") or "UNKNOWN").upper()
+        at = event.get("at")
+        if not isinstance(at, datetime):
+            at = datetime.now(timezone.utc)
+        async with self._lock:
+            previous = dict(self._streams.get(stream, {}))
+            state = "ONLINE" if raw_state == "MESSAGE" else raw_state
+            current = {
+                **previous,
+                "stream": stream,
+                "state": state,
+                "reconnect_count": int(event.get("reconnect_count") or 0),
+                "last_error": str(event.get("error") or ""),
+                "updated_at": at.isoformat(),
+            }
+            if raw_state == "MESSAGE":
+                current["last_message_at"] = at.isoformat()
+            self._streams[stream] = current
+            if raw_state == "MESSAGE":
+                last_persisted = self._last_persisted_message_at.get(stream)
+                if last_persisted is not None and (at - last_persisted).total_seconds() < 5:
+                    return
+                self._last_persisted_message_at[stream] = at
+            self.repository.set_control_state(
+                "stream_health",
+                {
+                    "streams": dict(self._streams),
+                    "updated_at": at.isoformat(),
+                },
+                at,
+            )
+            if state in {"DEGRADED", "FAILED"}:
+                self.repository.update_runtime_heartbeat(
+                    TRADER_RUNTIME_ID,
+                    at,
+                    state="DEGRADED",
+                    last_status=f"{stream}_reconnecting",
+                    last_error=current["last_error"],
+                )
+            elif self.allows_new_entries():
+                self.repository.update_runtime_heartbeat(
+                    TRADER_RUNTIME_ID,
+                    at,
+                    state="RUNNING",
+                    last_status="streams_healthy",
+                    last_error="",
+                )
+
+    def allows_new_entries(self) -> bool:
+        return not any(
+            str(item.get("state") or "").upper() in {"DEGRADED", "FAILED"}
+            for item in self._streams.values()
+        )
 
 
 async def _create_binance_client_for_module(config, module: str) -> BinanceFuturesClient:
@@ -1282,7 +1447,12 @@ async def _run_binance_test_run(config, max_seconds: float = DEFAULT_BOUNDED_RUN
         raise RuntimeError("有界运行秒数必须是正数。")
     pre_position = await _run_binance_position_smoke(config)
     repository = _build_repository(config)
-    repository.register_runtime(TRADER_RUNTIME_ID, datetime.now(timezone.utc))
+    repository.register_runtime(
+        TRADER_RUNTIME_ID,
+        datetime.now(timezone.utc),
+        pid=os.getpid(),
+        state="BOOTING",
+    )
     repository.request_round_start(
         "bounded_run_diagnostic",
         f"bounded-{uuid4()}",
@@ -1550,77 +1720,99 @@ async def _run_binance_loop(config, max_iterations: int | None = None, max_secon
     _require_binance_symbol_allowlist(config)
     if not config.binance_api_key or not config.binance_api_secret:
         raise RuntimeError("执行 Binance loop 需要在 .env 中配置 BINANCE_API_KEY 和 BINANCE_API_SECRET。")
-    exchange = await _create_binance_client_for_module(config, "binance_loop")
-    bounded_timeout_reached = False
-    try:
-        eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
-        await _require_binance_signed_write_health(exchange, config, eligible, "binance_loop")
-        controller = _build_controller(exchange, config, live_observation=True)
-        controller_repository = getattr(controller, "repository", None) or _build_repository(config)
-        if not hasattr(controller, "repository"):
-            controller.repository = controller_repository
-        controller_repository.register_runtime(TRADER_RUNTIME_ID, datetime.now(timezone.utc))
-        check = await controller.validate_startup()
-        if not check.ok:
-            raise RuntimeError(check.reason)
-        await controller.recover_unclosed_sessions(recoverable_symbols=set(eligible))
-        controller_repository.close_unfinished_windows(datetime.now(timezone.utc))
-        user_stream_task = asyncio.create_task(exchange.run_user_stream(controller.handle_order_filled_event))
-        price_stream_task = asyncio.create_task(
-            _run_dynamic_price_stream(exchange, controller, poll_seconds=float(config.raw["timing"]["loop_interval_seconds"]))
-        )
-        controller_task = asyncio.create_task(controller.run_loop(max_iterations=max_iterations))
-        task_names = {
-            controller_task: "controller loop",
-            user_stream_task: "user stream",
-            price_stream_task: "price stream",
-        }
+    repository = _build_repository(config)
+
+    async def _body() -> Any:
+        exchange = await _create_binance_client_for_module(config, "binance_loop")
+        bounded_timeout_reached = False
         try:
-            done, _pending = await asyncio.wait(
-                {controller_task, user_stream_task, price_stream_task},
-                return_when=asyncio.FIRST_COMPLETED,
-                timeout=max_seconds,
+            eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
+            await _require_binance_signed_write_health(exchange, config, eligible, "binance_loop")
+            controller = _build_controller(exchange, config, live_observation=True)
+            controller_repository = getattr(controller, "repository", None) or repository
+            if not hasattr(controller, "repository"):
+                controller.repository = controller_repository
+            check = await controller.validate_startup()
+            if not check.ok:
+                raise RuntimeError(check.reason)
+            await controller.recover_unclosed_sessions(recoverable_symbols=set(eligible))
+            controller_repository.close_unfinished_windows(datetime.now(timezone.utc))
+            controller_repository.update_runtime_heartbeat(
+                TRADER_RUNTIME_ID,
+                datetime.now(timezone.utc),
+                state="RUNNING",
+                last_status="recovered",
             )
-            if not done:
-                bounded_timeout_reached = True
-                _log_binance_loop_bounded_timeout(controller, max_seconds)
-                return ["loop_timeout"]
-            completed = next(iter(done))
-            completed_name = task_names[completed]
-            try:
-                result = await completed
-            except Exception as exc:
-                _log_binance_loop_task_error(controller, completed_name, exc)
-                raise
-            if completed is not controller_task:
-                message = f"Binance {completed_name} stopped unexpectedly."
-                _log_binance_loop_task_error(controller, completed_name, RuntimeError(message))
-                raise RuntimeError(message)
-            return result
-        finally:
-            await _cancel_and_drain_task(controller_task)
-            await _cancel_and_drain_task(user_stream_task)
-            await _cancel_and_drain_task(price_stream_task)
-            fallback_swept = False
-            try:
-                closed = await asyncio.wait_for(
-                    _close_all_active_sessions_or_raise(controller, "binance_loop_shutdown_cleanup"),
-                    timeout=BINANCE_LOOP_SHUTDOWN_CLEANUP_TIMEOUT_SECONDS,
+            stream_health = RuntimeStreamHealthReporter(controller_repository)
+            controller.stream_health_reporter = stream_health
+            user_stream_task = asyncio.create_task(
+                _run_supervised_user_stream(exchange, controller, stream_health)
+            )
+            dynamic_stream_kwargs: dict[str, Any] = {}
+            if _supports_named_parameter(_run_dynamic_price_stream, "stream_health"):
+                dynamic_stream_kwargs["stream_health"] = stream_health
+            price_stream_task = asyncio.create_task(
+                _run_dynamic_price_stream(
+                    exchange,
+                    controller,
+                    poll_seconds=float(config.raw["timing"]["loop_interval_seconds"]),
+                    **dynamic_stream_kwargs,
                 )
-                if closed:
-                    logger.info("Binance loop shutdown cleanup closed active sessions: {}", closed)
-            except Exception as exc:
-                _log_binance_loop_shutdown_cleanup_fallback(controller, exc)
-                fallback = await _run_binance_loop_safety_sweep_fallback(exchange, controller, eligible)
-                fallback_swept = fallback is not None
-                if fallback is not None:
-                    logger.warning("Binance loop shutdown cleanup fallback safety sweep result: {}", fallback)
-            if bounded_timeout_reached and not fallback_swept:
-                fallback = await _run_binance_loop_safety_sweep_fallback(exchange, controller, eligible)
-                if fallback is not None:
-                    logger.info("Binance bounded loop final safety sweep result: {}", fallback)
-    finally:
-        await exchange.close()
+            )
+            controller_task = asyncio.create_task(controller.run_loop(max_iterations=max_iterations))
+            task_names = {
+                controller_task: "controller loop",
+                user_stream_task: "user stream",
+                price_stream_task: "price stream",
+            }
+            try:
+                done, _pending = await asyncio.wait(
+                    {controller_task, user_stream_task, price_stream_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                    timeout=max_seconds,
+                )
+                if not done:
+                    bounded_timeout_reached = True
+                    _log_binance_loop_bounded_timeout(controller, max_seconds)
+                    return ["loop_timeout"]
+                completed = next(iter(done))
+                completed_name = task_names[completed]
+                try:
+                    result = await completed
+                except Exception as exc:
+                    _log_binance_loop_task_error(controller, completed_name, exc)
+                    raise
+                if completed is not controller_task:
+                    message = f"Binance {completed_name} stopped unexpectedly."
+                    _log_binance_loop_task_error(controller, completed_name, RuntimeError(message))
+                    raise RuntimeError(message)
+                return result
+            finally:
+                await _cancel_and_drain_task(controller_task)
+                await _cancel_and_drain_task(user_stream_task)
+                await _cancel_and_drain_task(price_stream_task)
+                fallback_swept = False
+                try:
+                    closed = await asyncio.wait_for(
+                        _close_all_active_sessions_or_raise(controller, "binance_loop_shutdown_cleanup"),
+                        timeout=BINANCE_LOOP_SHUTDOWN_CLEANUP_TIMEOUT_SECONDS,
+                    )
+                    if closed:
+                        logger.info("Binance loop shutdown cleanup closed active sessions: {}", closed)
+                except Exception as exc:
+                    _log_binance_loop_shutdown_cleanup_fallback(controller, exc)
+                    fallback = await _run_binance_loop_safety_sweep_fallback(exchange, controller, eligible)
+                    fallback_swept = fallback is not None
+                    if fallback is not None:
+                        logger.warning("Binance loop shutdown cleanup fallback safety sweep result: {}", fallback)
+                if bounded_timeout_reached and not fallback_swept:
+                    fallback = await _run_binance_loop_safety_sweep_fallback(exchange, controller, eligible)
+                    if fallback is not None:
+                        logger.info("Binance bounded loop final safety sweep result: {}", fallback)
+        finally:
+            await exchange.close()
+
+    return await _run_with_runtime_heartbeat(config, repository, _body, initial_state="BOOTING")
 
 
 def _log_binance_loop_task_error(controller: TradingController, task_name: str, exc: Exception) -> None:
@@ -1689,7 +1881,51 @@ async def _run_binance_loop_safety_sweep_fallback(exchange, controller: TradingC
     return fallback
 
 
-async def _run_dynamic_price_stream(exchange, controller: TradingController, poll_seconds: float = 10) -> None:
+async def _run_supervised_user_stream(
+    exchange,
+    controller: TradingController,
+    stream_health: RuntimeStreamHealthReporter,
+) -> None:
+    reconnect_delay = 1.0
+    while True:
+        try:
+            kwargs: dict[str, Any] = {}
+            if _supports_lifecycle_handler(exchange.run_user_stream):
+                kwargs["lifecycle_handler"] = stream_health.handle
+            await exchange.run_user_stream(
+                controller.handle_order_filled_event,
+                **kwargs,
+            )
+            await stream_health.handle(
+                {
+                    "stream": "user",
+                    "state": "DEGRADED",
+                    "error": "User Stream 已结束，正在重新连接。",
+                    "at": datetime.now(timezone.utc),
+                }
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await stream_health.handle(
+                {
+                    "stream": "user",
+                    "state": "DEGRADED",
+                    "error": str(exc),
+                    "at": datetime.now(timezone.utc),
+                }
+            )
+        await asyncio.sleep(reconnect_delay)
+        reconnect_delay = min(30.0, reconnect_delay * 2)
+
+
+async def _run_dynamic_price_stream(
+    exchange,
+    controller: TradingController,
+    poll_seconds: float = 10,
+    *,
+    stream_health: RuntimeStreamHealthReporter | None = None,
+) -> None:
     poll_seconds = min(max(float(poll_seconds), 0.1), 1.0)
     subscribed_symbols: tuple[str, ...] = ()
     price_stream_task: asyncio.Task | None = None
@@ -1701,11 +1937,41 @@ async def _run_dynamic_price_stream(exchange, controller: TradingController, pol
                 market_symbols() if callable(market_symbols) else sorted(controller.active_sessions)
             )
             if price_stream_task is not None and price_stream_task.done():
-                await price_stream_task
-                raise RuntimeError("Binance price stream stopped unexpectedly.")
+                try:
+                    await price_stream_task
+                    detail = "Binance price stream 已结束，正在重新连接。"
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    detail = str(exc)
+                if stream_health is not None:
+                    await stream_health.handle(
+                        {
+                            "stream": "price",
+                            "state": "DEGRADED",
+                            "error": detail,
+                            "at": datetime.now(timezone.utc),
+                        }
+                    )
+                price_stream_task = None
             if kline_stream_task is not None and kline_stream_task.done():
-                await kline_stream_task
-                raise RuntimeError("Binance 1m kline stream stopped unexpectedly.")
+                try:
+                    await kline_stream_task
+                    detail = "Binance 1m kline stream 已结束，正在重新连接。"
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    detail = str(exc)
+                if stream_health is not None:
+                    await stream_health.handle(
+                        {
+                            "stream": "kline",
+                            "state": "DEGRADED",
+                            "error": detail,
+                            "at": datetime.now(timezone.utc),
+                        }
+                    )
+                kline_stream_task = None
             if active_symbols != subscribed_symbols:
                 if price_stream_task is not None:
                     price_stream_task.cancel()
@@ -1716,15 +1982,31 @@ async def _run_dynamic_price_stream(exchange, controller: TradingController, pol
                     await _await_cancelled(kline_stream_task)
                     kline_stream_task = None
                 subscribed_symbols = active_symbols
-                if active_symbols:
+            if active_symbols:
+                if price_stream_task is None:
+                    price_kwargs: dict[str, Any] = {}
+                    if stream_health is not None and _supports_lifecycle_handler(exchange.run_price_stream):
+                        price_kwargs["lifecycle_handler"] = stream_health.handle
                     price_stream_task = asyncio.create_task(
-                        exchange.run_price_stream(list(active_symbols), controller.handle_price_update_event)
+                        exchange.run_price_stream(
+                            list(active_symbols),
+                            controller.handle_price_update_event,
+                            **price_kwargs,
+                        )
                     )
+                if kline_stream_task is None:
                     run_kline_stream = getattr(exchange, "run_kline_stream", None)
                     kline_handler = getattr(controller, "handle_kline_closed_event", None)
                     if callable(run_kline_stream) and callable(kline_handler):
+                        kline_kwargs: dict[str, Any] = {"interval": "1m"}
+                        if stream_health is not None and _supports_lifecycle_handler(run_kline_stream):
+                            kline_kwargs["lifecycle_handler"] = stream_health.handle
                         kline_stream_task = asyncio.create_task(
-                            run_kline_stream(list(active_symbols), kline_handler, interval="1m")
+                            run_kline_stream(
+                                list(active_symbols),
+                                kline_handler,
+                                **kline_kwargs,
+                            )
                         )
             await asyncio.sleep(poll_seconds)
     finally:
@@ -1736,10 +2018,26 @@ async def _run_dynamic_price_stream(exchange, controller: TradingController, pol
             await _await_cancelled(kline_stream_task)
 
 
+def _supports_lifecycle_handler(callable_object: Any) -> bool:
+    return _supports_named_parameter(callable_object, "lifecycle_handler")
+
+
+def _supports_named_parameter(callable_object: Any, parameter: str) -> bool:
+    try:
+        return parameter in inspect.signature(callable_object).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 async def _await_cancelled(task: asyncio.Task) -> None:
     try:
         await task
     except asyncio.CancelledError:
+        return
+    except Exception:
+        # The stream supervisor has already converted child failures into
+        # DEGRADED state. Cleanup must not re-raise a completed child error
+        # while the outer supervisor itself is being cancelled.
         return
 
 
@@ -2301,6 +2599,20 @@ def _build_repository(config) -> Repository:
     )
 
 
+def _parse_window_kinds(raw: Any) -> list:
+    from strategy.window_models import WindowKind
+
+    if not raw:
+        return [WindowKind.WEEKEND, WindowKind.HOLIDAY]
+    result = []
+    for item in raw:
+        text = str(item).strip().upper()
+        if not text:
+            continue
+        result.append(WindowKind(text))
+    return result or [WindowKind.WEEKEND, WindowKind.HOLIDAY]
+
+
 def _build_controller(exchange, config, live_observation: bool | None = None) -> TradingController:
     raw = config.raw
     trading = raw["trading"]
@@ -2313,6 +2625,7 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
     risk = raw.get("risk", {})
     inventory = raw.get("inventory", {})
     costs = raw.get("costs", {})
+    entry = raw.get("entry", {})
     regime_weights = regime.get("weights", {})
     testnet_force_window = bool(getattr(config, "binance_testnet", False)) and bool(timing.get("testnet_force_window", False))
     testnet_fast_observation = bool(getattr(config, "binance_testnet", False)) and bool(
@@ -2321,12 +2634,18 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
     effective_live_observation = bool(live_observation) if live_observation is not None else bool(timing.get("live_observation", False))
     if testnet_fast_observation:
         effective_live_observation = False
-    return TradingController(
+    controller = TradingController(
         exchange=exchange,
         scheduler=(
             _TestnetAlwaysOpenScheduler()
             if testnet_force_window
-            else Scheduler(force_close_minutes=int(timing["force_close_minutes"]))
+            else Scheduler(
+                force_close_minutes=int(timing["force_close_minutes"]),
+                minimum_trade_minutes=int(timing.get("minimum_trade_minutes", 120)),
+                allowed_window_kinds=tuple(
+                    _parse_window_kinds(timing.get("allowed_window_kinds"))
+                ),
+            )
         ),
         repository=_build_repository(config),
         selector_config=SelectionConfig(
@@ -2380,6 +2699,17 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             block_risk_increase_hot_reload=bool(
                 risk.get("block_risk_increase_hot_reload", True)
             ),
+            direction_mode=GridDirectionMode(
+                str(trading.get("direction_mode", "NEUTRAL")).strip().upper()
+            ),
+            direction_overrides={
+                str(symbol).strip().upper(): GridDirectionMode(
+                    str(mode).strip().upper()
+                )
+                for symbol, mode in (trading.get("direction_overrides", {}) or {}).items()
+            },
+            seed_execution=str(entry.get("seed_execution", "MARKET")).strip().upper(),
+            seed_max_slippage_pct=float(entry.get("seed_max_slippage_pct", 0.002)),
         ),
         cooldown_config=CooldownConfig(
             atr_period=int(cooldown["atr_period"]),
@@ -2399,6 +2729,7 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             long_window=int(regime.get("long_window", 60)),
             enter_threshold=float(regime.get("enter_threshold", 75)),
             stay_threshold=float(regime.get("stay_threshold", 65)),
+            soft_breach_limit=int(regime.get("soft_breach_limit", 3)),
             max_data_age_seconds=float(regime.get("max_data_age_seconds", 90)),
             max_spread_pct=float(regime.get("hard_limits", {}).get("max_spread_pct", 0.001)),
             max_vol_expansion_ratio=float(
@@ -2425,7 +2756,7 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             max_step_pct=float(grid.get("max_step_pct", 0.01)),
             k_atr_step=float(grid.get("k_atr_step", 0.50)),
             k_sigma_step=float(grid.get("k_sigma_step", 0.80)),
-            min_grid_num=int(grid.get("min_grid_num", 6)),
+            min_grid_num=int(grid.get("min_grid_num", 3)),
             max_grid_num=int(grid.get("max_grid_num", 20)),
             expansion_rate=float(grid.get("expansion_rate", 0.08)),
             stop_buffer_pct=float(trading.get("stop_buffer_pct", 0.015)),
@@ -2443,6 +2774,12 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             passive_reduce_first=bool(inventory.get("passive_reduce_first", True)),
         ),
     )
+    entry = raw.get("entry", {}) if isinstance(raw.get("entry"), dict) else {}
+    controller._entry_config = {
+        "max_price_drift_pct": float(entry.get("max_price_drift_pct", 0.002)),
+        "revalidate_before_place": bool(entry.get("revalidate_before_place", True)),
+    }
+    return controller
 
 
 if __name__ == "__main__":

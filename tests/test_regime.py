@@ -46,6 +46,56 @@ def test_quiet_range_is_allowed_with_explainable_scores() -> None:
         "event",
     }
     assert decision.hard_blocks == ()
+    assert decision.verdict == "ALLOWED"
+    assert decision.component_scores["cost"] is not None
+    assert decision.component_scores["cost"] > 0
+    assert decision.component_scores["event"] is None
+    assert decision.effective_weights["event"] == 0
+
+
+def test_quiet_range_below_threshold_is_known_market_with_score_verdict() -> None:
+    decision = RegimeEngine(RegimeConfig(enter_threshold=99.9)).evaluate(
+        "BTCUSDT",
+        _range_klines(),
+        spread_pct=0.0001,
+        depth_usdt=20_000,
+        expected_step_pct=0.003,
+        cost_floor_pct=0.001,
+    )
+
+    assert decision.allowed is False
+    assert decision.state == "QUIET_RANGE"
+    assert decision.verdict == "BLOCKED_SCORE"
+    assert decision.threshold_used == 99.9
+
+
+@pytest.mark.parametrize(
+    ("step", "cost", "expected_verdict", "expected_score"),
+    [
+        (0.003, 0.001, "ALLOWED", 200 / 3),
+        (0.001, 0.001, "BLOCKED_ECONOMICS", 0.0),
+        (0.0008, 0.001, "BLOCKED_ECONOMICS", 0.0),
+    ],
+)
+def test_cost_score_uses_planned_step_and_blocks_non_positive_edge(
+    step: float,
+    cost: float,
+    expected_verdict: str,
+    expected_score: float,
+) -> None:
+    decision = RegimeEngine(RegimeConfig(enter_threshold=0, stay_threshold=0)).evaluate(
+        "BTCUSDT",
+        _range_klines(),
+        spread_pct=0.0001,
+        depth_usdt=20_000,
+        expected_step_pct=step,
+        cost_floor_pct=cost,
+    )
+
+    assert decision.verdict == expected_verdict
+    assert decision.component_scores["cost"] == pytest.approx(expected_score)
+    assert decision.cost_breakdown["planned_step_pct"] == pytest.approx(step)
+    assert decision.cost_breakdown["hard_cost_pct"] == pytest.approx(cost)
 
 
 def test_low_volatility_trend_is_not_misclassified_as_range() -> None:
@@ -67,7 +117,7 @@ def test_low_volatility_trend_is_not_misclassified_as_range() -> None:
     [
         ({"spread_pct": 0.002, "depth_usdt": 20_000}, "ILLIQUID"),
         ({"spread_pct": 0.0001, "depth_usdt": 100}, "ILLIQUID"),
-        ({"spread_pct": 0.0001, "depth_usdt": 20_000, "data_age_seconds": 120}, "UNKNOWN"),
+        ({"spread_pct": 0.0001, "depth_usdt": 20_000, "data_age_seconds": 120}, "UNKNOWN_DATA"),
         ({"spread_pct": 0.0001, "depth_usdt": 20_000, "event_risk": True}, "EVENT_RISK"),
     ],
 )
@@ -176,3 +226,41 @@ def test_trend_and_mean_reversion_do_not_share_directional_efficiency() -> None:
 
     assert decision.component_scores["trend"] != decision.component_scores["mean_reversion"]
     assert decision.feature_version == "regime-features-v2.1.0"
+
+
+def test_risk_discount_reduces_cost_score_without_becoming_hard_block() -> None:
+    decision = RegimeEngine(RegimeConfig(enter_threshold=0, stay_threshold=0)).evaluate(
+        "BTCUSDT",
+        _range_klines(),
+        spread_pct=0.0001,
+        depth_usdt=20_000,
+        expected_step_pct=0.002,
+        cost_floor_pct=0.0004,
+        cost_breakdown={"risk_discount_pct": 0.001},
+    )
+
+    assert decision.verdict == "ALLOWED"
+    assert decision.cost_breakdown["fee_net_edge_pct"] == pytest.approx(0.0016)
+    assert decision.cost_breakdown["risk_adjusted_net_edge_pct"] == pytest.approx(0.0006)
+    assert decision.component_scores["cost"] == pytest.approx(30.0)
+
+
+def test_flat_market_gets_mean_reversion_credit_from_volatility_contraction() -> None:
+    rows = [
+        {
+            "high": 100.01 + (0.001 if index % 3 == 0 else 0.0),
+            "low": 99.99,
+            "close": 100.0 + (0.001 if index % 3 == 0 else 0.0),
+        }
+        for index in range(90)
+    ]
+    decision = RegimeEngine(RegimeConfig(enter_threshold=0, stay_threshold=0)).evaluate(
+        "BTCUSDT",
+        rows,
+        spread_pct=0.0001,
+        depth_usdt=20_000,
+        expected_step_pct=0.003,
+        cost_floor_pct=0.0004,
+    )
+
+    assert decision.component_scores["mean_reversion"] > 0

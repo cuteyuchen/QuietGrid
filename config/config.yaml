@@ -1,13 +1,22 @@
 trading:
   # v2 默认使用 1 倍有效杠杆；提高风险只能在下一窗口并经验证后生效。
   leverage: 1
-  capital_per_symbol: 200
-  total_capital_limit: 1000
+  capital_per_symbol: 500
+  total_capital_limit: 2000
+  direction_mode: "NEUTRAL"
+  direction_overrides:
+    BTCUSDT: "LONG"
+    ETHUSDT: "SHORT"
+    BCHUSDT: "NEUTRAL"
   take_profit_usdt: 10
   stop_buffer_pct: 0.015
-  max_concurrent: 1
+  max_concurrent: 3
   max_maker_fee_rate: 0.0002
   maker_fee_check_interval_seconds: 300
+
+entry:
+  seed_execution: "MARKET"
+  seed_max_slippage_pct: 0.002
 
 features:
   regime_v2: true
@@ -20,14 +29,33 @@ timing:
   observe_hours: 3
   observe_kline_interval: "1m"
   live_observation: false
+  startup_auto_entry: true
+  startup_observation_mode: "historical_prefill"
+  required_closed_bars: 180
+  kline_fetch_buffer_bars: 2
+  allowed_window_kinds:
+    - "WEEKEND"
+    - "HOLIDAY"
   testnet_force_window: true
   testnet_fast_observation: true
   observe_check_seconds: 60
   force_close_minutes: 120
+  minimum_trade_minutes: 120
   cooldown_re_observe_hours: 1
   min_calm_minutes: 15
   scheduler_check_minutes: 5
+  startup_scan_interval_seconds: 60
   loop_interval_seconds: 10
+
+runtime:
+  heartbeat_interval_seconds: 5
+  heartbeat_stale_seconds: 20
+  heartbeat_offline_seconds: 60
+  startup_timeout_seconds: 15
+
+entry:
+  max_price_drift_pct: 0.002
+  revalidate_before_place: true
 
 grid:
   range_method: "std"
@@ -38,7 +66,7 @@ grid:
   min_tradable_range_pct: 0.0015
   safety_multiplier: 3.5
   max_grid_num: 20
-  min_grid_num: 6
+  min_grid_num: 3
   max_step_pct: 0.01
   max_range_pct: 0.03
   center_half_life_minutes: 30
@@ -65,6 +93,7 @@ regime:
   long_window: 60
   enter_threshold: 75
   stay_threshold: 65
+  soft_breach_limit: 3
   max_data_age_seconds: 90
   recovery_confirm_minutes: 15
   # event 权重默认 0：当前无事件 Provider，避免"无事件数据即加分"。
@@ -140,16 +169,25 @@ web:
   auth_token: ""
   auth_token_env: "QUIETGRID_WEB_TOKEN"
 
-# Vue 控制台的交易 loop 进程控制。mode=auto 在 Linux 下使用 systemd，在 Windows 下显示不可用。
-# 非 systemd 环境可使用 mode=command，并配置 status_command / stop_command / restart_command 为字符串列表。
+# Vue 控制台的交易 loop 进程控制。
+# mode=auto：Windows 使用 local 本地启动；Linux 使用 systemd。
+# mode=local：网页可直接启动 trader.py。
+# mode=command：自定义 status/start/stop/restart 命令。
 process_control:
-  mode: "auto"
+  mode: "local"
   service: "quietgrid-trader"
+  python_executable: ".venv/Scripts/python.exe"
+  trader_entry: "trader.py"
+  trader_args:
+    - "--binance-loop"
+  working_directory: "."
+  pid_directory: "data/runtime"
+  log_directory: "logs"
+  timeout_seconds: 15
   # mode: "command"
   # status_command: ["powershell", "-NoProfile", "-Command", "Get-Service quietgrid-trader"]
   # stop_command: ["powershell", "-NoProfile", "-Command", "Stop-Service quietgrid-trader"]
   # restart_command: ["powershell", "-NoProfile", "-Command", "Restart-Service quietgrid-trader"]
-  # timeout_seconds: 15
 
 notifications:
   enabled: false

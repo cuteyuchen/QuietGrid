@@ -19,9 +19,19 @@ def test_regular_session_is_not_trading_window() -> None:
 
 def test_after_close_before_weekend_window_is_tradable() -> None:
     scheduler = Scheduler(force_close_minutes=120)
-    now = datetime(2026, 7, 2, 18, 0, tzinfo=NY)
+    # Friday after close starts the weekend window.
+    now = datetime(2026, 7, 3, 18, 0, tzinfo=NY)
 
     assert scheduler.is_in_window(now) is True
+    assert scheduler.should_force_close(now) is False
+
+
+def test_weekday_overnight_is_not_tradable() -> None:
+    scheduler = Scheduler(force_close_minutes=120)
+    # Tuesday after close -> Wednesday open (normal overnight).
+    now = datetime(2026, 6, 30, 18, 0, tzinfo=NY)
+
+    assert scheduler.is_in_window(now) is False
     assert scheduler.should_force_close(now) is False
 
 

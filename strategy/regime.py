@@ -9,7 +9,7 @@ from typing import Any
 from strategy.grid_calculator import GridCalculationError, calculate_atr
 
 
-REGIME_MODEL_VERSION = "regime-rules-v2.1.0"
+REGIME_MODEL_VERSION = "regime-rules-v2.1.1"
 REGIME_FEATURE_VERSION = "regime-features-v2.1.0"
 
 
@@ -33,6 +33,7 @@ class RegimeConfig:
     max_spread_pct: float = 0.001
     max_vol_expansion_ratio: float = 2.5
     min_depth_usdt: float = 10_000.0
+    soft_breach_limit: int = 3
     weights: RegimeWeights = RegimeWeights()
     # 没有事件数据 Provider 时不给 event 维度免费满分：置其权重为 0 并把权重
     # 重新归一化到其余维度（计划 §9.1）。接入事件源后再设为 True 启用 event。
@@ -66,7 +67,13 @@ class RegimeDecision:
     allowed: bool
     reasons: tuple[str, ...]
     hard_blocks: tuple[str, ...]
-    component_scores: dict[str, float]
+    component_scores: dict[str, float | None]
+    verdict: str
+    threshold_used: float
+    cost_breakdown: dict[str, float]
+    effective_weights: dict[str, float]
+    score_contributions: dict[str, float]
+    event_source_available: bool
     features: FeatureSnapshot
     model_version: str = REGIME_MODEL_VERSION
     feature_version: str = REGIME_FEATURE_VERSION
@@ -90,6 +97,8 @@ class RegimeEngine:
         cost_floor_pct: float = 0.0,
         event_risk: bool = False,
         running: bool = False,
+        include_cost: bool = True,
+        cost_breakdown: dict[str, float] | None = None,
         as_of: datetime | None = None,
     ) -> RegimeDecision:
         features = self.calculate_features(
@@ -124,9 +133,20 @@ class RegimeEngine:
         spread_score = _clamp(100.0 * (1.0 - features.spread_pct / config.max_spread_pct))
         depth_score = _clamp(100.0 * features.depth_usdt / config.min_depth_usdt)
         liquidity_score = 0.55 * spread_score + 0.45 * depth_score
-        mean_reversion_score = _clamp(100.0 * features.reversal_ratio)
-        cost_score = _cost_score(expected_step_pct, cost_floor_pct)
-        event_score = 0.0 if event_risk else 100.0
+        mean_reversion_score = _mean_reversion_score(
+            features.reversal_ratio,
+            features.volatility_expansion,
+        )
+        provided_costs = dict(cost_breakdown or {})
+        risk_discount_pct = _non_negative(
+            provided_costs.get("risk_discount_pct", 0.0),
+            "risk_discount_pct",
+        )
+        economic_cost_pct = _non_negative(cost_floor_pct, "cost_floor_pct") + risk_discount_pct
+        cost_score = _cost_score(expected_step_pct, economic_cost_pct) if include_cost else None
+        event_score = (
+            0.0 if event_risk else 100.0
+        ) if config.event_source_available else None
         component_scores = {
             "volatility": volatility_score,
             "trend": trend_score,
@@ -135,35 +155,65 @@ class RegimeEngine:
             "cost": cost_score,
             "event": event_score,
         }
-        effective_weights = _effective_weights(config)
-        grid_score = sum(
-            (
-                effective_weights["volatility"] * volatility_score,
-                effective_weights["trend"] * trend_score,
-                effective_weights["liquidity"] * liquidity_score,
-                effective_weights["mean_reversion"] * mean_reversion_score,
-                effective_weights["cost"] * cost_score,
-                effective_weights["event"] * event_score,
-            )
-        )
+        effective_weights = _effective_weights(config, include_cost=include_cost)
+        score_contributions = {
+            key: effective_weights[key] * float(score or 0.0)
+            for key, score in component_scores.items()
+        }
+        grid_score = sum(score_contributions.values())
         threshold = config.stay_threshold if running else config.enter_threshold
-        allowed = not hard_blocks and grid_score >= threshold
-        state = _regime_state(features, hard_blocks, allowed)
-        reasons = (
+        cost_blocked = (
+            include_cost
+            and _non_negative(cost_floor_pct, "cost_floor_pct")
+            >= _positive(expected_step_pct, "expected_step_pct")
+        )
+        allowed = not hard_blocks and not cost_blocked and grid_score >= threshold
+        state = _regime_state(features, hard_blocks)
+        verdict = _regime_verdict(
+            hard_blocks,
+            allowed=allowed,
+            include_cost=include_cost,
+            expected_step_pct=expected_step_pct,
+            cost_floor_pct=cost_floor_pct,
+        )
+        normalized_cost_breakdown = _normalized_cost_breakdown(
+            expected_step_pct,
+            cost_floor_pct,
+            cost_score,
+            cost_breakdown,
+        )
+        reasons_list = [
             f"网格适配度 {grid_score:.1f}，门槛 {threshold:.1f}",
             f"波动扩张比 {features.volatility_expansion:.2f}",
             f"方向效率 {features.directional_efficiency:.2f}，反转比例 {features.reversal_ratio:.2f}",
             f"点差 {features.spread_pct:.4%}，前档深度 {features.depth_usdt:.2f} USDT",
-        )
+        ]
+        if include_cost:
+            reasons_list.append(
+                "计划格距 "
+                f"{normalized_cost_breakdown['planned_step_pct']:.4%}，"
+                "硬成本 "
+                f"{normalized_cost_breakdown['hard_cost_pct']:.4%}，"
+                "手续费后净边际 "
+                f"{normalized_cost_breakdown['fee_net_edge_pct']:.4%}，"
+                "风险折扣 "
+                f"{normalized_cost_breakdown['risk_discount_pct']:.4%}"
+            )
         return RegimeDecision(
             symbol=symbol,
             as_of=features.as_of,
             state=state,
             grid_score=grid_score,
             allowed=allowed,
-            reasons=reasons,
+            reasons=tuple(reasons_list),
             hard_blocks=tuple(hard_blocks),
             component_scores=component_scores,
+            verdict=verdict,
+            threshold_used=threshold,
+            cost_breakdown=normalized_cost_breakdown,
+            effective_weights=effective_weights,
+            score_contributions=score_contributions,
+            event_source_available=config.event_source_available,
             features=features,
         )
 
@@ -220,9 +270,9 @@ class RegimeEngine:
         )
 
 
-def _regime_state(features: FeatureSnapshot, hard_blocks: list[str], allowed: bool) -> str:
+def _regime_state(features: FeatureSnapshot, hard_blocks: list[str]) -> str:
     if any("过期" in item for item in hard_blocks):
-        return "UNKNOWN"
+        return "UNKNOWN_DATA"
     if any("深度" in item or "价差" in item for item in hard_blocks):
         return "ILLIQUID"
     if any("事件" in item for item in hard_blocks):
@@ -232,7 +282,27 @@ def _regime_state(features: FeatureSnapshot, hard_blocks: list[str], allowed: bo
     if features.directional_efficiency > 0.70:
         direction = "UP" if features.trend_direction > 0 else "DOWN"
         return f"TREND_{direction}"
-    return "QUIET_RANGE" if allowed else "UNKNOWN"
+    return "QUIET_RANGE"
+
+
+def _regime_verdict(
+    hard_blocks: list[str],
+    *,
+    allowed: bool,
+    include_cost: bool,
+    expected_step_pct: float,
+    cost_floor_pct: float,
+) -> str:
+    if any("过期" in item for item in hard_blocks):
+        return "BLOCKED_DATA"
+    if hard_blocks:
+        return "BLOCKED_HARD"
+    if include_cost and _non_negative(cost_floor_pct, "cost_floor_pct") >= _positive(
+        expected_step_pct,
+        "expected_step_pct",
+    ):
+        return "BLOCKED_ECONOMICS"
+    return "ALLOWED" if allowed else "BLOCKED_SCORE"
 
 
 def _mean_reversion_score(reversal_ratio: float, volatility_expansion: float) -> float:
@@ -249,7 +319,7 @@ def _mean_reversion_score(reversal_ratio: float, volatility_expansion: float) ->
     return _clamp(0.7 * reversal_component + 0.3 * convergence_component)
 
 
-def _effective_weights(config: RegimeConfig) -> dict[str, float]:
+def _effective_weights(config: RegimeConfig, *, include_cost: bool = True) -> dict[str, float]:
     """返回归一化后的实际权重。
 
     event 维度在没有事件 Provider 时会给出免费满分（event_score=100），这会拉高
@@ -267,6 +337,8 @@ def _effective_weights(config: RegimeConfig) -> dict[str, float]:
     }
     if not config.event_source_available:
         raw["event"] = 0.0
+    if not include_cost:
+        raw["cost"] = 0.0
     total = sum(raw.values())
     if total <= 0:
         raise ValueError("Regime 有效权重之和必须为正。")
@@ -287,11 +359,42 @@ def _cost_score(expected_step_pct: float, cost_floor_pct: float) -> float:
     return _clamp(100.0 * (step - cost) / step)
 
 
+def _normalized_cost_breakdown(
+    expected_step_pct: float,
+    cost_floor_pct: float,
+    cost_score: float | None,
+    provided: dict[str, float] | None,
+) -> dict[str, float]:
+    result = {
+        str(key): _non_negative(value, str(key))
+        for key, value in (provided or {}).items()
+    }
+    step = _positive(expected_step_pct, "expected_step_pct")
+    hard_cost = _non_negative(cost_floor_pct, "cost_floor_pct")
+    risk_discount = _non_negative(result.get("risk_discount_pct", 0.0), "risk_discount_pct")
+    economic_cost = hard_cost + risk_discount
+    result.update(
+        {
+            "planned_step_pct": step,
+            "hard_cost_pct": hard_cost,
+            "risk_discount_pct": risk_discount,
+            "total_cost_pct": economic_cost,
+            "fee_net_edge_pct": step - hard_cost,
+            "risk_adjusted_net_edge_pct": step - economic_cost,
+            "net_edge_pct": step - economic_cost,
+            "cost_score": float(cost_score or 0.0),
+        }
+    )
+    return result
+
+
 def _validate_config(config: RegimeConfig) -> None:
     if config.short_window < 3 or config.long_window <= config.short_window:
         raise ValueError("Regime 短长窗口配置无效。")
     if not 0 <= config.stay_threshold <= config.enter_threshold <= 100:
         raise ValueError("Regime 进入/保持阈值无效。")
+    if config.soft_breach_limit < 1:
+        raise ValueError("Regime 连续软违约次数必须至少为 1。")
     _positive(config.max_data_age_seconds, "max_data_age_seconds")
     _positive(config.max_spread_pct, "max_spread_pct")
     _positive(config.max_vol_expansion_ratio, "max_vol_expansion_ratio")

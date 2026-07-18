@@ -9,7 +9,14 @@ from core.models import GridState, OrderStatus, RiskAction
 from db.database import init_db
 from db.repository import Repository
 from exchange.mock import MockExchangeClient
-from strategy.controller import ControllerConfig, TradingController, _position_qty, _positive_price, _ticker_last_price
+from strategy.controller import (
+    ControllerConfig,
+    RunOnceResult,
+    TradingController,
+    _position_qty,
+    _positive_price,
+    _ticker_last_price,
+)
 from strategy.grid_calculator import GridConfig
 from strategy.observer import ObservationAborted, ObserverConfig
 from strategy.selector import SelectionConfig
@@ -205,6 +212,43 @@ class CancelRacePartialFillExchange(RequiresPositionStopExchange):
         return {**response, "executedQty": str(self.final_qty), "avgPrice": "99.52462121212121"}
 
 
+class UnknownOrderAfterFullFillExchange(RequiresPositionStopExchange):
+    def __init__(self, initial_qty: float, final_qty: float) -> None:
+        super().__init__()
+        self.initial_qty = initial_qty
+        self.final_qty = final_qty
+        self.cancel_attempted = False
+
+    async def get_order_trades(self, symbol: str, order_id: str):
+        qty = self.final_qty if self.cancel_attempted else self.initial_qty
+        return [
+            {
+                "symbol": symbol,
+                "orderId": order_id,
+                "side": "BUY",
+                "price": "99.5",
+                "qty": str(qty),
+                "commission": "0.02",
+                "realizedPnl": "0",
+                "time": 1780000001000,
+            }
+        ]
+
+    async def cancel_order(self, symbol: str, order_id: str):
+        self.cancel_attempted = True
+        self.positions[symbol] = self.final_qty
+        raise RuntimeError("APIError(code=-2011): Unknown order sent.")
+
+    async def get_order(self, symbol: str, order_id: str, client_id: str):
+        return {
+            "symbol": symbol,
+            "orderId": order_id,
+            "clientOrderId": client_id,
+            "status": "FILLED",
+            "executedQty": str(self.final_qty),
+        }
+
+
 class FailingDelayedStopProtectionExchange(RequiresPositionStopExchange):
     async def place_stop_market_order(
         self,
@@ -356,6 +400,36 @@ class MixedCommissionExchange(MockExchangeClient):
         if symbol == "AAPLUSDT":
             return {"maker": 0.0002, "taker": 0.0005}
         return {"maker": 0.0, "taker": 0.0005}
+
+
+class ThreeSymbolExchange(MockExchangeClient):
+    def __init__(self, failing_symbol: str | None = None) -> None:
+        super().__init__()
+        self.failing_symbol = failing_symbol
+        self.symbols = [
+            {"symbol": symbol, "status": "TRADING", "contractType": "PERPETUAL"}
+            for symbol in ("BTCUSDT", "ETHUSDT", "BCHUSDT")
+        ]
+
+    async def place_limit_order_post_only(
+        self,
+        symbol: str,
+        side: str,
+        price: float,
+        qty: float,
+        client_id: str,
+        position_side: str | None = None,
+    ):
+        if symbol == self.failing_symbol:
+            raise RuntimeError(f"{symbol} isolated order failure")
+        return await super().place_limit_order_post_only(
+            symbol,
+            side,
+            price,
+            qty,
+            client_id,
+            position_side,
+        )
 
 
 class ChangingCommissionExchange(MockExchangeClient):
@@ -580,6 +654,82 @@ def test_controller_run_once_starts_mock_grid_and_persists_state(tmp_path) -> No
         selection_detail = json.loads(selection_log["detail"])
         assert selection_detail[0]["symbol"] == "AAPLUSDT"
         assert "score" in selection_detail[0]
+
+    asyncio.run(run())
+
+
+def test_controller_can_start_three_independent_testnet_sessions(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = ThreeSymbolExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(
+                max_concurrent=3,
+                scan_candidate_count=3,
+                symbol_allowlist=("BTCUSDT", "ETHUSDT", "BCHUSDT"),
+            ),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=1,
+                max_concurrent=3,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        result = await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+
+        assert result.status == "started"
+        assert set(result.started_symbols) == {"BTCUSDT", "ETHUSDT", "BCHUSDT"}
+        assert set(controller.active_sessions) == {"BTCUSDT", "ETHUSDT", "BCHUSDT"}
+        assert all(exchange.orders[symbol] for symbol in controller.active_sessions)
+        assert sum(session.capital for session in controller.active_sessions.values()) == 600
+
+    asyncio.run(run())
+
+
+def test_one_symbol_start_failure_does_not_stop_other_sessions(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = ThreeSymbolExchange(failing_symbol="ETHUSDT")
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(
+                max_concurrent=3,
+                scan_candidate_count=3,
+                symbol_allowlist=("BTCUSDT", "ETHUSDT", "BCHUSDT"),
+            ),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=1,
+                max_concurrent=3,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        result = await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+
+        assert set(result.started_symbols) == {"BTCUSDT", "BCHUSDT"}
+        assert set(controller.active_sessions) == {"BTCUSDT", "BCHUSDT"}
+        failed = next(
+            row
+            for row in Repository(db_path).recent_rows("sessions", limit=10)
+            if row["symbol"] == "ETHUSDT"
+        )
+        assert failed["state"] == "STOPPED"
+        assert failed["close_reason"] == "grid_start_failed"
 
     asyncio.run(run())
 
@@ -2596,6 +2746,56 @@ def test_controller_partial_fill_cancel_race_uses_final_cumulative_qty(tmp_path)
         assert exchange.trade_lookup_calls >= 3
         assert exchange.stop_orders["AAPLUSDT"][-1]["side"] == "SELL"
         assert session.stop_protection_sides == {"long"}
+
+    asyncio.run(run())
+
+
+def test_controller_unknown_order_after_partial_fill_reconciles_full_fill(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller-partial-unknown-order.db"
+        init_db(db_path)
+        exchange = UnknownOrderAfterFullFillExchange(0.1, 0.2)
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 10, 1, 10, 1000),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        buy_order = next(order for order in session.orders if order.side.value == "BUY")
+        exchange.final_qty = buy_order.qty
+        exchange.initial_qty = buy_order.qty / 2
+        exchange.positions["AAPLUSDT"] = exchange.initial_qty
+
+        await controller.handle_order_filled_event(
+            {
+                "symbol": "AAPLUSDT",
+                "client_id": buy_order.client_id,
+                "status": "PARTIALLY_FILLED",
+                "price": 99.5,
+                "qty": exchange.initial_qty,
+                "order_id": buy_order.order_id,
+                "side": "BUY",
+                "trade_time": datetime(2026, 7, 4, 10, 1, tzinfo=NY),
+            }
+        )
+
+        repo = Repository(db_path)
+        session_row = repo.get_session(session.session_id)
+        logs = repo.recent_rows("system_logs", limit=20)
+
+        assert exchange.cancel_attempted is True
+        assert controller.active_sessions["AAPLUSDT"].state == GridState.RUNNING
+        assert session_row["state"] == "RUNNING"
+        assert "AAPLUSDT" not in controller.round_stopped_symbols
+        assert len(repo.recent_rows("trades", limit=10)) == 1
+        assert any("-2011" in str(log.get("detail") or "") for log in logs)
+        assert not exchange.market_orders
 
     asyncio.run(run())
 
@@ -4902,7 +5102,8 @@ def test_round_start_immediately_calculates_from_historical_one_minute_klines(tm
         result = await controller.start_round(now)
 
         assert result.status == "started"
-        assert exchange.kline_calls == [("AAPLUSDT", "1m", 60)]
+        # required_bars=60 + buffer_bars=2 for closed-bar prefill
+        assert exchange.kline_calls == [("AAPLUSDT", "1m", 62)]
         candidate = repo.round_candidates(controller.current_window_id)[0]
         assert candidate["calculated_at"] == now.isoformat()
 
@@ -4931,10 +5132,10 @@ def test_closed_one_minute_kline_is_processed_once(tmp_path) -> None:
         repo.upsert_round_candidate(window_id, "AAPLUSDT", now, stage="scanning")
         calls = 0
 
-        async def fake_scan(_now=None):
+        async def fake_scan(_now=None, **_kwargs):
             nonlocal calls
             calls += 1
-            return None
+            return RunOnceResult("scanning", [], [])
 
         controller.scan_round_once = fake_scan  # type: ignore[method-assign]
         event = {"symbol": "AAPLUSDT", "closed": True, "close_time": now}
@@ -4942,6 +5143,49 @@ def test_closed_one_minute_kline_is_processed_once(tmp_path) -> None:
         assert await controller.handle_kline_closed_event(event) == "scanned"
         assert await controller.handle_kline_closed_event(event) is None
         assert await controller.handle_kline_closed_event({**event, "closed": False}) is None
+        assert calls == 1
+
+    asyncio.run(run())
+
+
+def test_same_minute_multi_symbol_kline_events_trigger_one_full_scan(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        window_id = repo.create_window(now)
+        controller = TradingController(
+            exchange=MockExchangeClient(),
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=3),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(200, 1, 3, 10, 1000),
+        )
+        controller.current_window_id = window_id
+        controller.round_active = True
+        symbols = ("BTCUSDT", "BCHUSDT", "ETHUSDT")
+        controller.round_candidate_symbols.update(symbols)
+        for symbol in symbols:
+            repo.upsert_round_candidate(window_id, symbol, now, stage="scanning")
+        calls = 0
+
+        async def fake_scan(_now=None):
+            nonlocal calls
+            calls += 1
+            return RunOnceResult("scanning", list(symbols), [])
+
+        controller._scan_round_once_locked = fake_scan  # type: ignore[method-assign]
+        results = [
+            await controller.handle_kline_closed_event(
+                {"symbol": symbol, "closed": True, "close_time": now}
+            )
+            for symbol in symbols
+        ]
+
+        assert results == ["scanned", "coalesced", "coalesced"]
         assert calls == 1
 
     asyncio.run(run())

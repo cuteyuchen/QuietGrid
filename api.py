@@ -241,7 +241,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @app.get("/api/process/trader")
     def trader_process_status(ctx: AccountRequestContext = Depends(get_account_context)) -> dict[str, Any]:
-        return _trader_process_status(ctx.config)
+        return _trader_process_status(ctx.config, ctx.repo)
 
     @app.get("/api/selection/candidates")
     async def selection_candidates(
@@ -498,6 +498,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         _require_confirm(request)
         return _request_all_sessions_stop(ctx.config, ctx.repo, request)
 
+    @app.post("/api/actions/trader-loop/start")
+    def action_start_trader_loop(
+        request: ConsoleActionRequest,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        _require_confirm(request)
+        return _run_trader_process_action(ctx.config, ctx.repo, request, "start")
+
     @app.post("/api/actions/trader-loop/stop")
     def action_stop_trader_loop(
         request: ConsoleActionRequest,
@@ -513,6 +521,26 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         _require_confirm(request)
         return _run_trader_process_action(ctx.config, ctx.repo, request, "restart")
+
+    @app.post("/api/actions/auto-trading/start")
+    def action_start_auto_trading(
+        request: ConsoleActionRequest,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        _require_confirm(request)
+        return _run_auto_trading_action(ctx.config, ctx.repo, request, enabled=True)
+
+    @app.post("/api/actions/auto-trading/stop")
+    def action_stop_auto_trading(
+        request: ConsoleActionRequest,
+        ctx: AccountRequestContext = Depends(get_account_context),
+    ) -> dict[str, Any]:
+        _require_confirm(request)
+        return _run_auto_trading_action(ctx.config, ctx.repo, request, enabled=False)
+
+    @app.get("/api/v2/current-round")
+    def current_round(ctx: AccountRequestContext = Depends(get_account_context)) -> dict[str, Any]:
+        return _current_round_payload(ctx.config, ctx.repo)
 
     @app.post("/api/actions/symbols/{symbol}/disable-next-entry")
     def action_disable_symbol_next_entry(
@@ -3521,55 +3549,238 @@ def _json_detail(value: dict[str, Any]) -> str:
     return json.dumps(value, ensure_ascii=False, default=str)
 
 
-def _trader_process_status(config: AppConfig) -> dict[str, Any]:
+def _runtime_heartbeat_thresholds(config: AppConfig) -> tuple[float, float]:
+    raw = config.raw.get("runtime", {}) if isinstance(config.raw, dict) else {}
+    if not isinstance(raw, dict):
+        raw = {}
+    try:
+        stale = float(raw.get("heartbeat_stale_seconds", 20))
+    except (TypeError, ValueError):
+        stale = 20.0
+    try:
+        offline = float(raw.get("heartbeat_offline_seconds", 60))
+    except (TypeError, ValueError):
+        offline = 60.0
+    stale = max(1.0, stale)
+    offline = max(stale, offline)
+    return stale, offline
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _alive_process_state_from_runtime(
+    runtime: dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+    stale_seconds: float = 20.0,
+    offline_seconds: float = 60.0,
+) -> dict[str, Any]:
+    current = now or datetime.now(timezone.utc)
+    if not isinstance(runtime, dict) or not str(runtime.get("runtime_id") or "").strip():
+        return {
+            "process_state": "OFFLINE",
+            "alive": False,
+            "pid": None,
+            "runtime_id": "",
+            "runtime_state": "",
+            "started_at": "",
+            "heartbeat_at": "",
+            "heartbeat_age_seconds": None,
+            "uptime_seconds": None,
+            "last_status": "",
+            "last_error": "",
+        }
+    explicit = str(runtime.get("state") or "").strip().upper()
+    stopped_at = _parse_iso_datetime(runtime.get("stopped_at"))
+    heartbeat_at = _parse_iso_datetime(runtime.get("heartbeat_at")) or _parse_iso_datetime(runtime.get("started_at"))
+    started_at = _parse_iso_datetime(runtime.get("started_at"))
+    age = (current - heartbeat_at).total_seconds() if heartbeat_at is not None else None
+    uptime = (current - started_at).total_seconds() if started_at is not None else None
+    if explicit == "FAILED" or (stopped_at is not None and explicit == "FAILED"):
+        process_state = "FAILED"
+        alive = False
+    elif stopped_at is not None and explicit in {"STOPPED", "STOPPING"}:
+        process_state = explicit
+        alive = False
+    elif age is None:
+        process_state = "OFFLINE"
+        alive = False
+    elif age <= stale_seconds:
+        process_state = "ONLINE"
+        alive = True
+    elif age <= offline_seconds:
+        process_state = "STALE"
+        alive = False
+    else:
+        process_state = "OFFLINE"
+        alive = False
+    pid_raw = runtime.get("pid")
+    try:
+        pid = int(pid_raw) if pid_raw is not None and str(pid_raw).strip() != "" else None
+    except (TypeError, ValueError):
+        pid = None
+    return {
+        "process_state": process_state,
+        "alive": alive,
+        "pid": pid,
+        "runtime_id": str(runtime.get("runtime_id") or ""),
+        "runtime_state": str(runtime.get("state") or ""),
+        "started_at": str(runtime.get("started_at") or ""),
+        "heartbeat_at": str(runtime.get("heartbeat_at") or ""),
+        "heartbeat_age_seconds": age,
+        "uptime_seconds": uptime,
+        "last_status": str(runtime.get("last_status") or ""),
+        "last_error": str(runtime.get("last_error") or ""),
+    }
+
+
+def _trader_process_status(config: AppConfig, repo: Repository | None = None) -> dict[str, Any]:
     control = _process_control_config(config)
     mode = str(control.get("mode") or "auto").strip().lower()
     service = str(control.get("service") or "quietgrid-trader").strip() or "quietgrid-trader"
     if mode == "auto":
-        mode = "systemd" if platform.system().lower() != "windows" else "unavailable"
-    if mode == "command":
+        mode = "local" if platform.system().lower() == "windows" else "systemd"
+    control_payload: dict[str, Any]
+    if mode == "local":
+        control_payload = {
+            "available": True,
+            "mode": "local",
+            "service": service,
+            "state": "unknown",
+            "detail": "本地进程控制已启用；在线状态以 Trader 心跳为准。",
+            "process_control_available": True,
+            "process_control_mode": "local",
+        }
+    elif mode == "command":
         status_command = _process_command(control, "status_command")
         if not status_command:
-            return {
+            control_payload = {
                 "available": bool(_process_command(control, "stop_command") or _process_command(control, "restart_command")),
                 "mode": "command",
                 "service": service,
                 "state": "unknown",
                 "detail": "已配置 command 交易进程控制，但未配置 status_command。",
+                "process_control_available": bool(
+                    _process_command(control, "stop_command")
+                    or _process_command(control, "restart_command")
+                    or _process_command(control, "start_command")
+                ),
+                "process_control_mode": "command",
             }
-        result = _run_process_command(status_command, timeout_seconds=_process_command_timeout(control))
-        detail = (result.stdout or result.stderr).strip()
-        state = _command_process_state(result.returncode, detail)
-        return {
+        else:
+            result = _run_process_command(status_command, timeout_seconds=_process_command_timeout(control))
+            detail = (result.stdout or result.stderr).strip()
+            state = _command_process_state(result.returncode, detail)
+            control_payload = {
+                "available": True,
+                "mode": "command",
+                "service": service,
+                "state": state,
+                "detail": detail,
+                "returncode": result.returncode,
+                "process_control_available": True,
+                "process_control_mode": "command",
+            }
+    elif mode == "systemd":
+        result = _run_systemctl(["is-active", service])
+        if result.returncode == 0:
+            state = "running"
+        elif str(result.stdout).strip() == "inactive":
+            state = "stopped"
+        else:
+            state = "unknown"
+        control_payload = {
             "available": True,
-            "mode": "command",
+            "mode": "systemd",
             "service": service,
             "state": state,
-            "detail": detail,
-            "returncode": result.returncode,
+            "detail": (result.stdout or result.stderr).strip(),
+            "process_control_available": True,
+            "process_control_mode": "systemd",
         }
-    if mode != "systemd":
-        return {
+    else:
+        control_payload = {
             "available": False,
             "mode": mode,
             "service": service,
             "state": "unavailable",
-            "detail": "当前运行环境未配置 systemd 或 command 交易进程控制。",
+            "detail": "当前运行环境未配置 systemd、local 或 command 交易进程控制。",
+            "process_control_available": False,
+            "process_control_mode": mode,
         }
-    result = _run_systemctl(["is-active", service])
-    if result.returncode == 0:
-        state = "running"
-    elif str(result.stdout).strip() == "inactive":
-        state = "stopped"
-    else:
-        state = "unknown"
+
+    stale_seconds, offline_seconds = _runtime_heartbeat_thresholds(config)
+    runtime = repo.trader_runtime() if repo is not None else None
+    live = _alive_process_state_from_runtime(
+        runtime,
+        stale_seconds=stale_seconds,
+        offline_seconds=offline_seconds,
+    )
+    # 兼容旧字段：state 优先展示真实在线状态；控制能力单独字段。
+    mapped_state = {
+        "ONLINE": "running",
+        "STARTING": "starting",
+        "STALE": "stale",
+        "STOPPING": "stopping",
+        "STOPPED": "stopped",
+        "FAILED": "failed",
+        "OFFLINE": "stopped" if control_payload.get("mode") in {"systemd", "command", "local"} else "unavailable",
+    }.get(str(live["process_state"]), str(control_payload.get("state") or "unknown"))
     return {
-        "available": True,
-        "mode": "systemd",
-        "service": service,
-        "state": state,
-        "detail": (result.stdout or result.stderr).strip(),
+        **control_payload,
+        **live,
+        "state": mapped_state if live["process_state"] != "OFFLINE" or not control_payload.get("available") else control_payload.get("state"),
+        "detail": (
+            live["last_error"]
+            or control_payload.get("detail")
+            or f"process_state={live['process_state']}"
+        ),
     }
+
+
+def _local_process_manager(config: AppConfig, repo: Repository):
+    from operations.process_manager import LocalTraderProcessManager
+
+    control = _process_control_config(config)
+    stale, offline = _runtime_heartbeat_thresholds(config)
+    timeout = float(control.get("timeout_seconds", config.raw.get("runtime", {}).get("startup_timeout_seconds", 15)))
+    return LocalTraderProcessManager(
+        repository=repo,
+        config=control,
+        runtime_thresholds=(stale, offline),
+        startup_timeout_seconds=timeout,
+        project_root=Path.cwd(),
+    )
+
+
+def _wait_for_trader_heartbeat(
+    config: AppConfig,
+    repo: Repository,
+    *,
+    timeout_seconds: float = 15.0,
+    poll_seconds: float = 0.5,
+) -> dict[str, Any]:
+    import time
+
+    deadline = time.monotonic() + max(1.0, float(timeout_seconds))
+    last: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        last = _trader_process_status(config, repo)
+        if last.get("alive") or str(last.get("process_state") or "") == "ONLINE":
+            return {**last, "wait_ok": True}
+        time.sleep(max(0.1, float(poll_seconds)))
+    return {**last, "wait_ok": False}
 
 
 def _run_trader_process_action(
@@ -3577,44 +3788,162 @@ def _run_trader_process_action(
     repo: Repository,
     request: ConsoleActionRequest,
     operation: str,
+    *,
+    wait_for_heartbeat: bool = True,
 ) -> dict[str, Any]:
-    if operation not in {"stop", "restart"}:
+    if operation not in {"start", "stop", "restart"}:
         raise HTTPException(status_code=422, detail="不支持的交易进程控制动作。")
-    from datetime import datetime, timezone
 
-    before = _trader_process_status(config)
-    if not before.get("available"):
+    before = _trader_process_status(config, repo)
+    if not before.get("process_control_available", before.get("available")):
         raise HTTPException(status_code=409, detail=str(before.get("detail") or "交易进程控制不可用。"))
-    label = "停止交易 loop 进程" if operation == "stop" else "重启交易 loop 进程"
+    labels = {
+        "start": "启动交易 loop 进程",
+        "stop": "停止交易 loop 进程",
+        "restart": "重启交易 loop 进程",
+    }
+    label = labels[operation]
     request_id = request.request_id or str(uuid4())
     now = datetime.now(timezone.utc)
     detail = _action_detail("trader_loop_" + operation, label, request, request_id, {"before": before})
     repo.log_system("WARN", "console_action", "Console action requested.", _json_detail(detail), now)
     service = str(before.get("service") or "quietgrid-trader")
-    if before.get("mode") == "command":
+    mode = str(before.get("mode") or before.get("process_control_mode") or "")
+    result_payload: dict[str, Any]
+    if mode == "local":
+        manager = _local_process_manager(config, repo)
+        account_id = str(getattr(config, "account_id", "default") or "default")
+        if operation == "start":
+            if before.get("process_state") == "ONLINE" or before.get("alive"):
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "TRADER_ALREADY_RUNNING", "message": "交易进程已经运行，不能重复启动。"},
+                )
+            start_result = manager.start(account_id)
+            if not start_result.started and start_result.state == "ONLINE":
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "TRADER_ALREADY_RUNNING", "message": start_result.message},
+                )
+            if not start_result.started and start_result.state == "FAILED":
+                raise HTTPException(
+                    status_code=500,
+                    detail={"code": "TRADER_START_FAILED", "message": start_result.message},
+                )
+            heartbeat_info: dict[str, Any] = {"wait_ok": None}
+            if wait_for_heartbeat:
+                heartbeat_info = _wait_for_trader_heartbeat(
+                    config, repo, timeout_seconds=manager.startup_timeout_seconds
+                )
+                if not heartbeat_info.get("alive"):
+                    raise HTTPException(
+                        status_code=504,
+                        detail={
+                            "code": "TRADER_START_TIMEOUT",
+                            "message": "交易进程已拉起，但在超时时间内未收到心跳。",
+                            "pid": start_result.pid,
+                            "wait": heartbeat_info,
+                        },
+                    )
+            result_payload = {
+                "returncode": 0,
+                "stdout": start_result.message,
+                "stderr": "",
+                "start": {**start_result.to_mapping(), "heartbeat": heartbeat_info},
+            }
+        elif operation == "stop":
+            active = int(repo.dashboard_summary().get("active_sessions") or 0)
+            force = bool(getattr(request, "force", False)) if hasattr(request, "force") else False
+            reason_force = "force" in str(request.reason or "").lower()
+            if active > 0 and not (force or reason_force):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "ACTIVE_SESSIONS_PRESENT",
+                        "message": f"仍有 {active} 个活动会话，停止进程不会自动平仓。请先停止本轮/安全清扫，或 reason 含 force。",
+                        "active_sessions": active,
+                    },
+                )
+            stop_result = manager.stop(account_id)
+            if not stop_result.get("ok"):
+                raise HTTPException(status_code=500, detail=str(stop_result.get("message") or "停止失败"))
+            result_payload = {
+                "returncode": 0,
+                "stdout": str(stop_result.get("message") or ""),
+                "stderr": "",
+                "stop": stop_result,
+            }
+        else:
+            active = int(repo.dashboard_summary().get("active_sessions") or 0)
+            reason_force = "force" in str(request.reason or "").lower()
+            if active > 0 and not reason_force:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "ACTIVE_SESSIONS_PRESENT",
+                        "message": f"仍有 {active} 个活动会话，重启前请先停止本轮或在 reason 中标注 force。",
+                        "active_sessions": active,
+                    },
+                )
+            restart_result = manager.restart(account_id)
+            result_payload = {
+                "returncode": 0 if restart_result.get("ok") else 1,
+                "stdout": json.dumps(restart_result, ensure_ascii=False),
+                "stderr": "",
+                "restart": restart_result,
+            }
+            if result_payload["returncode"] != 0:
+                raise HTTPException(status_code=500, detail="重启交易进程失败。")
+    elif mode == "command":
         command = _process_command(_process_control_config(config), f"{operation}_command")
         if not command:
             raise HTTPException(status_code=409, detail=f"未配置 {operation}_command，无法执行交易进程控制。")
         result = _run_process_command(command, timeout_seconds=_process_command_timeout(_process_control_config(config)))
+        result_payload = {
+            "returncode": result.returncode,
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip(),
+        }
+        if result.returncode != 0:
+            after = _trader_process_status(config, repo)
+            payload = {"before": before, "after": after, **result_payload}
+            repo.log_system(
+                "ERROR",
+                "console_action",
+                "Console action failed.",
+                _json_detail({**detail, "result": payload}),
+                datetime.now(timezone.utc),
+            )
+            raise HTTPException(status_code=500, detail=result.stderr.strip() or result.stdout.strip() or f"{label}失败。")
     else:
-        result = _run_systemctl([operation, service])
-    after = _trader_process_status(config)
+        if operation == "start":
+            systemctl_op = "start"
+        else:
+            systemctl_op = operation
+        result = _run_systemctl([systemctl_op, service])
+        result_payload = {
+            "returncode": result.returncode,
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip(),
+        }
+        if result.returncode != 0:
+            after = _trader_process_status(config, repo)
+            payload = {"before": before, "after": after, **result_payload}
+            repo.log_system(
+                "ERROR",
+                "console_action",
+                "Console action failed.",
+                _json_detail({**detail, "result": payload}),
+                datetime.now(timezone.utc),
+            )
+            raise HTTPException(status_code=500, detail=result.stderr.strip() or result.stdout.strip() or f"{label}失败。")
+
+    after = _trader_process_status(config, repo)
     payload = {
         "before": before,
         "after": after,
-        "returncode": result.returncode,
-        "stdout": result.stdout.strip(),
-        "stderr": result.stderr.strip(),
+        **result_payload,
     }
-    if result.returncode != 0:
-        repo.log_system(
-            "ERROR",
-            "console_action",
-            "Console action failed.",
-            _json_detail({**detail, "result": payload}),
-            datetime.now(timezone.utc),
-        )
-        raise HTTPException(status_code=500, detail=result.stderr.strip() or result.stdout.strip() or f"{label}失败。")
     repo.log_system(
         "INFO",
         "console_action",
@@ -3627,8 +3956,204 @@ def _run_trader_process_action(
         "action": "trader_loop_" + operation,
         "label": label,
         "request_id": request_id,
-        "message": f"{label}已提交，当前状态：{after.get('state')}。",
+        "state": after.get("process_state") or after.get("state"),
+        "pid": after.get("pid"),
+        "message": f"{label}已提交，当前状态：{after.get('process_state') or after.get('state')}。",
         "result": payload,
+    }
+
+
+def _run_auto_trading_action(
+    config: AppConfig,
+    repo: Repository,
+    request: ConsoleActionRequest,
+    *,
+    enabled: bool,
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    request_id = request.request_id or str(uuid4())
+    control = {
+        "enabled": bool(enabled),
+        "requested_at": now.isoformat(),
+        "requested_by": "web",
+        "request_id": request_id,
+        "mode": "AUTO_WINDOW",
+        "account_id": str(getattr(config, "account_id", "default") or "default"),
+    }
+    control, changed = repo.ensure_auto_trading_control(control, now)
+    trader_state = _trader_process_status(config, repo)
+    start_payload: dict[str, Any] | None = None
+    if changed and enabled and not trader_state.get("alive"):
+        try:
+            start_payload = _run_trader_process_action(
+                config, repo, request, "start", wait_for_heartbeat=True
+            )
+            trader_state = _trader_process_status(config, repo)
+        except HTTPException as exc:
+            # 409 已在线；504 超时仍算“已提交启动”，由前端继续轮询心跳。
+            if exc.status_code not in {409, 504}:
+                raise
+    label = "启动自动交易" if enabled else "停止自动交易"
+    if changed:
+        detail = _action_detail(
+            "auto_trading_" + ("start" if enabled else "stop"),
+            label,
+            request,
+            request_id,
+            control,
+        )
+        repo.log_system("INFO", "auto_trading", f"{label} completed.", _json_detail(detail), now)
+    transition_state = "ENABLED" if enabled else "DISABLED"
+    return {
+        "ok": True,
+        "auto_trading_enabled": bool(enabled),
+        "enabled": bool(enabled),
+        "changed": changed,
+        "transition_state": transition_state,
+        "can_start": not enabled,
+        "can_stop": enabled,
+        "blocked_reason": "",
+        "trader_process_state": trader_state.get("process_state") or trader_state.get("state"),
+        "message": (
+            (
+                "自动交易已启用，系统将在 Trader 在线后检查交易窗口。"
+                if changed
+                else "自动交易已经启用。"
+            )
+            if enabled
+            else (
+                "自动交易已关闭；现有会话不会自动平仓。"
+                if changed
+                else "自动交易已经停止。"
+            )
+        ),
+        "trader_start": start_payload,
+        "control": control,
+    }
+
+
+def _current_round_payload(config: AppConfig, repo: Repository) -> dict[str, Any]:
+    trader = _trader_process_status(config, repo)
+    runtime = repo.runtime_state()
+    auto = repo.auto_trading_control() or {"enabled": False}
+    auto_enabled = bool(auto.get("enabled"))
+    auto = {
+        **auto,
+        "enabled": auto_enabled,
+        "transition_state": "ENABLED" if auto_enabled else "DISABLED",
+        "can_start": not auto_enabled,
+        "can_stop": auto_enabled,
+        "blocked_reason": "",
+    }
+    timing = config.raw.get("timing", {}) if isinstance(config.raw, dict) else {}
+    window_payload: dict[str, Any] = {
+        "kind": "",
+        "allowed": False,
+        "window_key": "",
+        "force_close_at": "",
+        "minutes_to_force_close": None,
+        "testnet_force_window": bool(timing.get("testnet_force_window", False)),
+    }
+    try:
+        from core.scheduler import Scheduler
+        from strategy.window_models import WindowKind
+
+        kinds = []
+        for item in timing.get("allowed_window_kinds") or ["WEEKEND", "HOLIDAY"]:
+            try:
+                kinds.append(WindowKind(str(item).strip().upper()))
+            except ValueError:
+                continue
+        scheduler = Scheduler(
+            force_close_minutes=int(timing.get("force_close_minutes", 120)),
+            minimum_trade_minutes=int(timing.get("minimum_trade_minutes", 120)),
+            allowed_window_kinds=tuple(kinds or [WindowKind.WEEKEND, WindowKind.HOLIDAY]),
+        )
+        if bool(timing.get("testnet_force_window", False)) and bool(getattr(config, "binance_testnet", False)):
+            window_payload = {
+                "kind": "WEEKEND",
+                "allowed": True,
+                "window_key": "TESTNET_FORCE_WINDOW",
+                "force_close_at": "",
+                "minutes_to_force_close": None,
+                "testnet_force_window": True,
+                "reason": "强制测试窗口",
+            }
+        else:
+            window = scheduler.classify_window(datetime.now(timezone.utc))
+            window_payload = window.to_mapping()
+            window_payload["testnet_force_window"] = False
+    except Exception as exc:
+        window_payload["reason"] = str(exc)
+
+    candidates = []
+    current_round_id = runtime.get("current_round_id")
+    if current_round_id is not None:
+        try:
+            rows = repo.round_candidates(int(current_round_id)) if hasattr(repo, "round_candidates") else []
+            candidates = rows or []
+        except Exception:
+            candidates = []
+
+    recent_events: list[dict[str, Any]] = []
+    try:
+        for row in repo.recent_rows("system_logs", limit=20):
+            recent_events.append(
+                {
+                    "time": row.get("log_time") or row.get("created_at") or "",
+                    "level": row.get("level") or "",
+                    "module": row.get("module") or "",
+                    "message": row.get("message") or "",
+                }
+            )
+    except Exception:
+        recent_events = []
+
+    request = repo.round_start_request(include_terminal=True)
+    stream_health_entry = repo.get_control_state().get("stream_health")
+    stream_health = (
+        stream_health_entry.get("value")
+        if isinstance(stream_health_entry, dict)
+        and isinstance(stream_health_entry.get("value"), dict)
+        else {"streams": {}, "updated_at": ""}
+    )
+    session_rows = repo.console_sessions(
+        active_only=True,
+        limit=200,
+        window_id=int(current_round_id) if current_round_id is not None else None,
+    )
+    disabled_symbols = repo.disabled_symbols()
+    stop_requests = repo.pending_session_stop_requests()
+    control_requests = repo.pending_session_control_requests()
+    sessions = [
+        _session_payload(
+            row,
+            config,
+            disabled_symbols,
+            stop_requests,
+            control_requests,
+        )
+        for row in session_rows
+    ]
+    return {
+        "trader": trader,
+        "auto_trading": auto,
+        "window": window_payload,
+        "round": {
+            "state": runtime.get("round_state") or "IDLE",
+            "round_id": current_round_id,
+            "last_scan_at": runtime.get("last_scan_at") or "",
+            "next_scan_at": runtime.get("next_scan_at") or "",
+            "runtime_id": runtime.get("runtime_id") or "",
+            "start_request": request,
+        },
+        "candidates": candidates,
+        "sessions": sessions,
+        "stream_health": stream_health,
+        "risk": {
+            "new_entries_paused": bool(repo.new_entries_paused()),
+        },
+        "recent_events": recent_events,
     }
 
 
@@ -3780,6 +4305,7 @@ def _session_payload(
         "open_time": row.get("open_time"),
         "close_time": row.get("close_time"),
         "close_reason": row.get("close_reason"),
+        "soft_breach_count": int(row.get("soft_breach_count") or 0),
         "open_order_count": int(row.get("open_order_count") or 0),
         "trade_count": int(row.get("trade_count") or 0),
         "next_entry_disabled": symbol.upper() in (disabled_symbols or set()),

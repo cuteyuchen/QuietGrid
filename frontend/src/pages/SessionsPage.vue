@@ -138,9 +138,17 @@ function pct(value: number | null | undefined) {
 
 function stateTone(state: string) {
   if (state === 'RUNNING') return 'good'
-  if (['COOLDOWN', 'REBALANCING', 'OBSERVING'].includes(state)) return 'warning'
+  if (['DEFENSIVE', 'COOLDOWN', 'REBALANCING', 'OBSERVING'].includes(state)) return 'warning'
   if (['CLOSING', 'ERROR'].includes(state)) return 'danger'
   return 'neutral'
+}
+
+function directionLabel(value: string) {
+  return { NEUTRAL: '中性', LONG: '做多', SHORT: '做空' }[value] || value
+}
+
+function intentLabel(value: string) {
+  return { OPEN: '开仓', REDUCE: '减仓', SEED: '种子', PROTECTION: '保护' }[value] || value
 }
 
 function eventLabel(value: string) {
@@ -197,8 +205,9 @@ function eventLabel(value: string) {
             <div class="title-row">
               <h2>{{ selected.symbol }}</h2>
               <StatusBadge :tone="stateTone(selected.state)" :label="selected.stateLabel" />
+              <StatusBadge tone="info" :label="`${directionLabel(selected.directionMode)}网格`" />
             </div>
-            <p>会话 #{{ selected.id }} · 参数窗口 #{{ selected.windowId }}</p>
+            <p>会话 #{{ selected.id }} · 参数窗口 #{{ selected.windowId }} · {{ selected.directionSource === 'symbol_override' ? '标的覆盖' : '全局模式' }}</p>
           </div>
           <button
             v-if="!['STOPPED', 'CLOSED'].includes(selected.state)"
@@ -219,7 +228,21 @@ function eventLabel(value: string) {
           <div><span>网格参数</span><strong>{{ gridPlan?.gridNum || selected.gridNum }} 格 · {{ pct(gridPlan?.stepPct ?? selected.stepPct) }}</strong></div>
           <div><span>持仓名义</span><strong>{{ money(selected.position.notional) }}</strong></div>
           <div><span>库存利用率</span><strong>{{ pct(inventory?.utilization ?? null) }}</strong></div>
+          <div><span>软性违约</span><strong>{{ selected.softBreachCount || 0 }}/3</strong></div>
+          <div><span>种子仓位</span><strong>{{ selected.seedQty ? `${selected.seedPositionSide} ${selected.seedQty.toFixed(6)}` : '无' }}</strong></div>
         </div>
+
+        <div v-if="selected.state === 'DEFENSIVE'" class="inline-alert inline-alert--warning" role="status">
+          <ShieldAlert :size="18" />
+          <span><strong>防御模式 {{ selected.softBreachCount || 0 }}/3</strong>仅撤销增加库存的订单，不会因普通评分下降市价平仓；评分恢复后将对账并补齐网格。</span>
+        </div>
+
+        <dl v-if="selected.seedQty" class="metadata-grid metadata-grid--wide seed-summary">
+          <div><dt>种子持仓侧</dt><dd>{{ selected.seedPositionSide }}</dd></div>
+          <div><dt>成交价</dt><dd>{{ price(selected.seedEntryPrice) }}</dd></div>
+          <div><dt>滑点</dt><dd>{{ pct(selected.seedSlippagePct) }}</dd></div>
+          <div><dt>Taker 费用</dt><dd>{{ money(selected.seedFee, 4) }}</dd></div>
+        </dl>
 
         <div v-if="workspaceLoading" class="inline-alert">
           <Clock3 :size="18" />
@@ -358,17 +381,19 @@ function eventLabel(value: string) {
 
         <div v-else-if="detailTab === 'orders'" class="detail-panel table-wrap">
           <table>
-            <thead><tr><th>格位</th><th>方向</th><th>价格</th><th>数量</th><th>状态</th><th>创建时间</th></tr></thead>
+            <thead><tr><th>格位</th><th>方向</th><th>意图</th><th>持仓侧</th><th>价格</th><th>数量</th><th>状态</th><th>创建时间</th></tr></thead>
             <tbody>
               <tr v-for="order in currentOrders" :key="order.id">
-                <td>#{{ order.gridIndex }}</td>
+                <td>{{ order.orderIntent === 'SEED' ? '种子' : `#${order.gridIndex}` }}</td>
                 <td><StatusBadge :tone="order.side === 'BUY' ? 'info' : 'warning'" :label="order.sideLabel" /></td>
+                <td><StatusBadge :tone="order.orderIntent === 'OPEN' ? 'info' : order.orderIntent === 'REDUCE' ? 'good' : 'warning'" :label="intentLabel(order.orderIntent)" /></td>
+                <td>{{ order.positionSide || '—' }}</td>
                 <td>{{ price(order.price) }}</td>
                 <td>{{ order.qty.toFixed(6) }}</td>
                 <td>{{ order.statusLabel }}</td>
                 <td>{{ order.createdAt }}</td>
               </tr>
-              <tr v-if="!currentOrders.length"><td colspan="6"><div class="empty-inline">暂无订单</div></td></tr>
+              <tr v-if="!currentOrders.length"><td colspan="8"><div class="empty-inline">暂无订单</div></td></tr>
             </tbody>
           </table>
         </div>

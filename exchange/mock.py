@@ -112,8 +112,6 @@ class MockExchangeClient(ExchangeClient):
             "qty": qty,
             "reduce_only": reduce_only,
             "status": "filled",
-            "executedQty": qty,
-            "avgPrice": 100.0,
         }
         if position_side is not None:
             order["position_side"] = position_side
@@ -140,7 +138,12 @@ class MockExchangeClient(ExchangeClient):
                 self.positions[symbol] = max(0.0, current - qty) if current > 0 else current
             else:
                 self.positions[symbol] = min(0.0, current + qty) if current < 0 else current
-        response = {**order, "orderId": f"market-{len(self.market_orders)}"}
+        response = {
+            **order,
+            "orderId": f"market-{len(self.market_orders)}",
+            "executedQty": qty,
+            "avgPrice": 100.0,
+        }
         if client_id is not None:
             response["clientOrderId"] = client_id
         return response

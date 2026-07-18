@@ -6,7 +6,7 @@ from hashlib import blake2b
 from math import isfinite
 from typing import Any
 
-from core.models import GridParams, OrderSide
+from core.models import GridDirectionMode, GridParams, OrderIntent, OrderSide
 from data_sources.models import FundingEvent
 
 
@@ -19,7 +19,7 @@ class BacktestConfig:
     capital: float = 200.0
     leverage: float = 10.0
     maker_fee_rate: float = 0.0
-    stop_on_range_break: bool = True
+    stop_on_range_break: bool = False
     stop_on_stop_loss: bool = True
     fill_model: str = "LEGACY"
     min_tick_size: float = 0.0
@@ -30,6 +30,10 @@ class BacktestConfig:
     stop_slippage_bps: float = 0.0
     funding_rate_per_bar: float = 0.0
     force_close_at_end: bool = False
+    direction_mode: GridDirectionMode = GridDirectionMode.NEUTRAL
+    seed_slippage_bps: float = 0.0
+    retention_score_threshold: float = 65.0
+    retention_soft_breach_limit: int = 3
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,8 @@ class BacktestFill:
     realized_pnl_after: float
     bar_index: int
     timestamp: Any = None
+    position_side: str = ""
+    order_intent: str = "OPEN"
 
 
 @dataclass(frozen=True)
@@ -84,6 +90,11 @@ class BacktestResult:
     rejected_fill_count: int = 0
     pair_completion_count: int = 0
     max_inventory_utilization: float = 0.0
+    direction_mode: str = "NEUTRAL"
+    seed_qty: float = 0.0
+    seed_entry_price: float | None = None
+    seed_fee: float = 0.0
+    defensive_entry_count: int = 0
 
 
 @dataclass
@@ -93,6 +104,8 @@ class _BacktestOrder:
     price: float
     qty: float
     entry_price: float | None = None
+    position_side: str = ""
+    order_intent: OrderIntent = OrderIntent.OPEN
 
 
 @dataclass
@@ -119,6 +132,12 @@ def backtest_config_from_mapping(raw: dict[str, Any]) -> BacktestConfig:
         stop_slippage_bps=float(backtest.get("stop_slippage_bps", 10.0)),
         funding_rate_per_bar=float(backtest.get("funding_rate_per_bar", 0.0)),
         force_close_at_end=bool(backtest.get("force_close_at_end", False)),
+        direction_mode=GridDirectionMode(
+            str(trading.get("direction_mode", "NEUTRAL")).upper()
+        ),
+        seed_slippage_bps=float(backtest.get("seed_slippage_bps", 0.0)),
+        retention_score_threshold=float(backtest.get("retention_score_threshold", 65.0)),
+        retention_soft_breach_limit=int(backtest.get("retention_soft_breach_limit", 3)),
     )
 
 
@@ -146,7 +165,15 @@ def run_grid_backtest(
 
     qty = config.capital * config.leverage / current_price / params.grid_num
     qty = _positive_finite(qty, "qty")
-    open_orders = _initial_orders(params, current_price, qty)
+    mode = (
+        config.direction_mode
+        if isinstance(config.direction_mode, GridDirectionMode)
+        else GridDirectionMode(str(config.direction_mode).upper())
+    )
+    if mode == GridDirectionMode.NEUTRAL and params.direction_mode != GridDirectionMode.NEUTRAL:
+        mode = params.direction_mode
+    seed_entry_price = _seed_entry_price(current_price, mode, config.seed_slippage_bps)
+    open_orders = _initial_orders(params, current_price, qty, mode, seed_entry_price)
     if not open_orders:
         raise ValueError("回测初始网格没有可挂订单。")
 
@@ -155,6 +182,31 @@ def run_grid_backtest(
     short_lots: list[_PositionLot] = []
     gross_grid_pnl = 0.0
     fees_paid = 0.0
+    seed_qty = sum(order.qty for order in open_orders if order.order_intent == OrderIntent.REDUCE)
+    seed_fee = 0.0
+    if mode == GridDirectionMode.LONG and seed_qty > 0:
+        long_lots.append(_PositionLot(seed_entry_price, seed_qty))
+    elif mode == GridDirectionMode.SHORT and seed_qty > 0:
+        short_lots.append(_PositionLot(seed_entry_price, seed_qty))
+    if seed_qty > 0:
+        seed_fee = seed_entry_price * seed_qty * config.taker_fee_rate
+        fees_paid += seed_fee
+        seed_side = OrderSide.BUY if mode == GridDirectionMode.LONG else OrderSide.SELL
+        fills.append(
+            BacktestFill(
+                symbol=params.symbol,
+                side=seed_side.value,
+                grid_index=-1,
+                price=seed_entry_price,
+                qty=seed_qty,
+                fee=seed_fee,
+                grid_pnl=None,
+                realized_pnl_after=-seed_fee,
+                bar_index=-1,
+                position_side=mode.value,
+                order_intent=OrderIntent.SEED.value,
+            )
+        )
     equity_curve: list[BacktestEquityPoint] = []
     max_equity = 0.0
     max_drawdown = 0.0
@@ -169,6 +221,10 @@ def run_grid_backtest(
     stopped_at_price: float | None = None
     last_price = current_price
     previous_event_time: datetime | None = None
+    soft_breach_count = 0
+    defensive = False
+    defensive_cancelled: list[_BacktestOrder] = []
+    defensive_entry_count = 0
     conservative = config.fill_model.upper() == "L0_CONSERVATIVE"
     min_tick_size = (
         config.min_tick_size
@@ -180,6 +236,35 @@ def run_grid_backtest(
         previous_event_time = _validate_bar_time(row, previous_event_time)
         high, low, close = _bar_prices(row)
         last_price = close
+
+        regime_score = _optional_regime_score(row)
+        if regime_score is not None:
+            if regime_score < config.retention_score_threshold:
+                soft_breach_count += 1
+                if (
+                    not defensive
+                    and soft_breach_count >= config.retention_soft_breach_limit
+                ):
+                    defensive = True
+                    defensive_entry_count += 1
+                    has_inventory = bool(long_lots or short_lots)
+                    retained: list[_BacktestOrder] = []
+                    for pending in open_orders:
+                        if has_inventory and pending.order_intent == OrderIntent.REDUCE:
+                            retained.append(pending)
+                        else:
+                            defensive_cancelled.append(pending)
+                    open_orders = retained
+            else:
+                soft_breach_count = 0
+                if defensive:
+                    open_orders.extend(
+                        order
+                        for order in defensive_cancelled
+                        if not _has_equivalent_order(open_orders, order)
+                    )
+                    defensive_cancelled.clear()
+                    defensive = False
 
         risk_reason, risk_price = _risk_stop(params, high, low, config)
         if risk_reason is not None:
@@ -274,11 +359,16 @@ def run_grid_backtest(
                     realized_pnl_after=realized_pnl,
                     bar_index=bar_index,
                     timestamp=_bar_timestamp(row),
+                    position_side=order.position_side,
+                    order_intent=order.order_intent.value,
                 )
             )
             next_order = _next_order(params, order)
             if next_order is not None:
-                open_orders.append(next_order)
+                if defensive and next_order.order_intent == OrderIntent.OPEN:
+                    defensive_cancelled.append(next_order)
+                else:
+                    open_orders.append(next_order)
         if funding_event_mode:
             # 显式传入事件列表即进入事件模式：只按跨越的真实结算事件扣费，
             # 不回退到 per-bar 平摊（空列表表示该区间无资金费事件）。
@@ -377,6 +467,11 @@ def run_grid_backtest(
         rejected_fill_count=max(0, attempted_fill_count - len(fills)),
         pair_completion_count=pair_completion_count,
         max_inventory_utilization=max_inventory_utilization,
+        direction_mode=mode.value,
+        seed_qty=seed_qty,
+        seed_entry_price=seed_entry_price if seed_qty > 0 else None,
+        seed_fee=seed_fee,
+        defensive_entry_count=defensive_entry_count,
     )
 
 
@@ -399,6 +494,12 @@ def _validate_backtest_config(config: BacktestConfig) -> None:
         raise ValueError("taker_fee_rate不能为负。")
     if config.stop_slippage_bps < 0:
         raise ValueError("stop_slippage_bps不能为负。")
+    if config.seed_slippage_bps < 0:
+        raise ValueError("seed_slippage_bps不能为负。")
+    if not 0 <= config.retention_score_threshold <= 100:
+        raise ValueError("retention_score_threshold必须在0到100之间。")
+    if config.retention_soft_breach_limit < 1:
+        raise ValueError("retention_soft_breach_limit必须大于等于1。")
     _finite_float(config.funding_rate_per_bar, "funding_rate_per_bar")
 
 
@@ -416,13 +517,34 @@ def _validate_grid_params(params: GridParams) -> None:
     _positive_finite(params.stop_loss_price, "stop_loss_price")
 
 
-def _initial_orders(params: GridParams, current_price: float, qty: float) -> list[_BacktestOrder]:
+def _initial_orders(
+    params: GridParams,
+    current_price: float,
+    qty: float,
+    mode: GridDirectionMode = GridDirectionMode.NEUTRAL,
+    seed_entry_price: float | None = None,
+) -> list[_BacktestOrder]:
     orders: list[_BacktestOrder] = []
     for index, price in enumerate(params.grid_prices):
         if price == current_price:
             continue
         side = OrderSide.BUY if price < current_price else OrderSide.SELL
-        orders.append(_BacktestOrder(index, side, price, qty))
+        position_side, intent, entry_price = _initial_order_metadata(
+            mode,
+            side,
+            seed_entry_price,
+        )
+        orders.append(
+            _BacktestOrder(
+                index,
+                side,
+                price,
+                qty,
+                entry_price,
+                position_side,
+                intent,
+            )
+        )
     return orders
 
 
@@ -548,8 +670,80 @@ def _next_order(params: GridParams, order: _BacktestOrder) -> _BacktestOrder | N
         next_side = OrderSide.BUY
     if next_index < 0 or next_index >= len(params.grid_prices):
         return None
-    entry_price = order.entry_price if order.entry_price is not None else order.price
-    return _BacktestOrder(next_index, next_side, params.grid_prices[next_index], order.qty, entry_price)
+    entry_price = None if order.entry_price is not None else order.price
+    if entry_price is None:
+        position_side = "LONG" if next_side == OrderSide.BUY else "SHORT"
+    else:
+        position_side = "SHORT" if next_side == OrderSide.BUY else "LONG"
+    return _BacktestOrder(
+        next_index,
+        next_side,
+        params.grid_prices[next_index],
+        order.qty,
+        entry_price,
+        position_side,
+        OrderIntent.REDUCE if entry_price is not None else OrderIntent.OPEN,
+    )
+
+
+def _initial_order_metadata(
+    mode: GridDirectionMode,
+    side: OrderSide,
+    seed_entry_price: float | None,
+) -> tuple[str, OrderIntent, float | None]:
+    if mode == GridDirectionMode.LONG:
+        return (
+            "LONG",
+            OrderIntent.OPEN if side == OrderSide.BUY else OrderIntent.REDUCE,
+            None if side == OrderSide.BUY else seed_entry_price,
+        )
+    if mode == GridDirectionMode.SHORT:
+        return (
+            "SHORT",
+            OrderIntent.REDUCE if side == OrderSide.BUY else OrderIntent.OPEN,
+            seed_entry_price if side == OrderSide.BUY else None,
+        )
+    return (
+        "LONG" if side == OrderSide.BUY else "SHORT",
+        OrderIntent.OPEN,
+        None,
+    )
+
+
+def _seed_entry_price(
+    current_price: float,
+    mode: GridDirectionMode,
+    slippage_bps: float,
+) -> float:
+    slippage = max(0.0, slippage_bps) / 10_000
+    if mode == GridDirectionMode.LONG:
+        return current_price * (1 + slippage)
+    if mode == GridDirectionMode.SHORT:
+        return current_price * (1 - slippage)
+    return current_price
+
+
+def _optional_regime_score(row: dict[str, Any]) -> float | None:
+    value = row.get("regime_score")
+    if value in (None, ""):
+        return None
+    score = _finite_float(value, "regime_score")
+    if not 0 <= score <= 100:
+        raise ValueError("regime_score必须在0到100之间。")
+    return score
+
+
+def _has_equivalent_order(
+    orders: list[_BacktestOrder],
+    candidate: _BacktestOrder,
+) -> bool:
+    return any(
+        order.grid_index == candidate.grid_index
+        and order.side == candidate.side
+        and order.order_intent == candidate.order_intent
+        and abs(order.qty - candidate.qty) <= 1e-12
+        for order in orders
+    )
 
 
 def _unrealized_pnl(

@@ -62,6 +62,7 @@ class GridEngine:
         *,
         place_protection: bool = True,
         client_id_tag: str = "",
+        establish_seed: bool = True,
     ) -> list[GridOrder]:
         if session.params is None:
             raise ValueError("启动网格前必须先计算 GridParams。")
@@ -113,7 +114,7 @@ class GridEngine:
         await self.exchange.set_leverage(session.symbol, session.leverage)
 
         created: list[GridOrder] = []
-        if session.direction_mode != GridDirectionMode.NEUTRAL:
+        if session.direction_mode != GridDirectionMode.NEUTRAL and establish_seed:
             seed_order = await self._establish_seed_position(
                 session,
                 sized_order_specs,
@@ -121,8 +122,14 @@ class GridEngine:
                 step_size=step_size,
                 min_qty=min_qty,
                 min_notional=min_notional,
+                client_id_tag=client_id_tag,
             )
             session.orders.append(seed_order)
+        elif (
+            session.direction_mode != GridDirectionMode.NEUTRAL
+            and session.seed_entry_price is None
+        ):
+            raise ValueError("方向网格恢复时缺少原种子成交价，拒绝盲目恢复。")
         for index, side, price, qty in sized_order_specs:
             tag = f"-{client_id_tag}" if client_id_tag else ""
             client_id = f"qg-{session.session_id}{tag}-{index}-{side.value.lower()}"
@@ -192,7 +199,7 @@ class GridEngine:
                     session,
                     protection_side,
                     tick_size,
-                    f"qg-{session.session_id}-stop-{protection_side}",
+                    f"qg-{session.session_id}{f'-{client_id_tag}' if client_id_tag else ''}-stop-{protection_side}",
                 )
         except Exception as exc:
             if _is_stop_requires_open_position(exc):
@@ -226,6 +233,7 @@ class GridEngine:
         step_size: float,
         min_qty: float,
         min_notional: float,
+        client_id_tag: str = "",
     ) -> GridOrder:
         if session.direction_mode == GridDirectionMode.LONG:
             seed_side = OrderSide.BUY
@@ -247,7 +255,8 @@ class GridEngine:
         if min_notional > 0 and current_price * seed_qty < min_notional:
             raise ValueError("方向网格种子仓位小于交易所最小名义金额。")
 
-        client_id = f"qg-{session.session_id}-seed-{position_side.lower()}"
+        tag = f"-{client_id_tag}" if client_id_tag else ""
+        client_id = f"qg-{session.session_id}{tag}-seed-{position_side.lower()}"
         response = await self._place_market_order_reconciled(
             session.symbol,
             seed_side.value,

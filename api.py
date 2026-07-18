@@ -1194,6 +1194,8 @@ class ConsoleActionRequest(BaseModel):
 
 
 class StrategyConfigDraftRequest(BaseModel):
+    direction_mode: str = Field(default="NEUTRAL", pattern=r"^(LONG|SHORT|NEUTRAL)$")
+    direction_overrides: dict[str, str] = Field(default_factory=dict)
     volatility_method: str = Field(min_length=1, max_length=40)
     leverage: int = Field(ge=1, le=125)
     capital_per_symbol: float = Field(gt=0, le=10000000)
@@ -1250,7 +1252,7 @@ class V2BacktestRunRequest(BaseModel):
     dataset_id: str | None = Field(default=None, min_length=8, max_length=240)
     symbol: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
     observe_rows: int = Field(default=180, ge=30, le=100000)
-    capital: float = Field(default=200.0, gt=0, le=1000000)
+    capital: float = Field(default=500.0, gt=0, le=1000000)
     leverage: float = Field(default=1.0, ge=1.0, le=2.0)
     maker_fee_rate: float = Field(default=0.0, ge=0.0, le=0.01)
     fill_model: str = Field(default="L0_CONSERVATIVE", pattern=r"^L0_CONSERVATIVE$")
@@ -1258,6 +1260,8 @@ class V2BacktestRunRequest(BaseModel):
     max_fills_per_bar: int = Field(default=2, ge=1, le=20)
     taker_fee_rate: float = Field(default=0.0005, ge=0.0, le=0.02)
     stop_slippage_bps: float = Field(default=10.0, ge=0.0, le=1000.0)
+    direction_mode: str = Field(default="NEUTRAL", pattern=r"^(LONG|SHORT|NEUTRAL)$")
+    seed_slippage_bps: float = Field(default=10.0, ge=0.0, le=20.0)
     funding_rate_per_bar: float = Field(default=0.0, ge=-0.01, le=0.01)
     include_funding: bool = False
     walk_forward_test_rows: int = Field(default=12, ge=5, le=100000)
@@ -1593,6 +1597,7 @@ def _execute_v2_backtest(
             "capital_per_symbol": request.capital,
             "leverage": request.leverage,
             "max_maker_fee_rate": request.maker_fee_rate,
+            "direction_mode": request.direction_mode,
         }
     )
     raw.setdefault("backtest", {}).update(
@@ -1605,6 +1610,7 @@ def _execute_v2_backtest(
             ),
             "taker_fee_rate": request.taker_fee_rate,
             "stop_slippage_bps": request.stop_slippage_bps,
+            "seed_slippage_bps": request.seed_slippage_bps,
             "funding_rate_per_bar": request.funding_rate_per_bar,
             "walk_forward_test_rows": request.walk_forward_test_rows,
             "monte_carlo_simulations": request.monte_carlo_simulations,
@@ -3077,6 +3083,11 @@ def _strategy_config_payload(config: AppConfig, repo: Repository) -> dict[str, A
         "draft_updated_at": draft_state.get("updated_at") if isinstance(draft_state, dict) else "",
         "options": {
             "volatility_methods": _volatility_method_options(),
+            "direction_modes": [
+                {"value": "NEUTRAL", "label": "中性网格"},
+                {"value": "LONG", "label": "做多网格"},
+                {"value": "SHORT", "label": "做空网格"},
+            ],
         },
     }
 
@@ -3092,7 +3103,18 @@ def _save_strategy_config_draft(
     if method not in SUPPORTED_RANGE_METHODS:
         raise HTTPException(status_code=422, detail=f"不支持的波动率算法：{request.volatility_method}")
     current = _current_strategy_config(config)
+    direction_overrides: dict[str, str] = {}
+    for raw_symbol, raw_mode in request.direction_overrides.items():
+        symbol = str(raw_symbol).strip().upper()
+        mode = str(raw_mode).strip().upper()
+        if not symbol:
+            continue
+        if mode not in {"LONG", "SHORT", "NEUTRAL"}:
+            raise HTTPException(status_code=422, detail=f"{symbol} 的方向模式无效：{raw_mode}")
+        direction_overrides[symbol] = mode
     draft = {
+        "direction_mode": str(request.direction_mode).strip().upper(),
+        "direction_overrides": direction_overrides,
         "volatility_method": method,
         "leverage": int(request.leverage),
         "capital_per_symbol": float(request.capital_per_symbol),
@@ -3150,6 +3172,11 @@ def _current_strategy_config(config: AppConfig) -> dict[str, Any]:
     grid = raw.get("grid", {})
     selection = raw.get("selection", {})
     return {
+        "direction_mode": str(trading.get("direction_mode", "NEUTRAL")).upper(),
+        "direction_overrides": {
+            str(symbol).upper(): str(mode).upper()
+            for symbol, mode in (trading.get("direction_overrides", {}) or {}).items()
+        },
         "volatility_method": str(grid.get("range_method", "std")),
         "leverage": int(trading.get("leverage", 10)),
         "capital_per_symbol": float(trading.get("capital_per_symbol", 200)),
@@ -3170,6 +3197,8 @@ def _current_strategy_config(config: AppConfig) -> dict[str, Any]:
 
 def _strategy_config_diff(current: dict[str, Any], draft: dict[str, Any]) -> list[dict[str, Any]]:
     labels = {
+        "direction_mode": "全局网格方向",
+        "direction_overrides": "标的方向覆盖",
         "volatility_method": "波动率算法",
         "leverage": "杠杆倍数",
         "capital_per_symbol": "单标的本金",
@@ -4306,6 +4335,17 @@ def _session_payload(
         "close_time": row.get("close_time"),
         "close_reason": row.get("close_reason"),
         "soft_breach_count": int(row.get("soft_breach_count") or 0),
+        "last_retention_decision_at": row.get("last_retention_decision_at"),
+        "direction_mode": str(row.get("direction_mode") or "NEUTRAL").upper(),
+        "direction_source": "symbol_override" if symbol.upper() in {
+            str(item).upper()
+            for item in config.raw.get("trading", {}).get("direction_overrides", {})
+        } else "global",
+        "seed_position_side": row.get("seed_position_side"),
+        "seed_qty": row.get("seed_qty"),
+        "seed_entry_price": row.get("seed_entry_price"),
+        "seed_slippage_pct": row.get("seed_slippage_pct"),
+        "seed_fee": row.get("seed_fee"),
         "open_order_count": int(row.get("open_order_count") or 0),
         "trade_count": int(row.get("trade_count") or 0),
         "next_entry_disabled": symbol.upper() in (disabled_symbols or set()),
@@ -4325,9 +4365,16 @@ def _volatility_stage_payload(row: dict[str, Any], config: AppConfig) -> dict[st
         progress, remaining = _observation_progress(row.get("open_time"), config)
         stage = "observing" if remaining is None or remaining > 0 else "calculating"
         label = "正在观察/波动计算中" if stage == "observing" else "波动计算待完成"
-    elif state in {"RUNNING", "COOLDOWN", "CLOSING", "PAUSED"}:
+    elif state in {"RUNNING", "DEFENSIVE", "COOLDOWN", "CLOSING", "PAUSED"}:
         stage = "trading"
-        label = "网格已暂停，持仓风控仍在运行" if state == "PAUSED" else "计算结束，自动交易已启动"
+        if state == "PAUSED":
+            label = "网格已暂停，持仓风控仍在运行"
+        elif state == "DEFENSIVE":
+            label = "防御模式：只保留减仓和保护订单"
+        elif state == "COOLDOWN":
+            label = "硬止损冷静期"
+        else:
+            label = "计算结束，自动交易已启动"
         progress = 1.0
         remaining = 0
     elif state == "STOPPED":

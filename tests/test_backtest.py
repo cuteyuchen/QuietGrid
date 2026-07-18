@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from core.models import GridParams
+from core.models import GridDirectionMode, GridParams
 from strategy.backtest import BacktestConfig, LookAheadViolation, run_grid_backtest
 
 
@@ -119,7 +119,7 @@ def test_backtest_stops_on_range_break_before_same_bar_fills() -> None:
         _params(),
         [{"high": 100.5, "low": 98.5, "close": 99.0}],
         current_price=101.0,
-        config=BacktestConfig(capital=202, leverage=1),
+        config=BacktestConfig(capital=202, leverage=1, stop_on_range_break=True),
     )
 
     assert result.fills == []
@@ -442,3 +442,101 @@ def test_slice_funding_events_handles_empty_inputs():
     base = datetime(2026, 3, 1, tzinfo=timezone.utc)
     assert slice_funding_events_for_klines([], [{"open_time": 1, "close_time": 2}]) == []
     assert slice_funding_events_for_klines([_funding_event(0, 0.001, base)], []) == []
+
+
+def test_backtest_direction_modes_seed_position_and_charge_taker_cost():
+    quiet_bars = [
+        {
+            "open_time": minute * 60_000,
+            "close_time": minute * 60_000 + 59_999,
+            "high": 100.2,
+            "low": 99.8,
+            "close": 100.0,
+        }
+        for minute in range(2)
+    ]
+
+    neutral = run_grid_backtest(
+        _params(),
+        quiet_bars,
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            direction_mode=GridDirectionMode.NEUTRAL,
+            taker_fee_rate=0.0005,
+            seed_slippage_bps=10,
+        ),
+    )
+    long_result = run_grid_backtest(
+        _params(),
+        quiet_bars,
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            direction_mode=GridDirectionMode.LONG,
+            taker_fee_rate=0.0005,
+            seed_slippage_bps=10,
+        ),
+    )
+    short_result = run_grid_backtest(
+        _params(),
+        quiet_bars,
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            direction_mode=GridDirectionMode.SHORT,
+            taker_fee_rate=0.0005,
+            seed_slippage_bps=10,
+        ),
+    )
+
+    assert neutral.seed_qty == 0
+    assert neutral.fills == []
+    assert long_result.direction_mode == "LONG"
+    assert long_result.seed_qty > 0
+    assert long_result.seed_entry_price == 100.1
+    assert long_result.seed_fee > 0
+    assert long_result.net_position_qty == long_result.seed_qty
+    assert long_result.fills[0].order_intent == "SEED"
+    assert long_result.fills[0].position_side == "LONG"
+    assert short_result.direction_mode == "SHORT"
+    assert short_result.seed_qty > 0
+    assert short_result.seed_entry_price == 99.9
+    assert short_result.seed_fee > 0
+    assert short_result.net_position_qty == -short_result.seed_qty
+    assert short_result.fills[0].order_intent == "SEED"
+    assert short_result.fills[0].position_side == "SHORT"
+
+
+def test_backtest_enters_defensive_after_three_unique_bars_without_force_close():
+    rows = [
+        {
+            "open_time": minute * 60_000,
+            "close_time": minute * 60_000 + 59_999,
+            "high": 100.2,
+            "low": 99.8,
+            "close": 100.0,
+            "regime_score": score,
+        }
+        for minute, score in enumerate((60, 60, 60, 60, 70))
+    ]
+
+    result = run_grid_backtest(
+        _params(),
+        rows,
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            retention_score_threshold=65,
+            retention_soft_breach_limit=3,
+        ),
+    )
+
+    assert result.defensive_entry_count == 1
+    assert result.stopped_reason is None
+    assert result.net_position_qty == 0
+    assert result.open_order_count == 2

@@ -5524,7 +5524,7 @@ def test_controller_cooldown_records_force_close_trade(tmp_path) -> None:
     asyncio.run(run())
 
 
-def test_controller_price_event_enters_cooldown(tmp_path) -> None:
+def test_controller_price_event_enters_defensive_without_force_close(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"
         init_db(db_path)
@@ -5555,15 +5555,15 @@ def test_controller_price_event_enters_cooldown(tmp_path) -> None:
             }
         )
 
-        assert action == "cooldown"
-        assert session.state.value == "COOLDOWN"
-        assert exchange.orders["AAPLUSDT"] == []
-        assert Repository(db_path).recent_rows("sessions", limit=1)[0]["state"] == "COOLDOWN"
+        assert action == "defend"
+        assert session.state.value == "DEFENSIVE"
+        assert exchange.market_orders == []
+        assert Repository(db_path).recent_rows("sessions", limit=1)[0]["state"] == "DEFENSIVE"
 
     asyncio.run(run())
 
 
-def test_controller_price_event_closes_on_upper_dynamic_stop(tmp_path) -> None:
+def test_controller_price_event_enters_cooldown_on_upper_hard_stop(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"
         init_db(db_path)
@@ -5600,12 +5600,12 @@ def test_controller_price_event_closes_on_upper_dynamic_stop(tmp_path) -> None:
         session_row = repo.recent_rows("sessions", limit=1)[0]
         window_row = repo.recent_rows("windows", limit=1)[0]
 
-        assert action == "close"
-        assert "AAPLUSDT" not in controller.active_sessions
+        assert action == "cooldown"
+        assert "AAPLUSDT" in controller.active_sessions
         assert exchange.orders["AAPLUSDT"] == []
-        assert session_row["state"] == "STOPPED"
-        assert session_row["close_reason"] == "价格突破上方动态止损线。"
-        assert window_row["status"] == "closed"
+        assert session_row["state"] == "COOLDOWN"
+        assert session_row["close_reason"] is None
+        assert window_row["status"] == "open"
 
     asyncio.run(run())
 

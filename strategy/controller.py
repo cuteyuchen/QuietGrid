@@ -12,6 +12,7 @@ from core.models import (
     GridOrder,
     GridParams,
     GridState,
+    OrderIntent,
     OrderSide,
     OrderStatus,
     RiskAction,
@@ -1194,6 +1195,12 @@ class TradingController:
                         symbol_rules.get("min_notional", 0.0),
                         "min_notional",
                     ),
+                    direction_mode=self._direction_mode_for_symbol(item.symbol),
+                    risk_budget=self._session_risk_budget(),
+                    taker_fee_rate=self._last_taker_fee_by_symbol.get(
+                        item.symbol,
+                        0.0,
+                    ),
                     calculated_at=calculated_at,
                 )
             except GridEconomicsError as exc:
@@ -1737,6 +1744,12 @@ class TradingController:
         if isinstance(selected, GridDirectionMode):
             return selected
         return GridDirectionMode(str(selected).strip().upper())
+
+    def _session_risk_budget(self) -> float | None:
+        if self.config.max_session_loss_pct <= 0:
+            return None
+        equity = self._account_equity or self.config.total_capital_limit
+        return float(equity) * self.config.max_session_loss_pct
 
     def _effective_scan_candidate_count(self, max_concurrent: int) -> int:
         draft = self.repository.strategy_config_draft() or {}
@@ -2450,7 +2463,12 @@ class TradingController:
             )
         async with self._session_event_locks.setdefault(symbol, asyncio.Lock()):
             session = self.active_sessions.get(symbol)
-            if session is None or session.state not in {GridState.RUNNING, GridState.PAUSED, GridState.COOLDOWN}:
+            if session is None or session.state not in {
+                GridState.RUNNING,
+                GridState.DEFENSIVE,
+                GridState.PAUSED,
+                GridState.COOLDOWN,
+            }:
                 return None
             decision = self.risk.evaluate_symbol(session, price, event_time)
             if decision.action == RiskAction.NONE:
@@ -3329,6 +3347,9 @@ class TradingController:
             effective_observer_config, effective_grid_config, _ = self._effective_next_entry_settings(at)
             current_price = await self._current_price(session.symbol)
             try:
+                position = await self.exchange.get_position(session.symbol)
+                tolerance = await self._position_tolerance(session.symbol)
+                establish_seed = _position_exposure(position) <= tolerance
                 params = await self.observer.observe_then_calculate(
                     session.symbol,
                     current_price,
@@ -3336,6 +3357,7 @@ class TradingController:
                     observer_config=effective_observer_config,
                     grid_config=effective_grid_config,
                 )
+                params = replace(params, direction_mode=session.direction_mode)
                 session.params = params
                 self._persist_session_grid(session.session_id, params)
                 await self.engine.start(
@@ -3343,7 +3365,10 @@ class TradingController:
                     current_price,
                     place_protection=False,
                     client_id_tag=f"r{int(at.timestamp())}",
+                    establish_seed=establish_seed,
                 )
+                if establish_seed:
+                    self._persist_seed_execution(session, at)
             except Exception as exc:
                 self._persist_session_orders(session)
                 self.repository.update_session_control_request(session.session_id, "failed", str(exc), at)
@@ -3483,7 +3508,19 @@ class TradingController:
         for order in session.orders:
             if order.status != OrderStatus.FILLED:
                 continue
-            qty += order.qty if order.side == OrderSide.BUY else -order.qty
+            intent = order.order_intent
+            if intent == OrderIntent.OPEN and order.entry_price is not None:
+                intent = OrderIntent.REDUCE
+            position_side = str(order.position_side or "").upper()
+            if not position_side:
+                if intent == OrderIntent.REDUCE:
+                    position_side = "SHORT" if order.side == OrderSide.BUY else "LONG"
+                else:
+                    position_side = "LONG" if order.side == OrderSide.BUY else "SHORT"
+            direction = 1.0 if position_side == "LONG" else -1.0
+            if intent == OrderIntent.REDUCE:
+                direction *= -1.0
+            qty += direction * order.qty
         return qty
 
     @staticmethod
@@ -3493,16 +3530,20 @@ class TradingController:
         for order in session.orders:
             if order.status != OrderStatus.FILLED:
                 continue
-            if order.side == OrderSide.BUY:
-                if order.entry_price is None:
-                    long_qty += order.qty
+            intent = order.order_intent
+            if intent == OrderIntent.OPEN and order.entry_price is not None:
+                intent = OrderIntent.REDUCE
+            position_side = str(order.position_side or "").upper()
+            if not position_side:
+                if intent == OrderIntent.REDUCE:
+                    position_side = "SHORT" if order.side == OrderSide.BUY else "LONG"
                 else:
-                    short_qty -= order.qty
+                    position_side = "LONG" if order.side == OrderSide.BUY else "SHORT"
+            delta = -order.qty if intent == OrderIntent.REDUCE else order.qty
+            if position_side == "LONG":
+                long_qty += delta
             else:
-                if order.entry_price is None:
-                    short_qty += order.qty
-                else:
-                    long_qty -= order.qty
+                short_qty += delta
         return max(0.0, long_qty), max(0.0, short_qty)
 
     def _update_regime_retention(
@@ -3757,12 +3798,14 @@ class TradingController:
         prepared_params: GridParams | None = None
         if self.feature_flags.regime_v2 or self.feature_flags.adaptive_grid_v2:
             try:
-                orderbook, funding_context = await asyncio.gather(
+                orderbook, funding_context, commission, symbol_rules = await asyncio.gather(
                     self.exchange.get_orderbook_depth(
                         session.symbol,
                         self.selector.config.depth_levels,
                     ),
                     self.exchange.get_funding_context(session.symbol),
+                    self.exchange.get_commission_rate(session.symbol),
+                    self.exchange.get_symbol_rules(session.symbol),
                 )
                 funding_rate = float(funding_context.get("funding_rate") or 0.0)
                 projected_funding_cost = self._projected_funding_cost(
@@ -3774,10 +3817,17 @@ class TradingController:
                     orderbook,
                     self.selector.config.depth_levels,
                 )
-                maker_fee_rate = self._last_maker_fee_by_symbol.get(
-                    session.symbol,
-                    self.config.max_maker_fee_rate,
+                maker_fee_rate = _non_negative_float(
+                    commission.get("maker"),
+                    "maker commission rate",
                 )
+                taker_fee_rate = _non_negative_float(
+                    commission.get("taker", 0.0),
+                    "taker commission rate",
+                )
+                self._last_maker_fee_by_symbol[session.symbol] = maker_fee_rate
+                self._last_taker_fee_by_symbol[session.symbol] = taker_fee_rate
+                self._symbol_rules_by_symbol[session.symbol] = dict(symbol_rules)
                 structural_decision: RegimeDecision | None = None
                 if self.feature_flags.regime_v2:
                     structural_decision = self.regime.evaluate(
@@ -3812,6 +3862,15 @@ class TradingController:
                         funding_cost_rate=projected_funding_cost,
                         maker_fee_rate=maker_fee_rate,
                         regime_score=structural_decision.grid_score if structural_decision else 100.0,
+                        capital=session.capital,
+                        leverage=session.leverage,
+                        tick_size=_non_negative_float(symbol_rules.get("tick_size", 0.0), "tick_size"),
+                        step_size=_non_negative_float(symbol_rules.get("step_size", 0.0), "step_size"),
+                        min_qty=_non_negative_float(symbol_rules.get("min_qty", 0.0), "min_qty"),
+                        min_notional=_non_negative_float(symbol_rules.get("min_notional", 0.0), "min_notional"),
+                        direction_mode=session.direction_mode,
+                        risk_budget=self._session_risk_budget(),
+                        taker_fee_rate=taker_fee_rate,
                         calculated_at=at,
                     )
                 if self.feature_flags.regime_v2:
@@ -3929,6 +3988,27 @@ class TradingController:
                     funding_cost_rate=projected_funding_cost,
                     maker_fee_rate=self._last_maker_fee_by_symbol[session.symbol],
                     regime_score=regime_decision.grid_score if regime_decision else 100.0,
+                    capital=session.capital,
+                    leverage=session.leverage,
+                    tick_size=_non_negative_float(
+                        self._symbol_rules_by_symbol.get(session.symbol, {}).get("tick_size", 0.0),
+                        "tick_size",
+                    ),
+                    step_size=_non_negative_float(
+                        self._symbol_rules_by_symbol.get(session.symbol, {}).get("step_size", 0.0),
+                        "step_size",
+                    ),
+                    min_qty=_non_negative_float(
+                        self._symbol_rules_by_symbol.get(session.symbol, {}).get("min_qty", 0.0),
+                        "min_qty",
+                    ),
+                    min_notional=_non_negative_float(
+                        self._symbol_rules_by_symbol.get(session.symbol, {}).get("min_notional", 0.0),
+                        "min_notional",
+                    ),
+                    direction_mode=session.direction_mode,
+                    risk_budget=self._session_risk_budget(),
+                    taker_fee_rate=self._last_taker_fee_by_symbol.get(session.symbol, 0.0),
                     calculated_at=at,
                 )
             else:
@@ -3936,10 +4016,16 @@ class TradingController:
                     session.symbol,
                     current_price,
                 )
+            params = replace(params, direction_mode=session.direction_mode)
             session.params = params
             session.orders.clear()
             self._persist_session_grid(session.session_id, params)
-            await self.engine.start(session, current_price)
+            await self.engine.start(
+                session,
+                current_price,
+                client_id_tag=f"r{int(at.timestamp())}",
+            )
+            self._persist_seed_execution(session, at)
         except Exception as exc:
             await self._stop_after_cooldown_recovery_failure(session, exc, at)
             return False
@@ -4402,6 +4488,7 @@ class TradingController:
         self._persist_session_orders(session)
         session.orders.clear()
         session.stop_protection_sides.clear()
+        params = replace(params, direction_mode=session.direction_mode)
         session.params = params
         self._persist_session_grid(session.session_id, params)
         try:

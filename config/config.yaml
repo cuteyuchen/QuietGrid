@@ -255,6 +255,9 @@ backtest:
   fill_probability_seed: 17
   taker_fee_rate: 0.0005
   stop_slippage_bps: 10.0
+  seed_slippage_bps: 10.0
+  retention_score_threshold: 65.0
+  retention_soft_breach_limit: 3
   funding_rate_per_bar: 0.0
   walk_forward_test_rows: 12
   monte_carlo_simulations: 1000

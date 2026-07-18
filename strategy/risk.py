@@ -61,13 +61,6 @@ class RiskManager:
         if self.config.max_window_stop_count > 0 and window_stop_count >= self.config.max_window_stop_count:
             return RiskDecision(RiskAction.HALT_WINDOW, "本窗口止损次数达到全局熔断上限。", 2)
 
-        unrealized_pnl = inventory.unrealized_pnl if inventory is not None else 0.0
-        session_pnl = session.realized_pnl + unrealized_pnl
-        if (
-            self.config.max_session_loss_pct > 0
-            and session_pnl <= -float(equity) * self.config.max_session_loss_pct
-        ):
-            return RiskDecision(RiskAction.CLOSE, "会话保守盈亏达到损失预算。", 2)
         if inventory is not None:
             if inventory.level == InventoryLevel.CRITICAL:
                 return RiskDecision(RiskAction.CLOSE, "库存风险达到 CRITICAL。", 2)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from core.models import GridDirectionMode
 from strategy.adaptive_grid import AdaptiveGridConfig, AdaptiveGridGenerator, GridEconomicsError
 from strategy.grid_calculator import GridCalculationError
 
@@ -176,3 +177,58 @@ def test_dynamic_solver_blocks_before_order_placement_when_min_notional_is_impos
 
     assert caught.value.economics["rejected_reason"] == "每格名义金额小于交易所最小名义金额"
     assert caught.value.economics["planned_min_order_notional"] < 100
+
+
+def test_btc_500_usdt_plan_meets_testnet_minimum_notional_and_reports_required_capital() -> None:
+    rows = []
+    for index in range(180):
+        close = 64_000.0 + ((index % 18) - 9) * 8.0
+        rows.append({"high": close + 20.0, "low": close - 20.0, "close": close})
+
+    params = AdaptiveGridGenerator().generate(
+        "BTCUSDT",
+        rows,
+        current_price=63_992.0,
+        funding_rate=0,
+        funding_cost_rate=0,
+        maker_fee_rate=0,
+        regime_score=85,
+        capital=500,
+        leverage=1,
+        tick_size=0.1,
+        step_size=0.001,
+        min_qty=0.001,
+        min_notional=50,
+        direction_mode=GridDirectionMode.LONG,
+        taker_fee_rate=0.0005,
+    )
+
+    assert params.economics["configured_capital"] == 500
+    assert params.economics["planned_min_order_notional"] >= 50
+    assert 0 < params.economics["minimum_required_capital"] <= 500
+    assert params.economics["direction_mode"] == "LONG"
+    assert params.economics["seed_execution_cost_pct"] > 0
+
+
+def test_directional_candidate_worst_case_loss_stays_within_session_budget() -> None:
+    params = AdaptiveGridGenerator().generate(
+        "BCHUSDT",
+        _klines(180),
+        current_price=99.97,
+        funding_rate=0,
+        funding_cost_rate=0,
+        maker_fee_rate=0.0002,
+        regime_score=82,
+        capital=500,
+        leverage=1,
+        tick_size=0.01,
+        step_size=0.001,
+        min_qty=0.001,
+        min_notional=5,
+        direction_mode=GridDirectionMode.SHORT,
+        risk_budget=25,
+        taker_fee_rate=0.0005,
+    )
+
+    assert params.economics["worst_case_stop_loss"] <= 25
+    assert params.economics["risk_budget"] == 25

@@ -4,7 +4,14 @@ import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
 
-from core.models import GridState, OrderStatus, SymbolSession
+from core.models import (
+    GridDirectionMode,
+    GridState,
+    OrderIntent,
+    OrderSide,
+    OrderStatus,
+    SymbolSession,
+)
 from exchange.mock import MockExchangeClient
 from strategy.grid_calculator import GridConfig, calculate_grid_params
 from strategy.grid_engine import GridEngine
@@ -64,6 +71,28 @@ class RejectAllPostOnlyExchange(MockExchangeClient):
         position_side: str | None = None,
     ):
         raise RuntimeError("Order would immediately match and take. Post only rejected.")
+
+
+class ExcessiveSeedSlippageExchange(MockExchangeClient):
+    async def place_market_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        reduce_only: bool = True,
+        position_side: str | None = None,
+        client_id: str | None = None,
+    ):
+        response = await super().place_market_order(
+            symbol,
+            side,
+            qty,
+            reduce_only,
+            position_side,
+            client_id,
+        )
+        response["avgPrice"] = 100.3
+        return response
 
 
 class MissingOrderIdExchange(MockExchangeClient):
@@ -1542,5 +1571,116 @@ def test_grid_engine_sync_keeps_order_open_for_unknown_exchange_status() -> None
         assert logs[0][0] == "WARN"
         assert "Unknown exchange order status" in logs[0][2]
         assert "NEW_UNKNOWN_STATUS" in logs[0][3]
+
+    asyncio.run(run())
+
+
+def test_grid_engine_supports_neutral_long_and_short_direction_modes() -> None:
+    async def run() -> None:
+        for mode in GridDirectionMode:
+            exchange = MockExchangeClient()
+            session = _session()
+            session.capital = 500
+            session.leverage = 1
+            session.direction_mode = mode
+            assert session.params is not None
+            session.params = replace(session.params, direction_mode=mode)
+
+            created = await GridEngine(exchange).start(session, current_price=100.0)
+
+            assert created
+            assert all(order.get("timeInForce") == "GTX" for order in exchange.orders[session.symbol])
+            seed_orders = [order for order in session.orders if order.order_intent == OrderIntent.SEED]
+            if mode == GridDirectionMode.NEUTRAL:
+                assert seed_orders == []
+                assert exchange.market_orders == []
+                assert {
+                    (order.side, order.position_side, order.order_intent)
+                    for order in created
+                } <= {
+                    (OrderSide.BUY, "LONG", OrderIntent.OPEN),
+                    (OrderSide.SELL, "SHORT", OrderIntent.OPEN),
+                }
+            elif mode == GridDirectionMode.LONG:
+                assert len(seed_orders) == 1
+                assert seed_orders[0].side == OrderSide.BUY
+                assert seed_orders[0].position_side == "LONG"
+                assert seed_orders[0].qty == sum(
+                    order.qty for order in created if order.order_intent == OrderIntent.REDUCE
+                )
+                assert all(order.position_side == "LONG" for order in created)
+                assert all(
+                    order.order_intent == (
+                        OrderIntent.OPEN if order.side == OrderSide.BUY else OrderIntent.REDUCE
+                    )
+                    for order in created
+                )
+            else:
+                assert len(seed_orders) == 1
+                assert seed_orders[0].side == OrderSide.SELL
+                assert seed_orders[0].position_side == "SHORT"
+                assert seed_orders[0].qty == sum(
+                    order.qty for order in created if order.order_intent == OrderIntent.REDUCE
+                )
+                assert all(order.position_side == "SHORT" for order in created)
+                assert all(
+                    order.order_intent == (
+                        OrderIntent.REDUCE if order.side == OrderSide.BUY else OrderIntent.OPEN
+                    )
+                    for order in created
+                )
+
+    asyncio.run(run())
+
+
+def test_grid_engine_defensive_mode_keeps_reduce_orders_and_restores_open_orders() -> None:
+    async def run() -> None:
+        exchange = MockExchangeClient()
+        session = _session()
+        session.capital = 500
+        session.leverage = 1
+        session.direction_mode = GridDirectionMode.LONG
+        assert session.params is not None
+        session.params = replace(session.params, direction_mode=GridDirectionMode.LONG)
+        engine = GridEngine(exchange)
+        await engine.start(session, current_price=100.0)
+
+        cancelled = await engine.enter_defensive(session, has_inventory=True)
+
+        assert cancelled
+        assert all(order.order_intent == OrderIntent.OPEN for order in cancelled)
+        assert all(order.status == OrderStatus.CANCELLED for order in cancelled)
+        assert any(
+            order.status == OrderStatus.OPEN and order.order_intent == OrderIntent.REDUCE
+            for order in session.orders
+        )
+
+        restored = await engine.restore_defensive_orders(session, client_id_tag="bar4")
+
+        assert len(restored) == len(cancelled)
+        assert all(order.order_intent == OrderIntent.OPEN for order in restored)
+        assert all(order.position_side == "LONG" for order in restored)
+
+    asyncio.run(run())
+
+
+def test_grid_engine_rejects_direction_seed_when_slippage_exceeds_limit() -> None:
+    async def run() -> None:
+        session = _session()
+        session.capital = 500
+        session.leverage = 1
+        session.direction_mode = GridDirectionMode.LONG
+        assert session.params is not None
+        session.params = replace(session.params, direction_mode=GridDirectionMode.LONG)
+
+        try:
+            await GridEngine(ExcessiveSeedSlippageExchange()).start(
+                session,
+                current_price=100.0,
+            )
+        except ValueError as exc:
+            assert "滑点超过上限" in str(exc)
+        else:
+            raise AssertionError("excessive seed slippage must reject directional grid")
 
     asyncio.run(run())

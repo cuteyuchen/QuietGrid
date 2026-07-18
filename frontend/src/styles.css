@@ -1528,6 +1528,82 @@ pre {
   gap: 14px;
 }
 
+.direction-settings {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(420px, 1.5fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.direction-fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.direction-fieldset legend {
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.direction-fieldset small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.direction-segments {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.direction-segment {
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.direction-segment:hover,
+.direction-segment:focus-visible {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.direction-segment.active {
+  color: var(--text);
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.direction-overrides {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.seed-summary {
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .direction-settings,
+  .direction-overrides {
+    grid-template-columns: 1fr;
+  }
+}
+
 .backtest-submit {
   align-self: end;
 }

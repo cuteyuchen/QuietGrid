@@ -132,6 +132,8 @@ def _order_payload(row: dict[str, Any]) -> dict[str, Any]:
         "created_at": row.get("created_at"),
         "filled_at": row.get("filled_at"),
         "fill_price": row.get("fill_price"),
+        "position_side": row.get("position_side"),
+        "order_intent": row.get("order_intent") or "OPEN",
         "updated_at": row.get("updated_at"),
     }
 

@@ -5,7 +5,7 @@ from enum import Enum
 from math import isfinite
 from typing import Any
 
-from core.models import GridOrder, OrderSide, OrderStatus
+from core.models import GridOrder, OrderIntent, OrderStatus
 
 
 class InventoryLevel(Enum):
@@ -114,19 +114,29 @@ class InventoryManager:
         for order in filled:
             fill_price = _positive(order.fill_price or order.price, "fill_price")
             qty = _positive(order.qty, "qty")
-            if order.entry_price is None:
+            intent = order.order_intent
+            if intent == OrderIntent.OPEN and order.entry_price is not None:
+                intent = OrderIntent.REDUCE
+            position_side = str(order.position_side or "").upper()
+            if not position_side:
+                if intent == OrderIntent.REDUCE:
+                    position_side = "SHORT" if order.side.value == "BUY" else "LONG"
+                else:
+                    position_side = "LONG" if order.side.value == "BUY" else "SHORT"
+            if intent in {OrderIntent.OPEN, OrderIntent.SEED}:
                 lot = InventoryLot(
-                    side="LONG" if order.side == OrderSide.BUY else "SHORT",
+                    side=position_side,
                     entry_price=fill_price,
                     qty=qty,
                     entry_grid_index=order.grid_index,
                     target_exit_price=None,
                     opened_at=order.filled_at,
                 )
-                (long_lots if order.side == OrderSide.BUY else short_lots).append(lot)
+                (long_lots if position_side == "LONG" else short_lots).append(lot)
                 continue
-            target = short_lots if order.side == OrderSide.BUY else long_lots
-            _consume_lots(target, qty, float(order.entry_price))
+            if intent == OrderIntent.REDUCE:
+                target = long_lots if position_side == "LONG" else short_lots
+                _consume_lots(target, qty, float(order.entry_price or fill_price))
 
         long_qty = sum(lot.qty for lot in long_lots)
         short_qty = sum(lot.qty for lot in short_lots)

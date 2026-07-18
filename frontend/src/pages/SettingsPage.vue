@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { AlertTriangle, LockKeyhole, RotateCcw, Save, ShieldCheck } from '@lucide/vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { loadV2ActiveConfig, type V2ActiveConfig } from '../api'
-import type { StrategyConfigData, StrategySettings } from '../mock'
+import type { GridDirectionMode, StrategyConfigData, StrategySettings } from '../mock'
 
 const props = defineProps<{
   accountId: string
@@ -16,7 +16,8 @@ const emit = defineEmits<{
   save: [draft: StrategySettings]
 }>()
 
-const draft = ref<StrategySettings>({ ...props.config.draft })
+const directionSymbols = ['BTCUSDT', 'ETHUSDT', 'BCHUSDT']
+const draft = ref<StrategySettings>(cloneSettings(props.config.draft))
 const activeConfig = ref<V2ActiveConfig | null>(null)
 const activeLoading = ref(false)
 const activeError = ref('')
@@ -44,7 +45,7 @@ const policySections = computed(() => Object.entries(activeConfig.value?.section
 watch(
   () => props.config.draft,
   (value) => {
-    draft.value = { ...value }
+    draft.value = cloneSettings(value)
   },
   { deep: true },
 )
@@ -84,7 +85,29 @@ function flattenConfig(
 }
 
 function reset() {
-  draft.value = { ...props.config.current }
+  draft.value = cloneSettings(props.config.current)
+}
+
+function cloneSettings(value: StrategySettings): StrategySettings {
+  return {
+    ...value,
+    directionOverrides: { ...value.directionOverrides },
+  }
+}
+
+function setDirectionMode(mode: string) {
+  draft.value.directionMode = mode as GridDirectionMode
+}
+
+function setDirectionOverride(symbol: string, event: Event) {
+  const mode = (event.target as HTMLSelectElement).value
+  const next = { ...draft.value.directionOverrides }
+  if (!mode) {
+    delete next[symbol]
+  } else {
+    next[symbol] = mode as GridDirectionMode
+  }
+  draft.value.directionOverrides = next
 }
 </script>
 
@@ -123,6 +146,40 @@ function reset() {
           <p>这些参数最直接影响风险，默认全部展示。</p>
         </div>
         <span class="muted">草稿更新 {{ config.draftUpdatedAt || '—' }}</span>
+      </div>
+      <div class="direction-settings">
+        <fieldset class="direction-fieldset">
+          <legend>全局网格方向</legend>
+          <div class="direction-segments" role="radiogroup" aria-label="全局网格方向">
+            <button
+              v-for="option in config.directionOptions"
+              :key="option.value"
+              class="direction-segment"
+              :class="{ active: draft.directionMode === option.value }"
+              type="button"
+              role="radio"
+              :aria-checked="draft.directionMode === option.value"
+              @click="setDirectionMode(option.value)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+          <small>中性模式不建立种子仓位；做多/做空模式会先受控市价建立对应种子仓位。仅影响新会话。</small>
+        </fieldset>
+        <div class="direction-overrides" aria-label="标的方向覆盖">
+          <label v-for="symbol in directionSymbols" :key="symbol" class="field">
+            <span>{{ symbol }}</span>
+            <select
+              :value="draft.directionOverrides[symbol] || ''"
+              @change="setDirectionOverride(symbol, $event)"
+            >
+              <option value="">跟随全局（{{ draft.directionMode }}）</option>
+              <option v-for="option in config.directionOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+        </div>
       </div>
       <div class="settings-grid">
         <label class="field">
@@ -277,7 +334,7 @@ function reset() {
         <button class="button button--ghost" type="button" :disabled="busy" @click="reset">
           <RotateCcw :size="17" />恢复当前值
         </button>
-        <button class="button button--primary" type="button" :disabled="busy" @click="emit('save', { ...draft })">
+        <button class="button button--primary" type="button" :disabled="busy" @click="emit('save', cloneSettings(draft))">
           <Save :size="17" />{{ busy ? '保存中…' : '保存草稿' }}
         </button>
       </div>

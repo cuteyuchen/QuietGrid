@@ -352,18 +352,34 @@ def test_regime_soft_breach_requires_three_consecutive_closed_bars(tmp_path) -> 
         leverage=1,
         open_time=now,
     )
-    blocked = SimpleNamespace(allowed=False, verdict="BLOCKED_SCORE", state="QUIET_RANGE")
-    allowed = SimpleNamespace(allowed=True, verdict="ALLOWED", state="QUIET_RANGE")
+    def blocked(minutes: int):
+        return SimpleNamespace(
+            allowed=False,
+            verdict="BLOCKED_SCORE",
+            state="QUIET_RANGE",
+            as_of=now + timedelta(minutes=minutes),
+        )
 
-    assert controller._update_regime_retention(session, blocked)[0] is False
+    def allowed(minutes: int):
+        return SimpleNamespace(
+            allowed=True,
+            verdict="ALLOWED",
+            state="QUIET_RANGE",
+            as_of=now + timedelta(minutes=minutes),
+        )
+
+    first = blocked(1)
+    assert controller._update_regime_retention(session, first)[0] is False
     assert session.soft_breach_count == 1
-    assert controller._update_regime_retention(session, blocked)[0] is False
+    assert controller._update_regime_retention(session, first)[0] is False
+    assert session.soft_breach_count == 1
+    assert controller._update_regime_retention(session, blocked(2))[0] is False
     assert session.soft_breach_count == 2
-    assert controller._update_regime_retention(session, allowed)[0] is False
+    assert controller._update_regime_retention(session, allowed(3))[0] is False
     assert session.soft_breach_count == 0
-    assert controller._update_regime_retention(session, blocked)[0] is False
-    assert controller._update_regime_retention(session, blocked)[0] is False
-    should_cooldown, reason = controller._update_regime_retention(session, blocked)
+    assert controller._update_regime_retention(session, blocked(4))[0] is False
+    assert controller._update_regime_retention(session, blocked(5))[0] is False
+    should_cooldown, reason = controller._update_regime_retention(session, blocked(6))
 
     assert should_cooldown is True
     assert session.soft_breach_count == 3
@@ -392,7 +408,12 @@ def test_regime_hard_block_is_immediate(tmp_path) -> None:
         leverage=1,
         open_time=now,
     )
-    hard = SimpleNamespace(allowed=False, verdict="BLOCKED_HARD", state="ILLIQUID")
+    hard = SimpleNamespace(
+        allowed=False,
+        verdict="BLOCKED_HARD",
+        state="ILLIQUID",
+        as_of=now + timedelta(minutes=1),
+    )
 
     should_cooldown, reason = controller._update_regime_retention(session, hard)
 

@@ -130,6 +130,14 @@ export type GridSession = {
   state: SessionState | string
   stateLabel: string
   softBreachCount?: number
+  lastRetentionDecisionAt: string
+  directionMode: GridDirectionMode
+  directionSource: string
+  seedPositionSide: string
+  seedQty: number
+  seedEntryPrice: number | null
+  seedSlippagePct: number | null
+  seedFee: number
   upper: number
   lower: number
   gridNum: number
@@ -196,7 +204,11 @@ export type GridOrder = {
   createdAt: string
   filledAt: string
   fillPrice: number
+  positionSide: string
+  orderIntent: string
 }
+
+export type GridDirectionMode = 'LONG' | 'SHORT' | 'NEUTRAL'
 
 export type GridTrade = {
   id: number
@@ -278,6 +290,8 @@ export type TraderProcessState = {
 }
 
 export type StrategySettings = {
+  directionMode: GridDirectionMode
+  directionOverrides: Record<string, GridDirectionMode>
   volatilityMethod: string
   leverage: number
   capitalPerSymbol: number
@@ -313,6 +327,7 @@ export type StrategyConfigData = {
   diff: StrategyDiff[]
   draftUpdatedAt: string
   volatilityOptions: VolatilityOption[]
+  directionOptions: VolatilityOption[]
 }
 
 export type VerificationRow = {
@@ -417,9 +432,11 @@ export const traderProcessState: TraderProcessState = {
 
 export const strategyConfig: StrategyConfigData = {
   current: {
+    directionMode: 'NEUTRAL',
+    directionOverrides: {},
     volatilityMethod: 'std',
     leverage: 10,
-    capitalPerSymbol: 200,
+    capitalPerSymbol: 500,
     maxConcurrent: 3,
     scanCandidateCount: 10,
     observeHours: 3,
@@ -430,13 +447,15 @@ export const strategyConfig: StrategyConfigData = {
     stopBufferPct: 0.015,
     safetyMultiplier: 3.5,
     takeProfitUsdt: 10,
-    totalCapitalLimit: 1000,
+    totalCapitalLimit: 2000,
     maxMakerFeeRate: 0.0002,
   },
   draft: {
+    directionMode: 'NEUTRAL',
+    directionOverrides: {},
     volatilityMethod: 'std',
     leverage: 10,
-    capitalPerSymbol: 200,
+    capitalPerSymbol: 500,
     maxConcurrent: 3,
     scanCandidateCount: 10,
     observeHours: 3,
@@ -447,7 +466,7 @@ export const strategyConfig: StrategyConfigData = {
     stopBufferPct: 0.015,
     safetyMultiplier: 3.5,
     takeProfitUsdt: 10,
-    totalCapitalLimit: 1000,
+    totalCapitalLimit: 2000,
     maxMakerFeeRate: 0.0002,
   },
   diff: [],
@@ -459,6 +478,11 @@ export const strategyConfig: StrategyConfigData = {
     { value: 'rogers_satchell', label: 'Rogers-Satchell' },
     { value: 'yang_zhang', label: 'Yang-Zhang' },
     { value: 'quantile', label: '分位数' },
+  ],
+  directionOptions: [
+    { value: 'NEUTRAL', label: '中性网格' },
+    { value: 'LONG', label: '做多网格' },
+    { value: 'SHORT', label: '做空网格' },
   ],
 }
 
@@ -494,6 +518,14 @@ export const sessions: GridSession[] = [
     symbol: 'BCHUSDT',
     state: 'STOPPED',
     stateLabel: '已停止',
+    lastRetentionDecisionAt: '23:21:10',
+    directionMode: 'NEUTRAL',
+    directionSource: 'global',
+    seedPositionSide: '',
+    seedQty: 0,
+    seedEntryPrice: null,
+    seedSlippagePct: null,
+    seedFee: 0,
     upper: 234.1378,
     lower: 230.6886,
     gridNum: 9,
@@ -572,6 +604,14 @@ export const sessions: GridSession[] = [
     symbol: 'BTCUSDT',
     state: 'STOPPED',
     stateLabel: '已停止',
+    lastRetentionDecisionAt: '23:20:50',
+    directionMode: 'NEUTRAL',
+    directionSource: 'global',
+    seedPositionSide: '',
+    seedQty: 0,
+    seedEntryPrice: null,
+    seedSlippagePct: null,
+    seedFee: 0,
     upper: 62275.5695,
     lower: 61718.4172,
     gridNum: 6,

@@ -216,6 +216,12 @@ class AdaptiveGridGenerator:
                     direction_mode=mode,
                     taker_fee_rate=taker_fee,
                 )
+                seed_execution_cost_pct = (
+                    risk["estimated_seed_fee"] / total_notional
+                    if total_notional > 0
+                    else 0.0
+                )
+                objective_value -= seed_execution_cost_pct
                 rejected_reason = ""
                 if actual_step > config.max_step_pct:
                     rejected_reason = "实际格距超过上限"
@@ -244,6 +250,8 @@ class AdaptiveGridGenerator:
                     "execution_risk_discount_pct": execution_risk_discount,
                     "estimated_crossings_per_hour": crossings_per_hour,
                     "objective_value": objective_value,
+                    "seed_execution_cost_pct": seed_execution_cost_pct,
+                    "taker_fee_rate": taker_fee,
                     "rejected_reason": rejected_reason,
                     "direction_mode": mode.value,
                     "risk_budget": session_risk_budget,
@@ -408,7 +416,7 @@ def _candidate_order_sizing(
         rejected_reason = "每格名义金额小于交易所最小名义金额"
     minimum_required_capital = 0.0
     if configured_capital > 0 and leverage > 0:
-        required_scales = [1.0]
+        required_scales: list[float] = []
         if min_qty > 0:
             required_scales.extend(
                 min_qty / qty
@@ -421,7 +429,10 @@ def _candidate_order_sizing(
                 for notional in notionals
                 if notional > 0
             )
-        minimum_required_capital = configured_capital * max(required_scales)
+        if required_scales:
+            minimum_required_capital = (
+                configured_capital * max(required_scales)
+            )
     return {
         "planned_order_count": len(sized_orders),
         "planned_min_order_qty": min(quantities),

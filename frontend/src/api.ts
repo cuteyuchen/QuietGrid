@@ -268,6 +268,7 @@ export type V2GridPlan = {
   costFloorPct: number
   regimeScore: number | null
   parameterVersion: string
+  directionMode: 'LONG' | 'SHORT' | 'NEUTRAL'
 }
 
 export type V2SessionWorkspace = {
@@ -652,6 +653,14 @@ type ApiSession = {
   state: string
   state_label: string
   soft_breach_count?: number
+  last_retention_decision_at?: string
+  direction_mode?: 'LONG' | 'SHORT' | 'NEUTRAL'
+  direction_source?: string
+  seed_position_side?: string | null
+  seed_qty?: number | null
+  seed_entry_price?: number | null
+  seed_slippage_pct?: number | null
+  seed_fee?: number | null
   upper: number | null
   lower: number | null
   grid_num: number | null
@@ -712,6 +721,8 @@ type ApiOrder = {
   created_at: string
   filled_at: string
   fill_price: number | null
+  position_side?: string | null
+  order_intent?: string | null
 }
 
 type ApiTrade = {
@@ -822,6 +833,8 @@ type ApiTraderProcessState = {
 }
 
 type ApiStrategySettings = {
+  direction_mode: 'LONG' | 'SHORT' | 'NEUTRAL'
+  direction_overrides: Record<string, 'LONG' | 'SHORT' | 'NEUTRAL'>
   volatility_method: string
   leverage: number
   capital_per_symbol: number
@@ -853,6 +866,7 @@ type ApiStrategyConfig = {
   draft_updated_at: string
   options: {
     volatility_methods: VolatilityOption[]
+    direction_modes: VolatilityOption[]
   }
 }
 
@@ -1383,6 +1397,7 @@ function mapV2GridPlan(value: Record<string, unknown>): V2GridPlan {
     costFloorPct: unknownNumber(value.cost_floor_pct),
     regimeScore: nullableUnknownNumber(value.regime_score),
     parameterVersion: String(value.parameter_version || ''),
+    directionMode: (String(value.direction_mode || 'NEUTRAL').toUpperCase() as 'LONG' | 'SHORT' | 'NEUTRAL'),
   }
 }
 
@@ -1767,6 +1782,8 @@ export async function saveStrategyConfigDraft(draft: StrategySettings, accountId
       volatility_method: draft.volatilityMethod,
       leverage: draft.leverage,
       capital_per_symbol: draft.capitalPerSymbol,
+      direction_mode: draft.directionMode,
+      direction_overrides: draft.directionOverrides,
       max_concurrent: draft.maxConcurrent,
       scan_candidate_count: draft.scanCandidateCount,
       observe_hours: draft.observeHours,
@@ -2112,11 +2129,14 @@ function mapStrategyConfig(value: ApiStrategyConfig): StrategyConfigData {
     diff: Array.isArray(value.diff) ? value.diff.map(mapStrategyDiff) : [],
     draftUpdatedAt: compactTime(value.draft_updated_at),
     volatilityOptions: value.options?.volatility_methods || [],
+    directionOptions: value.options?.direction_modes || [],
   }
 }
 
 function mapStrategySettings(value: ApiStrategySettings): StrategySettings {
   return {
+    directionMode: value.direction_mode || 'NEUTRAL',
+    directionOverrides: value.direction_overrides || {},
     volatilityMethod: value.volatility_method || 'std',
     leverage: Math.trunc(toNumber(value.leverage)),
     capitalPerSymbol: toNumber(value.capital_per_symbol),
@@ -2152,6 +2172,14 @@ function mapSession(value: ApiSession): GridSession {
     state: value.state,
     stateLabel: value.state_label,
     softBreachCount: Math.trunc(toNumber(value.soft_breach_count)),
+    lastRetentionDecisionAt: compactTime(value.last_retention_decision_at || ''),
+    directionMode: value.direction_mode || 'NEUTRAL',
+    directionSource: value.direction_source || 'global',
+    seedPositionSide: value.seed_position_side || '',
+    seedQty: toNumber(value.seed_qty),
+    seedEntryPrice: nullableNumber(value.seed_entry_price),
+    seedSlippagePct: nullableNumber(value.seed_slippage_pct),
+    seedFee: toNumber(value.seed_fee),
     upper: toNumber(value.upper),
     lower: toNumber(value.lower),
     gridNum: Math.trunc(toNumber(value.grid_num)),
@@ -2252,6 +2280,8 @@ function mapOrder(value: ApiOrder): GridOrder {
     createdAt: compactTime(value.created_at),
     filledAt: compactTime(value.filled_at),
     fillPrice: toNumber(value.fill_price),
+    positionSide: value.position_side || '',
+    orderIntent: value.order_intent || 'OPEN',
   }
 }
 

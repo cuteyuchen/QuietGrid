@@ -68,7 +68,7 @@ def test_take_profit_closes_symbol() -> None:
     assert "止盈" in decision.reason
 
 
-def test_upper_dynamic_stop_closes_before_cooldown() -> None:
+def test_upper_dynamic_stop_enters_hard_stop_cooldown() -> None:
     manager = RiskManager(
         scheduler=FakeScheduler(force_close=False),  # type: ignore[arg-type]
         config=RiskConfig(take_profit_usdt=10, total_capital_limit=1000, max_concurrent=3),
@@ -79,8 +79,8 @@ def test_upper_dynamic_stop_closes_before_cooldown() -> None:
 
     decision = manager.evaluate_symbol(session, session.params.upper * (1 + stop_buffer_pct))
 
-    assert decision.action == RiskAction.CLOSE
-    assert "上方动态止损线" in decision.reason
+    assert decision.action == RiskAction.COOLDOWN
+    assert "区间外硬止损线" in decision.reason
     assert decision.priority == 3
 
 
@@ -162,7 +162,7 @@ def test_v2_risk_manager_halts_window_at_loss_budget() -> None:
     assert decision.action == RiskAction.HALT_WINDOW
 
 
-def test_v2_risk_manager_uses_inventory_unrealized_loss() -> None:
+def test_v2_risk_manager_does_not_force_close_normal_grid_on_floating_loss() -> None:
     manager = RiskManager(
         scheduler=FakeScheduler(force_close=False),  # type: ignore[arg-type]
         config=RiskConfig(
@@ -186,7 +186,7 @@ def test_v2_risk_manager_uses_inventory_unrealized_loss() -> None:
 
     decision = manager.evaluate_symbol(_session(), 100, inventory=inventory)
 
-    assert decision.action == RiskAction.CLOSE
+    assert decision.action == RiskAction.NONE
 
 
 def test_v2_risk_manager_reduces_high_inventory() -> None:

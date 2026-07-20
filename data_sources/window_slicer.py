@@ -141,8 +141,12 @@ class NyseWindowSlicer:
         sessions = list(schedule.iterrows())
         result: list[tuple[datetime, datetime]] = []
         for index in range(len(sessions) - 1):
-            _, current = sessions[index]
-            _, following = sessions[index + 1]
+            current_label, current = sessions[index]
+            following_label, following = sessions[index + 1]
+            current_date = current_label.date()
+            following_date = following_label.date()
+            if (following_date - current_date).days <= 1:
+                continue
             market_close = current["market_close"].to_pydatetime().astimezone(timezone.utc)
             next_open = following["market_open"].to_pydatetime().astimezone(timezone.utc)
             next_open_ny = next_open.astimezone(NY_TZ)

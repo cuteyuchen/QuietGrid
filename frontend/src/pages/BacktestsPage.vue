@@ -445,7 +445,7 @@ function downloadReport() {
             </span>
             <small>{{ sampleLabel(run.config.sample_label) }} · {{ time(run.startedAt) }}</small>
             <small v-if="run.datasetId" class="run-dataset-ref">Dataset {{ run.datasetId.slice(0, 24) }}… · {{ run.dataProvider || '—' }}</small>
-            <small v-if="run.datasetChecksum" class="mono">Hash {{ run.datasetChecksum.slice(0, 12) }}… · {{ run.windowMode || 'RAW_RANGE' }} · {{ run.windowCount ?? '—' }} 窗口</small>
+            <small v-if="run.datasetChecksum" class="mono">Hash {{ run.datasetChecksum.slice(0, 12) }}… · {{ run.windowMode || 'NYSE_CLOSED_ONLY' }} · {{ run.windowCount ?? '—' }} 窗口</small>
             <small>{{ run.fillModel }} · DD {{ money(Number(run.metrics.max_drawdown || 0)) }}</small>
             <b :class="Number(run.metrics.total_pnl || 0) >= 0 ? 'positive' : 'negative'">
               {{ money(Number(run.metrics.total_pnl || 0)) }}
@@ -507,7 +507,7 @@ function downloadReport() {
               <div><dt>数据集</dt><dd>{{ metadata?.dataset || metadata?.dataset_id || selected.datasetId || selected.config.dataset || '旧版 CSV' }}</dd></div>
               <div><dt>Dataset ID</dt><dd class="mono">{{ metadata?.dataset_id || selected.datasetId || '旧版 CSV' }}</dd></div>
               <div><dt>数据哈希</dt><dd class="mono">{{ metadata?.dataset_checksum || selected.datasetChecksum || '—' }}</dd></div>
-              <div><dt>Provider / 窗口</dt><dd>{{ metadata?.data_provider || selected.dataProvider || 'local' }} · {{ metadata?.window_mode || selected.windowMode || 'RAW_RANGE' }}</dd></div>
+              <div><dt>Provider / 窗口</dt><dd>{{ metadata?.data_provider || selected.dataProvider || 'local' }} · {{ metadata?.window_mode || selected.windowMode || 'NYSE_CLOSED_ONLY' }}</dd></div>
               <div><dt>休市窗口</dt><dd>{{ metadata?.window_count ?? selected.windowCount ?? '—' }} 个</dd></div>
               <div><dt>数据区间</dt><dd>{{ time(metadata?.data_start) }} – {{ time(metadata?.data_end) }}</dd></div>
               <div><dt>总行数 / 执行行数</dt><dd>{{ metadata?.row_count || '—' }} / {{ metadata?.execution_rows || '—' }}</dd></div>

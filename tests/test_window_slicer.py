@@ -69,3 +69,16 @@ def test_nyse_window_handles_dst_and_reports_short_windows() -> None:
     assert short_window.status == "SKIPPED"
     assert short_window.skip_reason == "INSUFFICIENT_TRADABLE_ROWS"
 
+
+def test_nyse_window_excludes_normal_weekday_overnight() -> None:
+    slicer = NyseWindowSlicer(force_close_minutes=120, minimum_tradable_rows=2)
+    rows = _hourly_rows(
+        datetime(2026, 7, 15, 20, tzinfo=timezone.utc),
+        datetime(2026, 7, 16, 8, tzinfo=timezone.utc),
+    )
+
+    assert slicer.slice(rows, observation_rows=2) == []
+    assert slicer.estimate_window_count(
+        datetime(2026, 7, 15, 20, tzinfo=timezone.utc),
+        datetime(2026, 7, 16, 8, tzinfo=timezone.utc),
+    ) == 0

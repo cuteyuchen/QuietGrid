@@ -371,7 +371,7 @@ export type V2DatasetRequest = {
   priceType: string
   startTime: string
   endTime: string
-  windowMode: 'NYSE_CLOSED_ONLY' | 'RAW_RANGE'
+  windowMode: 'NYSE_CLOSED_ONLY'
 }
 
 export type V2DatasetPreview = {
@@ -1199,7 +1199,7 @@ export async function uploadV2BacktestDataset(
   options: {
     symbol: string
     interval: string
-    windowMode: 'NYSE_CLOSED_ONLY' | 'RAW_RANGE'
+    windowMode: 'NYSE_CLOSED_ONLY'
   },
   accountId?: string,
 ): Promise<V2BacktestDataset> {

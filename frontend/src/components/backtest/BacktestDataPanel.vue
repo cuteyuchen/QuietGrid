@@ -73,12 +73,12 @@ const online = ref({
   priceType: 'CONTRACT',
   startTime: toLocalInput(sevenDaysAgo),
   endTime: toLocalInput(now),
-  windowMode: 'NYSE_CLOSED_ONLY' as 'NYSE_CLOSED_ONLY' | 'RAW_RANGE',
+  windowMode: 'NYSE_CLOSED_ONLY' as const,
 })
 const upload = ref({
   symbol: 'BTCUSDT',
   interval: '1m',
-  windowMode: 'NYSE_CLOSED_ONLY' as 'NYSE_CLOSED_ONLY' | 'RAW_RANGE',
+  windowMode: 'NYSE_CLOSED_ONLY' as const,
 })
 
 let pollTimer: number | null = null
@@ -464,11 +464,10 @@ function message(reason: unknown, fallback: string) {
         </label>
         <label class="field field--wide">
           <span>回测窗口</span>
-          <select v-model="online.windowMode">
-            <option value="NYSE_CLOSED_ONLY">仅 NYSE 休市窗口（推荐）</option>
-            <option value="RAW_RANGE">完整原始时间范围</option>
+          <select v-model="online.windowMode" disabled>
+            <option value="NYSE_CLOSED_ONLY">仅周末与节假日长休市窗口</option>
           </select>
-          <small>休市窗口会在窗口切片阶段生成；当前下载仍保存完整冻结数据。</small>
+          <small>下载仍保存完整冻结数据，执行回测时只使用相邻 NYSE 交易日间隔大于 1 天的窗口。</small>
         </label>
         <label class="check-field check-field--disabled field--wide">
           <input type="checkbox" disabled>
@@ -590,7 +589,7 @@ function message(reason: unknown, fallback: string) {
       <div class="upload-options">
         <label class="field"><span>标的</span><input v-model.trim="upload.symbol" type="text" placeholder="BTCUSDT"></label>
         <label class="field"><span>K 线周期</span><select v-model="upload.interval"><option>1m</option><option>5m</option><option>15m</option><option>1h</option></select></label>
-        <label class="field"><span>回测窗口</span><select v-model="upload.windowMode"><option value="NYSE_CLOSED_ONLY">仅 NYSE 休市窗口</option><option value="RAW_RANGE">完整原始范围</option></select></label>
+        <label class="field"><span>回测窗口</span><select v-model="upload.windowMode" disabled><option value="NYSE_CLOSED_ONLY">仅周末与节假日长休市窗口</option></select></label>
         <button class="button button--primary" type="button" :disabled="!uploadFile || !upload.symbol.trim() || uploading" @click="importUpload">
           <LoaderCircle v-if="uploading" :size="17" class="spin" /><ShieldCheck v-else :size="17" />
           {{ uploading ? '校验并冻结中…' : '校验并导入' }}

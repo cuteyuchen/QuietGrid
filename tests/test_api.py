@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 import api as api_module
@@ -1350,10 +1351,12 @@ def test_v2_backtest_center_lists_datasets_runs_and_reports(tmp_path) -> None:
     report_root = tmp_path / "reports"
     dataset_root.mkdir()
     rows = ["timestamp,open,high,low,close"]
+    start = datetime(2026, 7, 10, 20, 0, tzinfo=timezone.utc)
     for index in range(90):
+        opened = start + timedelta(minutes=index)
         close = 100.0 + ((index % 12) - 6) * 0.12
         rows.append(
-            f"2026-01-01T00:{index:02d}:00Z,{close:.4f},{close + 0.6:.4f},"
+            f"{opened.isoformat()},{close:.4f},{close + 0.6:.4f},"
             f"{close - 0.6:.4f},{close:.4f}"
         )
     (dataset_root / "btc-1m.csv").write_text("\n".join(rows), encoding="utf-8")
@@ -1410,6 +1413,7 @@ def test_v2_backtest_center_lists_datasets_runs_and_reports(tmp_path) -> None:
     legacy_report = json.loads(report_path.read_text(encoding="utf-8"))
     legacy_report["validation"]["window_distribution"].update(
         {
+            "source": "RAW_RANGE",
             "p05": -200.63,
             "p50": -200.63,
             "p95": -200.63,
@@ -1487,7 +1491,7 @@ def test_v2_online_dataset_job_freezes_and_runs_by_dataset_id(monkeypatch, tmp_p
     db_path = tmp_path / "quietgrid-v2-online-data.db"
     dataset_root = tmp_path / "frozen-datasets"
     report_root = tmp_path / "reports"
-    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    start = datetime(2026, 7, 10, 20, 0, tzinfo=timezone.utc)
     start_ms = int(start.timestamp() * 1000)
     rows = []
     for index in range(90):
@@ -1531,7 +1535,7 @@ def test_v2_online_dataset_job_freezes_and_runs_by_dataset_id(monkeypatch, tmp_p
         "interval": "1m",
         "start_time": start.isoformat(),
         "end_time": (start + timedelta(minutes=90)).isoformat(),
-        "window_mode": "RAW_RANGE",
+        "window_mode": "NYSE_CLOSED_ONLY",
     }
 
     with TestClient(create_app(config)) as client:
@@ -1633,7 +1637,7 @@ def test_v2_upload_csv_validates_and_freezes_dataset(tmp_path) -> None:
         "legacy_dataset_dir": str(tmp_path / "legacy"),
     }
     rows = ["timestamp,open,high,low,close,volume"]
-    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    start = datetime(2026, 7, 10, 20, 0, tzinfo=timezone.utc)
     for index in range(90):
         opened = start + timedelta(minutes=index)
         close = 100 + (index % 5) * 0.1
@@ -1648,7 +1652,7 @@ def test_v2_upload_csv_validates_and_freezes_dataset(tmp_path) -> None:
                 "file_name": "uploaded.csv",
                 "symbol": "BTCUSDT",
                 "interval": "1m",
-                "window_mode": "RAW_RANGE",
+                "window_mode": "NYSE_CLOSED_ONLY",
             },
             content="\n".join(rows).encode("utf-8"),
             headers={"Content-Type": "text/csv"},
@@ -1674,6 +1678,61 @@ def test_v2_upload_csv_validates_and_freezes_dataset(tmp_path) -> None:
         assert client.get(
             f"/api/v2/backtests/datasets/{dataset['dataset_id']}"
         ).status_code == 404
+
+
+def test_v2_backtest_data_api_rejects_raw_range(tmp_path) -> None:
+    client = TestClient(create_app(_test_config(tmp_path / "raw-range-rejected.db")))
+    request = {
+        "provider": "binance",
+        "symbol": "BTCUSDT",
+        "interval": "1m",
+        "start_time": "2026-07-10T20:00:00Z",
+        "end_time": "2026-07-10T21:30:00Z",
+        "window_mode": "RAW_RANGE",
+    }
+
+    preview = client.post("/api/v2/backtest-data/preview", json=request)
+    upload = client.post(
+        "/api/v2/backtest-data/upload",
+        params={
+            "file_name": "raw.csv",
+            "symbol": "BTCUSDT",
+            "interval": "1m",
+            "window_mode": "RAW_RANGE",
+        },
+        content=(
+            "timestamp,open,high,low,close\n"
+            "2026-07-10T20:00:00Z,100,101,99,100\n"
+        ).encode("utf-8"),
+        headers={"Content-Type": "text/csv"},
+    )
+
+    assert preview.status_code == 422
+    assert upload.status_code == 422
+
+
+def test_v2_backtest_old_raw_dataset_cannot_bypass_nyse_windows(tmp_path) -> None:
+    dataset_path = tmp_path / "old-raw.csv"
+    rows = ["timestamp,open,high,low,close"]
+    start = datetime(2026, 7, 15, 20, 0, tzinfo=timezone.utc)
+    for index in range(90):
+        opened = start + timedelta(minutes=index)
+        rows.append(f"{opened.isoformat()},100,101,99,100")
+    dataset_path.write_text("\n".join(rows), encoding="utf-8")
+    request = api_module.V2BacktestRunRequest(
+        dataset_id="legacy_raw_dataset",
+        symbol="BTCUSDT",
+        observe_rows=30,
+    )
+
+    with pytest.raises(RuntimeError, match="没有覆盖 NYSE 休市窗口"):
+        api_module._execute_v2_backtest(
+            _test_config(tmp_path / "old-raw.db"),
+            request,
+            dataset_path,
+            tmp_path / "old-raw-report.json",
+            {"window_mode": "RAW_RANGE", "interval": "1m"},
+        )
 
 
 def test_v2_nyse_closed_dataset_runs_independent_windows(tmp_path) -> None:

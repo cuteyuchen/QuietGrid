@@ -885,7 +885,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         interval: str = Query("1m", pattern=r"^(1m|5m|15m|1h)$"),
         window_mode: str = Query(
             "NYSE_CLOSED_ONLY",
-            pattern=r"^(NYSE_CLOSED_ONLY|RAW_RANGE)$",
+            pattern=r"^NYSE_CLOSED_ONLY$",
         ),
         ctx: AccountRequestContext = Depends(get_account_context),
     ) -> dict[str, Any]:
@@ -1068,7 +1068,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             dataset_id=str(dataset_metadata.get("dataset_id") or "") or None,
             dataset_checksum=str(dataset_metadata.get("checksum") or "") or None,
             data_provider=str(dataset_metadata.get("provider") or "LEGACY_CSV"),
-            window_mode=str(dataset_metadata.get("window_mode") or "RAW_RANGE"),
+            window_mode="NYSE_CLOSED_ONLY",
             dataset_schema_version=(
                 int(dataset_metadata["schema_version"])
                 if dataset_metadata.get("schema_version") is not None
@@ -1233,7 +1233,7 @@ class V2BacktestDatasetRequest(BaseModel):
     end_time: datetime
     window_mode: str = Field(
         default="NYSE_CLOSED_ONLY",
-        pattern=r"^(NYSE_CLOSED_ONLY|RAW_RANGE)$",
+        pattern=r"^NYSE_CLOSED_ONLY$",
     )
 
     def to_domain(self) -> DatasetRequest:
@@ -1589,7 +1589,7 @@ def _execute_v2_backtest(
     dataset_metadata: dict[str, Any] | None = None,
     funding_events: list[FundingEvent] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    from trader import _read_backtest_csv, _run_backtest_csv
+    from trader import _read_backtest_csv
 
     raw = deepcopy(config.raw)
     raw.setdefault("trading", {}).update(
@@ -1621,63 +1621,54 @@ def _execute_v2_backtest(
         }
     )
     dataset_metadata = dataset_metadata or {}
-    window_mode = str(dataset_metadata.get("window_mode") or "RAW_RANGE")
-    if window_mode == "NYSE_CLOSED_ONLY":
-        raw["backtest"]["force_close_at_end"] = True
+    window_mode = "NYSE_CLOSED_ONLY"
+    raw["backtest"]["force_close_at_end"] = True
     runtime_config = SimpleNamespace(raw=raw)
     rows = _read_backtest_csv(dataset_path)
-    window_backtests: list[dict[str, Any]] | None = None
-    validation_rows = rows
-    if window_mode == "NYSE_CLOSED_ONLY":
-        interval = str(dataset_metadata.get("interval") or "1m")
-        try:
-            interval_ms = INTERVAL_MILLISECONDS[interval]
-        except KeyError as exc:
-            raise RuntimeError(f"数据集周期不支持休市窗口切分: {interval}") from exc
-        windowing = raw.get("backtest", {}).get("windowing", {})
-        slicer = NyseWindowSlicer(
-            force_close_minutes=int(windowing.get("force_close_minutes", 120)),
-            minimum_tradable_rows=int(windowing.get("minimum_tradable_rows", 30)),
-        )
-        normalized_rows = normalized_klines_from_mappings(
-            rows,
-            interval_ms=interval_ms,
-        )
-        windows = slicer.slice(normalized_rows, request.observe_rows)
-        summary, report, window_backtests = _run_nyse_window_backtests(
-            runtime_config,
-            request,
-            windows,
-            funding_events,
-        )
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
-        )
-        validation_rows = [
-            row.to_mapping()
-            for window in windows
-            if window.status == "READY"
-            for row in window.rows
-        ]
-    else:
-        summary = _run_backtest_csv(
-            runtime_config,
-            dataset_path,
-            request.observe_rows,
-            request.symbol.upper(),
-            0.0,
-            report_path,
-            funding_events=funding_events,
-        )
+    interval = str(dataset_metadata.get("interval") or "1m")
+    try:
+        interval_ms = INTERVAL_MILLISECONDS[interval]
+    except KeyError as exc:
+        raise RuntimeError(f"数据集周期不支持休市窗口切分: {interval}") from exc
+    windowing = raw.get("backtest", {}).get("windowing", {})
+    slicer = NyseWindowSlicer(
+        force_close_minutes=int(windowing.get("force_close_minutes", 120)),
+        minimum_tradable_rows=int(windowing.get("minimum_tradable_rows", 30)),
+    )
+    normalized_rows = normalized_klines_from_mappings(
+        rows,
+        interval_ms=interval_ms,
+    )
+    windows = slicer.slice(normalized_rows, request.observe_rows)
+    summary, report, window_backtests = _run_nyse_window_backtests(
+        runtime_config,
+        request,
+        windows,
+        funding_events,
+    )
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+    validation_rows = [
+        row.to_mapping()
+        for window in windows
+        if window.status == "READY"
+        for row in window.rows
+    ]
+    effective_dataset_metadata = {
+        **dataset_metadata,
+        "window_mode": window_mode,
+        "window_count": len(windows),
+    }
     summary["funding_mode"] = "EVENT" if funding_events is not None else "PER_BAR"
     _append_v2_backtest_validation(
         runtime_config,
         request,
         validation_rows,
         report_path,
-        dataset_metadata,
+        effective_dataset_metadata,
         window_backtests=window_backtests,
         funding_events=funding_events,
     )
@@ -2071,7 +2062,7 @@ def _append_v2_backtest_validation(
         "dataset_id": request.dataset_id,
         "dataset_checksum": dataset_metadata.get("checksum"),
         "data_provider": dataset_metadata.get("provider", "LEGACY_CSV"),
-        "window_mode": dataset_metadata.get("window_mode", "RAW_RANGE"),
+        "window_mode": "NYSE_CLOSED_ONLY",
         "window_count": (
             len(window_backtests)
             if window_backtests is not None

@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 
 from data_sources.archive_checksum import parse_checksum_file, sha256_hexdigest
+from data_sources.archive_funding_reader import read_archive_funding
 from data_sources.archive_planner import BinanceArchivePlanner
 from data_sources.archive_zip_reader import read_archive_klines
 from data_sources.base import DataSourceError, HistoricalDataSource
@@ -26,6 +27,7 @@ from data_sources.models import (
     ArchiveSegment,
     ArchiveSegmentType,
     DatasetPreview,
+    FundingEvent,
     HistoricalSymbol,
     NormalizedKline,
     SourceSegmentMetadata,
@@ -39,6 +41,7 @@ DEFAULT_MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
 
 class BinanceArchiveHistoricalDataSource(HistoricalDataSource):
     provider_id = "binance_archive"
+    supports_funding = True
 
     def __init__(
         self,
@@ -161,6 +164,67 @@ class BinanceArchiveHistoricalDataSource(HistoricalDataSource):
                 continue
             async for row in self._emit_segment(normalized, interval, segment):
                 yield row
+            if self.pause_seconds:
+                await self._sleep(self.pause_seconds)
+
+    async def fetch_funding(
+        self,
+        symbol: str,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> AsyncIterator[FundingEvent]:
+        normalized = symbol.strip().upper()
+        if not normalized:
+            raise ValueError("symbol 不能为空。")
+        if start_time.tzinfo is None or end_time.tzinfo is None:
+            raise ValueError("start_time 和 end_time 必须包含时区。")
+        if start_time >= end_time:
+            raise ValueError("start_time 必须早于 end_time。")
+
+        start_ms = _utc_ms(start_time)
+        end_ms = _utc_ms(end_time)
+        cursor = start_time.astimezone(timezone.utc).date().replace(day=1)
+        last_month = datetime.fromtimestamp(
+            (end_ms - 1) / 1000,
+            tz=timezone.utc,
+        ).date().replace(day=1)
+        while cursor <= last_month:
+            name = f"{normalized}-fundingRate-{cursor:%Y-%m}"
+            url = (
+                f"{self.base_url}/data/{self.market_path}/monthly/fundingRate/"
+                f"{normalized}/{name}.zip"
+            )
+            payload = await self._download_zip(url)
+            if payload is None:
+                raise DataSourceError(
+                    f"Binance 月度资金费归档缺失: {normalized} {cursor:%Y-%m}"
+                )
+            data, official_checksum, local_checksum = payload
+            events = read_archive_funding(
+                data,
+                expected_csv_name=f"{name}.csv",
+                max_uncompressed_bytes=min(
+                    self.max_uncompressed_bytes,
+                    64 * 1024 * 1024,
+                ),
+            )
+            emitted = 0
+            for event in events:
+                if start_ms <= event.funding_time < end_ms:
+                    emitted += 1
+                    yield event
+            self.source_segments.append(
+                SourceSegmentMetadata(
+                    segment_type="monthly_funding_rate",
+                    url=url,
+                    official_checksum=official_checksum,
+                    local_checksum=local_checksum,
+                    rows=emitted,
+                    start=cursor.isoformat(),
+                    end=_next_month(cursor).isoformat(),
+                )
+            )
+            cursor = _next_month(cursor)
             if self.pause_seconds:
                 await self._sleep(self.pause_seconds)
 
@@ -314,26 +378,14 @@ def _validate_request(
     return normalized
 
 
+def _next_month(value: date) -> date:
+    if value.month == 12:
+        return date(value.year + 1, 1, 1)
+    return date(value.year, value.month + 1, 1)
+
+
 def _month_first(value: date) -> date:
     return value.replace(day=1)
-
-
-def _utc_ms(value: datetime) -> int:
-    return int(value.astimezone(timezone.utc).timestamp() * 1000)
-
-
-def _httpx_proxy_kwargs(proxy_config: dict[str, Any] | None) -> dict[str, Any]:
-    if not proxy_config or not proxy_config.get("enabled"):
-        return {}
-    proxy = str(proxy_config.get("https") or proxy_config.get("http") or "").strip()
-    if not proxy:
-        return {}
-    parameters = inspect.signature(httpx.AsyncClient.__init__).parameters
-    if "proxy" in parameters:
-        return {"proxy": proxy}
-    if "proxies" in parameters:
-        return {"proxies": proxy}
-    raise DataSourceError("当前 httpx 版本不支持代理配置。")
 
 
 def _utc_ms(value: datetime) -> int:

@@ -34,6 +34,22 @@ def _zip_for(csv_name: str, start_ms: int, count: int) -> bytes:
     return buffer.getvalue()
 
 
+def _funding_zip_for(csv_name: str, rows: list[tuple[int, float]]) -> bytes:
+    body = "\n".join(
+        [
+            "calc_time,funding_interval_hours,last_funding_rate",
+            *[
+                f"{funding_time},8,{funding_rate:.8f}"
+                for funding_time, funding_rate in rows
+            ],
+        ]
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(csv_name, body)
+    return buffer.getvalue()
+
+
 class _ArchiveServer:
     """内存版 data.binance.vision：按 URL 返回 ZIP 与 .CHECKSUM，或 404。"""
 
@@ -50,6 +66,17 @@ class _ArchiveServer:
         name = f"{symbol}-{interval}-{year:04d}-{month:02d}"
         path = f"/data/futures/um/monthly/klines/{symbol}/{interval}/{name}.zip"
         self.zips[path] = _zip_for(f"{name}.csv", _day_ms(year, month, 1), count)
+
+    def add_monthly_funding(
+        self,
+        symbol: str,
+        year: int,
+        month: int,
+        rows: list[tuple[int, float]],
+    ) -> None:
+        name = f"{symbol}-fundingRate-{year:04d}-{month:02d}"
+        path = f"/data/futures/um/monthly/fundingRate/{symbol}/{name}.zip"
+        self.zips[path] = _funding_zip_for(f"{name}.csv", rows)
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -192,3 +219,46 @@ def test_archive_exists_probes_head() -> None:
         return exists
 
     assert asyncio.run(run()) is True
+
+
+def test_fetch_funding_uses_monthly_archives_and_filters_requested_range() -> None:
+    server = _ArchiveServer()
+    april_start = _day_ms(2026, 4, 1)
+    may_start = _day_ms(2026, 5, 1)
+    server.add_monthly_funding(
+        "BTCUSDT",
+        2026,
+        4,
+        [
+            (april_start + 8 * 3_600_000, 0.0001),
+            (april_start + 16 * 3_600_000, -0.0002),
+        ],
+    )
+    server.add_monthly_funding(
+        "BTCUSDT",
+        2026,
+        5,
+        [(may_start + 8 * 3_600_000, 0.0003)],
+    )
+
+    async def run() -> tuple[list[tuple[int, float]], list[str]]:
+        source = _source(server, datetime(2026, 6, 1, tzinfo=timezone.utc))
+        events = [
+            (event.funding_time, event.funding_rate)
+            async for event in source.fetch_funding(
+                "BTCUSDT",
+                datetime(2026, 4, 1, 12, tzinfo=timezone.utc),
+                datetime(2026, 5, 2, tzinfo=timezone.utc),
+            )
+        ]
+        await source.close()
+        return events, server.requested
+
+    events, requested = asyncio.run(run())
+
+    assert events == [
+        (april_start + 16 * 3_600_000, -0.0002),
+        (may_start + 8 * 3_600_000, 0.0003),
+    ]
+    assert any("/monthly/fundingRate/BTCUSDT/" in path for path in requested)
+    assert all(path.endswith((".zip", ".zip.CHECKSUM")) for path in requested)

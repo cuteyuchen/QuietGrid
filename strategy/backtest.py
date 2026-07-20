@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import blake2b
-from math import isfinite
+from math import ceil, isfinite
 from typing import Any
 
 from core.models import GridDirectionMode, GridParams, OrderIntent, OrderSide
@@ -34,6 +34,15 @@ class BacktestConfig:
     seed_slippage_bps: float = 0.0
     retention_score_threshold: float = 65.0
     retention_soft_breach_limit: int = 3
+    quantity_step_size: float = 0.0
+    wind_down_bars: int = 0
+    max_inventory_notional: float = 0.0
+    inventory_caution_utilization: float = 0.40
+    inventory_critical_utilization: float = 0.80
+    wind_down_reprice_interval_bars: int = 0
+    wind_down_initial_offset_steps: float = 0.0
+    wind_down_unwind_fraction: float = 1.0
+    max_unpaired_lots_per_side: int = 0
 
 
 @dataclass(frozen=True)
@@ -95,6 +104,17 @@ class BacktestResult:
     seed_entry_price: float | None = None
     seed_fee: float = 0.0
     defensive_entry_count: int = 0
+    wind_down_entry_count: int = 0
+    inventory_suppression_count: int = 0
+    inventory_critical_exit_count: int = 0
+    wind_down_reprice_count: int = 0
+    wind_down_maker_fill_count: int = 0
+    wind_down_maker_pnl: float = 0.0
+    max_unpaired_lot_age_bars: int = 0
+    exit_oldest_lot_age_bars: int = 0
+    exit_long_qty: float = 0.0
+    exit_short_qty: float = 0.0
+    exit_hedged_fraction: float = 0.0
 
 
 @dataclass
@@ -106,12 +126,14 @@ class _BacktestOrder:
     entry_price: float | None = None
     position_side: str = ""
     order_intent: OrderIntent = OrderIntent.OPEN
+    wind_down_reduce: bool = False
 
 
 @dataclass
 class _PositionLot:
     entry_price: float
     qty: float
+    opened_bar_index: int = -1
 
 
 def backtest_config_from_mapping(raw: dict[str, Any]) -> BacktestConfig:
@@ -138,6 +160,27 @@ def backtest_config_from_mapping(raw: dict[str, Any]) -> BacktestConfig:
         seed_slippage_bps=float(backtest.get("seed_slippage_bps", 0.0)),
         retention_score_threshold=float(backtest.get("retention_score_threshold", 65.0)),
         retention_soft_breach_limit=int(backtest.get("retention_soft_breach_limit", 3)),
+        quantity_step_size=float(backtest.get("quantity_step_size", 0.0)),
+        wind_down_bars=int(backtest.get("wind_down_bars", 0)),
+        max_inventory_notional=float(backtest.get("max_inventory_notional", 0.0)),
+        inventory_caution_utilization=float(
+            backtest.get("inventory_caution_utilization", 0.40)
+        ),
+        inventory_critical_utilization=float(
+            backtest.get("inventory_critical_utilization", 0.80)
+        ),
+        wind_down_reprice_interval_bars=int(
+            backtest.get("wind_down_reprice_interval_bars", 0)
+        ),
+        wind_down_initial_offset_steps=float(
+            backtest.get("wind_down_initial_offset_steps", 0.0)
+        ),
+        wind_down_unwind_fraction=float(
+            backtest.get("wind_down_unwind_fraction", 1.0)
+        ),
+        max_unpaired_lots_per_side=int(
+            backtest.get("max_unpaired_lots_per_side", 0)
+        ),
     )
 
 
@@ -163,8 +206,13 @@ def run_grid_backtest(
     funding_schedule = _sorted_funding_events(funding_events)
     funding_cursor = 0
 
-    qty = config.capital * config.leverage / current_price / params.grid_num
-    qty = _positive_finite(qty, "qty")
+    quantities = _backtest_order_quantities(
+        params,
+        current_price,
+        capital=config.capital,
+        leverage=config.leverage,
+        step_size=config.quantity_step_size,
+    )
     mode = (
         config.direction_mode
         if isinstance(config.direction_mode, GridDirectionMode)
@@ -173,7 +221,13 @@ def run_grid_backtest(
     if mode == GridDirectionMode.NEUTRAL and params.direction_mode != GridDirectionMode.NEUTRAL:
         mode = params.direction_mode
     seed_entry_price = _seed_entry_price(current_price, mode, config.seed_slippage_bps)
-    open_orders = _initial_orders(params, current_price, qty, mode, seed_entry_price)
+    open_orders = _initial_orders(
+        params,
+        current_price,
+        quantities,
+        mode,
+        seed_entry_price,
+    )
     if not open_orders:
         raise ValueError("回测初始网格没有可挂订单。")
 
@@ -185,9 +239,9 @@ def run_grid_backtest(
     seed_qty = sum(order.qty for order in open_orders if order.order_intent == OrderIntent.REDUCE)
     seed_fee = 0.0
     if mode == GridDirectionMode.LONG and seed_qty > 0:
-        long_lots.append(_PositionLot(seed_entry_price, seed_qty))
+        long_lots.append(_PositionLot(seed_entry_price, seed_qty, -1))
     elif mode == GridDirectionMode.SHORT and seed_qty > 0:
-        short_lots.append(_PositionLot(seed_entry_price, seed_qty))
+        short_lots.append(_PositionLot(seed_entry_price, seed_qty, -1))
     if seed_qty > 0:
         seed_fee = seed_entry_price * seed_qty * config.taker_fee_rate
         fees_paid += seed_fee
@@ -225,6 +279,18 @@ def run_grid_backtest(
     defensive = False
     defensive_cancelled: list[_BacktestOrder] = []
     defensive_entry_count = 0
+    wind_down_active = False
+    wind_down_entry_count = 0
+    inventory_suppression_count = 0
+    inventory_critical_exit_count = 0
+    wind_down_reprice_count = 0
+    wind_down_maker_fill_count = 0
+    wind_down_maker_pnl = 0.0
+    max_unpaired_lot_age_bars = 0
+    exit_oldest_lot_age_bars = 0
+    exit_long_qty = 0.0
+    exit_short_qty = 0.0
+    exit_hedged_fraction = 0.0
     conservative = config.fill_model.upper() == "L0_CONSERVATIVE"
     min_tick_size = (
         config.min_tick_size
@@ -236,6 +302,25 @@ def run_grid_backtest(
         previous_event_time = _validate_bar_time(row, previous_event_time)
         high, low, close = _bar_prices(row)
         last_price = close
+        max_unpaired_lot_age_bars = max(
+            max_unpaired_lot_age_bars,
+            _oldest_lot_age_bars(long_lots, short_lots, bar_index),
+        )
+
+        remaining_bars = len(klines) - bar_index
+        if (
+            not wind_down_active
+            and config.wind_down_bars > 0
+            and remaining_bars <= config.wind_down_bars
+        ):
+            wind_down_active = True
+            wind_down_entry_count += 1
+            open_orders = [
+                order
+                for order in open_orders
+                if order.order_intent == OrderIntent.REDUCE
+            ]
+            defensive_cancelled.clear()
 
         regime_score = _optional_regime_score(row)
         if regime_score is not None:
@@ -257,7 +342,7 @@ def run_grid_backtest(
                     open_orders = retained
             else:
                 soft_breach_count = 0
-                if defensive:
+                if defensive and not wind_down_active:
                     open_orders.extend(
                         order
                         for order in defensive_cancelled
@@ -268,6 +353,12 @@ def run_grid_backtest(
 
         risk_reason, risk_price = _risk_stop(params, high, low, config)
         if risk_reason is not None:
+            (
+                exit_oldest_lot_age_bars,
+                exit_long_qty,
+                exit_short_qty,
+                exit_hedged_fraction,
+            ) = _exit_inventory_snapshot(long_lots, short_lots, bar_index)
             exit_price = float(risk_price)
             if conservative and config.stop_slippage_bps > 0:
                 slippage = config.stop_slippage_bps / 10_000
@@ -338,6 +429,14 @@ def run_grid_backtest(
         for order in touched:
             if order not in open_orders:
                 continue
+            if _unpaired_lot_limit_reached(
+                order,
+                long_lots,
+                short_lots,
+                config.max_unpaired_lots_per_side,
+            ):
+                inventory_suppression_count += 1
+                continue
             open_orders.remove(order)
             fee = order.price * order.qty * config.maker_fee_rate
             fees_paid += fee
@@ -345,7 +444,10 @@ def run_grid_backtest(
             if grid_pnl is not None:
                 gross_grid_pnl += grid_pnl
                 pair_completion_count += 1
-            _apply_position_fill(order, long_lots, short_lots)
+                if order.wind_down_reduce:
+                    wind_down_maker_fill_count += 1
+                    wind_down_maker_pnl += grid_pnl
+            _apply_position_fill(order, long_lots, short_lots, bar_index)
             realized_pnl = gross_grid_pnl - fees_paid
             fills.append(
                 BacktestFill(
@@ -365,10 +467,120 @@ def run_grid_backtest(
             )
             next_order = _next_order(params, order)
             if next_order is not None:
-                if defensive and next_order.order_intent == OrderIntent.OPEN:
+                if (
+                    (defensive or wind_down_active)
+                    and next_order.order_intent == OrderIntent.OPEN
+                ):
                     defensive_cancelled.append(next_order)
                 else:
                     open_orders.append(next_order)
+
+        if config.max_inventory_notional > 0:
+            inventory_utilization = _inventory_utilization(
+                long_lots,
+                short_lots,
+                close,
+                config.max_inventory_notional,
+                baseline_notional=(
+                    seed_qty * close
+                    if mode != GridDirectionMode.NEUTRAL
+                    else 0.0
+                ),
+            )
+            max_inventory_utilization = max(
+                max_inventory_utilization,
+                inventory_utilization,
+            )
+            if inventory_utilization >= config.inventory_critical_utilization:
+                (
+                    exit_oldest_lot_age_bars,
+                    exit_long_qty,
+                    exit_short_qty,
+                    exit_hedged_fraction,
+                ) = _exit_inventory_snapshot(long_lots, short_lots, bar_index)
+                stop_exit_pnl, stop_exit_cost = _close_all_lots_at_market(
+                    long_lots,
+                    short_lots,
+                    close,
+                    config.taker_fee_rate,
+                    config.stop_slippage_bps,
+                )
+                gross_grid_pnl += stop_exit_pnl
+                fees_paid += stop_exit_cost
+                stopped_reason = "inventory_critical"
+                stopped_at_index = bar_index
+                stopped_at_price = close
+                inventory_critical_exit_count += 1
+                open_orders.clear()
+                (
+                    _equity,
+                    max_equity,
+                    max_drawdown,
+                    max_inventory_utilization,
+                ) = _append_equity_point(
+                    equity_curve,
+                    bar_index,
+                    _bar_timestamp(row),
+                    close,
+                    gross_grid_pnl - fees_paid - funding_paid,
+                    long_lots,
+                    short_lots,
+                    max_equity,
+                    max_drawdown,
+                    config.capital * config.leverage,
+                    max_inventory_utilization,
+                )
+                break
+            if inventory_utilization >= config.inventory_caution_utilization:
+                net_qty = sum(lot.qty for lot in long_lots) - sum(
+                    lot.qty for lot in short_lots
+                )
+                increasing_side = (
+                    OrderSide.BUY
+                    if net_qty > 1e-12
+                    else OrderSide.SELL
+                    if net_qty < -1e-12
+                    else None
+                )
+                retained_orders: list[_BacktestOrder] = []
+                for pending in open_orders:
+                    suppress = (
+                        pending.order_intent == OrderIntent.OPEN
+                        and pending.entry_price is None
+                        and (
+                            mode != GridDirectionMode.NEUTRAL
+                            or pending.side == increasing_side
+                        )
+                    )
+                    if suppress:
+                        inventory_suppression_count += 1
+                    else:
+                        retained_orders.append(pending)
+                open_orders = retained_orders
+        if (
+            wind_down_active
+            and config.wind_down_reprice_interval_bars > 0
+            and remaining_bars > 1
+            and (
+                config.wind_down_bars - remaining_bars
+            ) % config.wind_down_reprice_interval_bars == 0
+            and (long_lots or short_lots)
+        ):
+            open_orders = _wind_down_reduce_orders(
+                long_lots,
+                short_lots,
+                close,
+                remaining_bars=max(0, remaining_bars - 1),
+                wind_down_bars=config.wind_down_bars,
+                initial_offset_steps=config.wind_down_initial_offset_steps,
+                step_pct=params.step_pct,
+                tick_size=min_tick_size,
+                grid_prices=params.grid_prices,
+                quantity_step_size=config.quantity_step_size,
+                unwind_fraction=config.wind_down_unwind_fraction,
+            )
+            defensive_cancelled.clear()
+            wind_down_reprice_count += 1
         if funding_event_mode:
             # 显式传入事件列表即进入事件模式：只按跨越的真实结算事件扣费，
             # 不回退到 per-bar 平摊（空列表表示该区间无资金费事件）。
@@ -409,6 +621,12 @@ def run_grid_backtest(
         )
 
     if config.force_close_at_end and stopped_reason is None:
+        (
+            exit_oldest_lot_age_bars,
+            exit_long_qty,
+            exit_short_qty,
+            exit_hedged_fraction,
+        ) = _exit_inventory_snapshot(long_lots, short_lots, len(klines))
         stop_exit_pnl, stop_exit_cost = _close_all_lots_at_market(
             long_lots,
             short_lots,
@@ -472,6 +690,17 @@ def run_grid_backtest(
         seed_entry_price=seed_entry_price if seed_qty > 0 else None,
         seed_fee=seed_fee,
         defensive_entry_count=defensive_entry_count,
+        wind_down_entry_count=wind_down_entry_count,
+        inventory_suppression_count=inventory_suppression_count,
+        inventory_critical_exit_count=inventory_critical_exit_count,
+        wind_down_reprice_count=wind_down_reprice_count,
+        wind_down_maker_fill_count=wind_down_maker_fill_count,
+        wind_down_maker_pnl=wind_down_maker_pnl,
+        max_unpaired_lot_age_bars=max_unpaired_lot_age_bars,
+        exit_oldest_lot_age_bars=exit_oldest_lot_age_bars,
+        exit_long_qty=exit_long_qty,
+        exit_short_qty=exit_short_qty,
+        exit_hedged_fraction=exit_hedged_fraction,
     )
 
 
@@ -500,6 +729,26 @@ def _validate_backtest_config(config: BacktestConfig) -> None:
         raise ValueError("retention_score_threshold必须在0到100之间。")
     if config.retention_soft_breach_limit < 1:
         raise ValueError("retention_soft_breach_limit必须大于等于1。")
+    if config.quantity_step_size < 0:
+        raise ValueError("quantity_step_size不能为负。")
+    if config.wind_down_bars < 0:
+        raise ValueError("wind_down_bars不能为负。")
+    if config.wind_down_reprice_interval_bars < 0:
+        raise ValueError("wind_down_reprice_interval_bars不能为负。")
+    if config.wind_down_initial_offset_steps < 0:
+        raise ValueError("wind_down_initial_offset_steps不能为负。")
+    if not 0 < config.wind_down_unwind_fraction <= 1:
+        raise ValueError("wind_down_unwind_fraction必须在(0, 1]内。")
+    if config.max_unpaired_lots_per_side < 0:
+        raise ValueError("max_unpaired_lots_per_side不能为负。")
+    if config.max_inventory_notional < 0:
+        raise ValueError("max_inventory_notional不能为负。")
+    if not (
+        0 < config.inventory_caution_utilization
+        < config.inventory_critical_utilization
+        <= 1
+    ):
+        raise ValueError("库存 CAUTION/CRITICAL 阈值无效。")
     _finite_float(config.funding_rate_per_bar, "funding_rate_per_bar")
 
 
@@ -520,7 +769,7 @@ def _validate_grid_params(params: GridParams) -> None:
 def _initial_orders(
     params: GridParams,
     current_price: float,
-    qty: float,
+    quantities: dict[int, float],
     mode: GridDirectionMode = GridDirectionMode.NEUTRAL,
     seed_entry_price: float | None = None,
 ) -> list[_BacktestOrder]:
@@ -539,13 +788,222 @@ def _initial_orders(
                 index,
                 side,
                 price,
-                qty,
+                quantities[index],
                 entry_price,
                 position_side,
                 intent,
             )
         )
     return orders
+
+
+def _wind_down_reduce_orders(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    mark_price: float,
+    *,
+    remaining_bars: int,
+    wind_down_bars: int,
+    initial_offset_steps: float,
+    step_pct: float,
+    tick_size: float,
+    grid_prices: list[float],
+    quantity_step_size: float,
+    unwind_fraction: float,
+) -> list[_BacktestOrder]:
+    """Create next-bar POST_ONLY reductions with urgency increasing toward close."""
+
+    remaining_ratio = max(0.0, min(1.0, remaining_bars / max(1, wind_down_bars)))
+    offset_pct = max(0.0, initial_offset_steps * step_pct * remaining_ratio)
+    raw_sell = mark_price * (1.0 + offset_pct)
+    raw_buy = mark_price * (1.0 - offset_pct)
+    sell_price = _round_post_only_sell(raw_sell, mark_price, tick_size)
+    buy_price = _round_post_only_buy(raw_buy, mark_price, tick_size)
+    orders: list[_BacktestOrder] = []
+    for index, (lot, adaptive_qty, patient_qty) in enumerate(
+        _unwind_allocations(long_lots, unwind_fraction, quantity_step_size)
+    ):
+        patient_price = _round_post_only_sell(
+            _grid_exit_target(grid_prices, lot.entry_price, OrderSide.SELL, step_pct),
+            mark_price,
+            tick_size,
+        )
+        orders.extend(_layered_reduce_orders(
+            base_index=-1_000 - index * 2,
+            side=OrderSide.SELL,
+            adaptive_price=sell_price,
+            patient_price=patient_price,
+            adaptive_qty=adaptive_qty,
+            patient_qty=patient_qty,
+            entry_price=lot.entry_price,
+            position_side="LONG",
+        ))
+    for index, (lot, adaptive_qty, patient_qty) in enumerate(
+        _unwind_allocations(short_lots, unwind_fraction, quantity_step_size)
+    ):
+        patient_price = _round_post_only_buy(
+            _grid_exit_target(grid_prices, lot.entry_price, OrderSide.BUY, step_pct),
+            mark_price,
+            tick_size,
+        )
+        orders.extend(_layered_reduce_orders(
+            base_index=1_000 + index * 2,
+            side=OrderSide.BUY,
+            adaptive_price=buy_price,
+            patient_price=patient_price,
+            adaptive_qty=adaptive_qty,
+            patient_qty=patient_qty,
+            entry_price=lot.entry_price,
+            position_side="SHORT",
+        ))
+    return orders
+
+
+def _unwind_allocations(
+    lots: list[_PositionLot],
+    unwind_fraction: float,
+    quantity_step_size: float,
+) -> list[tuple[_PositionLot, float, float]]:
+    total_qty = sum(lot.qty for lot in lots)
+    adaptive_budget = _round_down_to_step(
+        total_qty * unwind_fraction,
+        quantity_step_size,
+    )
+    allocations: list[tuple[_PositionLot, float, float]] = []
+    for lot in lots:
+        adaptive = min(lot.qty, adaptive_budget)
+        adaptive = _round_down_to_step(adaptive, quantity_step_size)
+        patient = max(0.0, lot.qty - adaptive)
+        adaptive_budget = max(0.0, adaptive_budget - adaptive)
+        allocations.append((lot, adaptive, patient))
+    return allocations
+
+
+def _layered_reduce_orders(
+    *,
+    base_index: int,
+    side: OrderSide,
+    adaptive_price: float,
+    patient_price: float,
+    adaptive_qty: float,
+    patient_qty: float,
+    entry_price: float,
+    position_side: str,
+) -> list[_BacktestOrder]:
+    if abs(adaptive_price - patient_price) <= 1e-12:
+        return [_BacktestOrder(
+            base_index,
+            side,
+            adaptive_price,
+            adaptive_qty + patient_qty,
+            entry_price,
+            position_side,
+            OrderIntent.REDUCE,
+            True,
+        )]
+    orders = []
+    if adaptive_qty > 1e-12:
+        orders.append(_BacktestOrder(
+            base_index,
+            side,
+            adaptive_price,
+            adaptive_qty,
+            entry_price,
+            position_side,
+            OrderIntent.REDUCE,
+            True,
+        ))
+    if patient_qty > 1e-12:
+        orders.append(_BacktestOrder(
+            base_index - 1 if base_index < 0 else base_index + 1,
+            side,
+            patient_price,
+            patient_qty,
+            entry_price,
+            position_side,
+            OrderIntent.REDUCE,
+            True,
+        ))
+    return orders
+
+
+def _grid_exit_target(
+    grid_prices: list[float],
+    entry_price: float,
+    exit_side: OrderSide,
+    step_pct: float,
+) -> float:
+    if grid_prices:
+        entry_index = min(
+            range(len(grid_prices)),
+            key=lambda index: abs(grid_prices[index] - entry_price),
+        )
+        target_index = entry_index + (1 if exit_side == OrderSide.SELL else -1)
+        if 0 <= target_index < len(grid_prices):
+            return grid_prices[target_index]
+    return entry_price * (
+        1.0 + step_pct if exit_side == OrderSide.SELL else 1.0 - step_pct
+    )
+
+
+def _round_post_only_sell(value: float, mark_price: float, tick_size: float) -> float:
+    tick = _positive_finite(tick_size, "tick_size")
+    rounded = ceil(value / tick - 1e-12) * tick
+    if rounded <= mark_price:
+        rounded = (int(mark_price / tick + 1e-12) + 1) * tick
+    return _positive_finite(rounded, "wind_down_sell_price")
+
+
+def _round_post_only_buy(value: float, mark_price: float, tick_size: float) -> float:
+    tick = _positive_finite(tick_size, "tick_size")
+    rounded = _round_down_to_step(value, tick)
+    if rounded >= mark_price:
+        rounded = int(mark_price / tick - 1e-12) * tick
+    return _positive_finite(rounded, "wind_down_buy_price")
+
+
+def _backtest_order_quantities(
+    params: GridParams,
+    current_price: float,
+    *,
+    capital: float,
+    leverage: float,
+    step_size: float,
+) -> dict[int, float]:
+    order_levels = [
+        (index, price)
+        for index, price in enumerate(params.grid_prices)
+        if price != current_price
+    ]
+    if not order_levels:
+        return {}
+    if not params.qty_weights:
+        qty = capital * leverage / current_price / params.grid_num
+        qty = _round_down_to_step(qty, step_size)
+        return {index: _positive_finite(qty, "qty") for index, _price in order_levels}
+    if len(params.qty_weights) != len(params.grid_prices):
+        raise ValueError("qty_weights长度必须等于grid_prices长度。")
+    selected_weight = sum(params.qty_weights[index] for index, _price in order_levels)
+    if selected_weight <= 0:
+        raise ValueError("qty_weights合计必须为正数。")
+    total_notional = capital * leverage
+    quantities = {
+        index: _round_down_to_step(
+            total_notional * (params.qty_weights[index] / selected_weight) / price,
+            step_size,
+        )
+        for index, price in order_levels
+    }
+    return {
+        index: _positive_finite(qty, "qty")
+        for index, qty in quantities.items()
+    }
+
+
+def _round_down_to_step(value: float, step_size: float) -> float:
+    if step_size <= 0:
+        return value
+    return int(value / step_size + 1e-12) * step_size
 
 
 def _bar_prices(row: dict[str, Any]) -> tuple[float, float, float]:
@@ -572,6 +1030,12 @@ def _risk_stop(
 ) -> tuple[str | None, float | None]:
     if config.stop_on_stop_loss and low <= params.stop_loss_price:
         return "stop_loss", params.stop_loss_price
+    if (
+        config.stop_on_stop_loss
+        and params.upper_stop_loss_price is not None
+        and high >= params.upper_stop_loss_price
+    ):
+        return "stop_loss_upper", params.upper_stop_loss_price
     if config.stop_on_range_break:
         if low < params.lower:
             return "range_break", low
@@ -605,11 +1069,23 @@ def _deterministic_fill_allowed(
     if probability <= 0:
         return False
     digest = blake2b(
-        f"{seed}|{symbol}|{bar_index}|{order.grid_index}|{order.side.value}".encode(),
+        f"{seed}|{symbol}|{bar_index}|{_fill_identity(order)}".encode(),
         digest_size=8,
     ).digest()
     sample = int.from_bytes(digest, "big") / float(2**64 - 1)
     return sample < probability
+
+
+def _fill_identity(order: _BacktestOrder) -> str:
+    entry = "" if order.entry_price is None else f"{order.entry_price:.12g}"
+    return "|".join((
+        order.side.value,
+        f"{order.price:.12g}",
+        entry,
+        order.position_side,
+        order.order_intent.value,
+        "WIND_DOWN" if order.wind_down_reduce else "GRID",
+    ))
 
 
 def _worst_case_order_key(order: _BacktestOrder) -> tuple[int, float]:
@@ -630,13 +1106,30 @@ def _apply_position_fill(
     order: _BacktestOrder,
     long_lots: list[_PositionLot],
     short_lots: list[_PositionLot],
+    bar_index: int,
 ) -> None:
     if order.entry_price is None:
         lots = long_lots if order.side == OrderSide.BUY else short_lots
-        lots.append(_PositionLot(order.price, order.qty))
+        lots.append(_PositionLot(order.price, order.qty, bar_index))
         return
     lots = short_lots if order.side == OrderSide.BUY else long_lots
     _reduce_lot(lots, order.entry_price, order.qty)
+
+
+def _unpaired_lot_limit_reached(
+    order: _BacktestOrder,
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    limit: int,
+) -> bool:
+    if limit <= 0 or order.order_intent != OrderIntent.OPEN:
+        return False
+    position_side = str(order.position_side or "").upper()
+    if position_side == "LONG":
+        return len(long_lots) >= limit
+    if position_side == "SHORT":
+        return len(short_lots) >= limit
+    return False
 
 
 def _reduce_lot(lots: list[_PositionLot], entry_price: float, qty: float) -> None:
@@ -754,6 +1247,60 @@ def _unrealized_pnl(
     long_pnl = sum((last_price - lot.entry_price) * lot.qty for lot in long_lots)
     short_pnl = sum((lot.entry_price - last_price) * lot.qty for lot in short_lots)
     return long_pnl + short_pnl
+
+
+def _oldest_lot_age_bars(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    bar_index: int,
+) -> int:
+    opened = [lot.opened_bar_index for lot in long_lots + short_lots]
+    if not opened:
+        return 0
+    return max(0, bar_index - min(opened))
+
+
+def _exit_inventory_snapshot(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    bar_index: int,
+) -> tuple[int, float, float, float]:
+    long_qty = sum(lot.qty for lot in long_lots)
+    short_qty = sum(lot.qty for lot in short_lots)
+    total_qty = long_qty + short_qty
+    hedged_fraction = (
+        2.0 * min(long_qty, short_qty) / total_qty
+        if total_qty > 1e-12
+        else 0.0
+    )
+    return (
+        _oldest_lot_age_bars(long_lots, short_lots, bar_index),
+        long_qty,
+        short_qty,
+        hedged_fraction,
+    )
+
+
+def _inventory_utilization(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    mark_price: float,
+    max_inventory_notional: float,
+    *,
+    baseline_notional: float = 0.0,
+) -> float:
+    cap = _positive_finite(max_inventory_notional, "max_inventory_notional")
+    long_qty = sum(lot.qty for lot in long_lots)
+    short_qty = sum(lot.qty for lot in short_lots)
+    net_notional = (long_qty - short_qty) * mark_price
+    gross_notional = (long_qty + short_qty) * mark_price
+    directional_notional = max(abs(net_notional), gross_notional * 0.5)
+    baseline = min(max(0.0, baseline_notional), cap)
+    incremental_notional = max(0.0, directional_notional - baseline)
+    incremental_capacity = cap - baseline
+    if incremental_capacity <= 1e-12:
+        return 1.0 if incremental_notional > 1e-12 else 0.0
+    return incremental_notional / incremental_capacity
 
 
 def _close_all_lots(

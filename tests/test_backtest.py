@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from core.models import GridDirectionMode, GridParams
@@ -112,6 +113,38 @@ def test_backtest_stops_on_stop_loss_before_same_bar_fills() -> None:
     assert result.stopped_at_index == 0
     assert result.stopped_at_price == 98.0
     assert result.last_price == 98.0
+
+
+def test_backtest_stops_on_upper_stop_before_same_bar_fills() -> None:
+    params = replace(_params(), upper_stop_loss_price=102.0)
+    result = run_grid_backtest(
+        params,
+        [{"high": 102.5, "low": 99.5, "close": 101.0}],
+        current_price=100.0,
+        config=BacktestConfig(capital=202, leverage=1),
+    )
+
+    assert result.fills == []
+    assert result.stopped_reason == "stop_loss_upper"
+    assert result.stopped_at_index == 0
+    assert result.stopped_at_price == 102.0
+
+
+def test_backtest_uses_adaptive_quantity_weights_and_step_size() -> None:
+    params = replace(_params(), qty_weights=(0.1, 0.6, 0.3))
+    result = run_grid_backtest(
+        params,
+        [{"high": 101.1, "low": 98.9, "close": 100.0}],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            stop_on_stop_loss=False,
+            quantity_step_size=0.1,
+        ),
+    )
+
+    assert [fill.qty for fill in result.fills] == [0.5, 1.5]
 
 
 def test_backtest_stops_on_range_break_before_same_bar_fills() -> None:
@@ -257,6 +290,271 @@ def test_window_force_close_liquidates_inventory_and_clears_orders() -> None:
     assert result.stop_exit_pnl < 0
     assert result.stop_exit_cost > 0
     assert result.equity_curve[-1].inventory_utilization == 0
+
+
+def test_backtest_tracks_unpaired_inventory_age_at_force_close() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 100.2, "low": 98.8, "close": 99.0},
+            {"high": 100.0, "low": 99.2, "close": 99.5},
+            {"high": 100.0, "low": 99.3, "close": 99.7},
+        ],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=200,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            stop_on_stop_loss=False,
+            force_close_at_end=True,
+        ),
+    )
+
+    assert result.stopped_reason == "window_force_close"
+    assert result.max_unpaired_lot_age_bars == 2
+    assert result.exit_oldest_lot_age_bars == 3
+    assert result.exit_long_qty > 0
+    assert result.exit_short_qty == 0
+    assert result.exit_hedged_fraction == 0
+
+
+def test_wind_down_cancels_opening_orders_but_keeps_reducing_orders() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 99.2, "low": 98.9, "close": 99.0},
+            {"high": 99.8, "low": 99.2, "close": 99.5},
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+        ],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=200,
+            leverage=1,
+            wind_down_bars=2,
+        ),
+    )
+
+    assert [fill.side for fill in result.fills] == ["BUY", "SELL"]
+    assert result.net_position_qty == 0
+    assert result.open_order_count == 0
+    assert result.wind_down_entry_count == 1
+
+
+def test_wind_down_reprices_reduce_orders_and_avoids_terminal_taker_exit() -> None:
+    rows = [
+        {"high": 99.2, "low": 98.9, "close": 99.0},
+        {"high": 99.2, "low": 98.9, "close": 99.0},
+        {"high": 99.6, "low": 99.0, "close": 99.2},
+        {"high": 99.0, "low": 98.6, "close": 98.7},
+    ]
+    baseline = run_grid_backtest(
+        _params(),
+        rows,
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=200,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            maker_fill_probability=1.0,
+            force_close_at_end=True,
+            taker_fee_rate=0.001,
+            wind_down_bars=3,
+        ),
+    )
+    repriced = run_grid_backtest(
+        _params(),
+        rows,
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=200,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            maker_fill_probability=1.0,
+            force_close_at_end=True,
+            taker_fee_rate=0.001,
+            wind_down_bars=3,
+            wind_down_reprice_interval_bars=1,
+            wind_down_initial_offset_steps=0.5,
+        ),
+    )
+
+    assert baseline.stop_exit_cost > 0
+    assert baseline.stop_exit_pnl < 0
+    assert repriced.wind_down_reprice_count >= 1
+    assert repriced.wind_down_maker_fill_count == 1
+    assert repriced.wind_down_maker_pnl > 0
+    assert repriced.stop_exit_cost == 0
+    assert repriced.total_pnl > baseline.total_pnl
+
+
+def test_wind_down_reprice_is_not_eligible_on_creation_bar() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 99.2, "low": 98.9, "close": 99.0},
+            # 本 Bar 的高点足以成交重挂单，但订单只能在收盘后生成。
+            {"high": 100.0, "low": 98.9, "close": 99.0},
+            {"high": 99.2, "low": 98.9, "close": 99.0},
+        ],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=200,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            maker_fill_probability=1.0,
+            force_close_at_end=True,
+            wind_down_bars=2,
+            wind_down_reprice_interval_bars=10,
+            wind_down_initial_offset_steps=0.5,
+        ),
+    )
+
+    assert result.wind_down_reprice_count == 1
+    assert result.wind_down_maker_fill_count == 0
+    assert result.stop_exit_cost == 0  # 默认 taker 费为 0，但库存由终场退出处理。
+    assert result.stop_exit_pnl == 0
+
+
+def test_layered_unwind_allocates_exchange_step_across_multiple_lots() -> None:
+    from strategy.backtest import _PositionLot, _unwind_allocations
+
+    allocations = _unwind_allocations(
+        [_PositionLot(99.0, 0.001), _PositionLot(98.0, 0.001)],
+        unwind_fraction=0.5,
+        quantity_step_size=0.001,
+    )
+
+    assert sum(item[1] for item in allocations) == 0.001
+    assert sum(item[2] for item in allocations) == 0.001
+
+
+def test_fill_sampling_ignores_internal_grid_index_for_same_order_semantics() -> None:
+    from core.models import OrderIntent, OrderSide
+    from strategy.backtest import _BacktestOrder, _deterministic_fill_allowed
+
+    first = _BacktestOrder(
+        -1000,
+        OrderSide.SELL,
+        100.5,
+        0.001,
+        99.0,
+        "LONG",
+        OrderIntent.REDUCE,
+        True,
+    )
+    renumbered = _BacktestOrder(
+        -2000,
+        OrderSide.SELL,
+        100.5,
+        0.001,
+        99.0,
+        "LONG",
+        OrderIntent.REDUCE,
+        True,
+    )
+
+    outcomes = [
+        _deterministic_fill_allowed("BTCUSDT", bar, first, 0.5, 17)
+        for bar in range(20)
+    ]
+    renumbered_outcomes = [
+        _deterministic_fill_allowed("BTCUSDT", bar, renumbered, 0.5, 17)
+        for bar in range(20)
+    ]
+
+    assert outcomes == renumbered_outcomes
+
+
+def test_inventory_caution_suppresses_same_side_opening_orders() -> None:
+    params = replace(
+        _params(),
+        lower=98.0,
+        upper=102.0,
+        grid_num=4,
+        grid_prices=[98.0, 99.0, 100.0, 101.0, 102.0],
+        stop_loss_price=90.0,
+        upper_stop_loss_price=110.0,
+    )
+    result = run_grid_backtest(
+        params,
+        [
+            {"high": 99.1, "low": 98.9, "close": 99.0},
+            {"high": 98.1, "low": 97.9, "close": 98.0},
+        ],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=400,
+            leverage=1,
+            stop_on_stop_loss=False,
+            max_inventory_notional=200,
+        ),
+    )
+
+    assert [fill.price for fill in result.fills] == [99.0]
+    assert result.inventory_suppression_count == 1
+    assert result.stopped_reason is None
+
+
+def test_unpaired_lot_cap_suppresses_additional_opening_layers() -> None:
+    params = replace(
+        _params(),
+        lower=98.0,
+        upper=102.0,
+        grid_num=4,
+        grid_prices=[98.0, 99.0, 100.0, 101.0, 102.0],
+        stop_loss_price=90.0,
+        upper_stop_loss_price=110.0,
+    )
+
+    result = run_grid_backtest(
+        params,
+        [
+            {"high": 99.1, "low": 98.9, "close": 99.0},
+            {"high": 98.1, "low": 97.9, "close": 98.0},
+        ],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=400,
+            leverage=1,
+            stop_on_stop_loss=False,
+            max_unpaired_lots_per_side=1,
+        ),
+    )
+
+    assert [fill.price for fill in result.fills] == [99.0]
+    assert result.inventory_suppression_count == 1
+    assert result.net_position_qty > 0
+
+
+def test_inventory_critical_closes_session_after_fill() -> None:
+    params = replace(
+        _params(),
+        lower=98.0,
+        upper=102.0,
+        grid_num=4,
+        grid_prices=[98.0, 99.0, 100.0, 101.0, 102.0],
+        stop_loss_price=90.0,
+        upper_stop_loss_price=110.0,
+    )
+    result = run_grid_backtest(
+        params,
+        [{"high": 99.1, "low": 98.9, "close": 99.0}],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=400,
+            leverage=1,
+            stop_on_stop_loss=False,
+            max_inventory_notional=100,
+        ),
+    )
+
+    assert result.stopped_reason == "inventory_critical"
+    assert result.inventory_critical_exit_count == 1
+    assert result.net_position_qty == 0
+    assert result.open_order_count == 0
 
 
 def test_backtest_rejects_future_available_data_and_reverse_time() -> None:

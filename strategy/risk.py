@@ -95,9 +95,15 @@ class RiskManager:
         account_equity: float | None = None,
         window_pnl: float = 0.0,
         window_stop_count: int = 0,
+        consecutive_session_losses: int = 0,
     ) -> RiskDecision:
         if not regime_allowed:
             return RiskDecision(RiskAction.BLOCK, "Regime Engine 未批准网格启动。", 1)
+        if (
+            self.config.max_consecutive_session_losses > 0
+            and consecutive_session_losses >= self.config.max_consecutive_session_losses
+        ):
+            return RiskDecision(RiskAction.HALT_WINDOW, "连续亏损会话达到全局熔断上限。", 2)
         if not _is_positive_finite(new_capital):
             return RiskDecision(RiskAction.SKIP, "新标的本金配置异常。", 5)
         equity = account_equity if account_equity is not None else self.config.total_capital_limit

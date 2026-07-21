@@ -111,15 +111,27 @@ def _skip_optional_header(
 def _row_to_kline(fields: list[str], line_number: int) -> NormalizedKline:
     try:
         return NormalizedKline(
-            open_time=int(float(fields[_OPEN_TIME])),
+            open_time=_timestamp_ms(fields[_OPEN_TIME]),
             open=float(fields[_OPEN]),
             high=float(fields[_HIGH]),
             low=float(fields[_LOW]),
             close=float(fields[_CLOSE]),
             volume=float(fields[_VOLUME]),
-            close_time=int(float(fields[_CLOSE_TIME])),
+            close_time=_timestamp_ms(fields[_CLOSE_TIME]),
             quote_volume=float(fields[_QUOTE_VOLUME]),
             trade_count=int(float(fields[_TRADE_COUNT])),
         )
     except (TypeError, ValueError) as exc:
         raise DataSourceError(f"归档 CSV 第 {line_number} 行字段无效: {exc}") from exc
+
+
+def _timestamp_ms(value: str) -> int:
+    try:
+        timestamp = int(value.strip())
+    except ValueError:
+        timestamp = int(float(value))
+    if timestamp >= 100_000_000_000_000:
+        timestamp //= 1_000
+    if not 100_000_000_000 <= timestamp < 100_000_000_000_000:
+        raise ValueError("时间戳必须为 Unix 毫秒或微秒")
+    return timestamp

@@ -13,8 +13,47 @@ from uuid import uuid4
 from operations.process_models import ProcessStartResult
 
 
+def _windows_process_exists(pid: int) -> bool:
+    import ctypes
+    from ctypes import wintypes
+
+    process_query_limited_information = 0x1000
+    still_active = 259
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    handle = kernel32.OpenProcess(
+        process_query_limited_information,
+        False,
+        int(pid),
+    )
+    if not handle:
+        return False
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return True
+        return exit_code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 class SupportsTraderRuntime(Protocol):
     def trader_runtime(self) -> dict[str, Any] | None: ...
+
+    def mark_runtime_stopped(
+        self,
+        runtime_id: str,
+        stopped_at: datetime,
+        *,
+        state: str = "STOPPED",
+        last_error: str = "",
+    ) -> None: ...
 
     def set_process_operation(self, operation: dict[str, Any], updated_at: datetime) -> None: ...
 
@@ -62,6 +101,10 @@ class LocalTraderProcessManager:
         self.config = dict(config or {})
         self.stale_seconds, self.offline_seconds = runtime_thresholds
         self.startup_timeout_seconds = max(1.0, float(startup_timeout_seconds))
+        self.stop_timeout_seconds = max(
+            1.0,
+            float(self.config.get("stop_timeout_seconds", 15.0)),
+        )
         self.project_root = Path(project_root or self.config.get("working_directory") or ".").resolve()
         self.python_executable = str(
             self.config.get("python_executable")
@@ -191,38 +234,100 @@ class LocalTraderProcessManager:
         )
 
     def stop(self, account_id: str) -> dict[str, Any]:
+        runtime = self.repository.trader_runtime() or {}
         pid_info = self._read_pid_file(account_id)
-        pid = pid_info.get("pid") if isinstance(pid_info, dict) else None
-        if pid is None:
-            runtime = self.repository.trader_runtime() or {}
-            pid = runtime.get("pid")
-        if pid is None:
+        pid_candidates = {
+            int(value)
+            for value in (
+                pid_info.get("pid") if isinstance(pid_info, dict) else None,
+                runtime.get("pid"),
+            )
+            if value is not None and str(value).strip()
+        }
+        if not pid_candidates:
             return {"ok": False, "state": "OFFLINE", "message": "未找到可停止的交易进程 PID。"}
         try:
-            if os.name == "nt":
-                subprocess.run(
-                    ["taskkill", "/PID", str(int(pid)), "/T", "/F"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                )
-            else:
-                os.kill(int(pid), 15)
+            for pid in sorted(pid_candidates):
+                self._terminate_process_tree(pid)
         except Exception as exc:
-            return {"ok": False, "state": "FAILED", "message": f"停止交易进程失败: {exc}", "pid": pid}
+            return {
+                "ok": False,
+                "state": "FAILED",
+                "message": f"停止交易进程失败: {exc}",
+                "pids": sorted(pid_candidates),
+            }
+        if not self._wait_for_processes_to_stop(pid_candidates):
+            return {
+                "ok": False,
+                "state": "FAILED",
+                "message": "停止交易进程超时，仍有进程存活。",
+                "pids": sorted(pid_candidates),
+            }
+        runtime_id = str(runtime.get("runtime_id") or "").strip()
+        if runtime_id:
+            self.repository.mark_runtime_stopped(
+                runtime_id,
+                _utc_now(),
+                state="STOPPED",
+            )
         self._remove_pid_file(account_id)
-        return {"ok": True, "state": "STOPPING", "message": "已发送停止信号。", "pid": int(pid)}
+        return {
+            "ok": True,
+            "state": "STOPPED",
+            "message": "交易进程已停止。",
+            "pids": sorted(pid_candidates),
+        }
 
     def restart(self, account_id: str) -> dict[str, Any]:
         stop_result = self.stop(account_id)
-        time.sleep(0.5)
+        if not stop_result.get("ok"):
+            return {"ok": False, "stop": stop_result, "start": None}
         start_result = self.start(account_id)
         return {
-            "ok": bool(start_result.started or start_result.state == "ONLINE"),
+            "ok": bool(start_result.started),
             "stop": stop_result,
             "start": start_result.to_mapping(),
         }
+
+    def _terminate_process_tree(self, pid: int) -> None:
+        if os.name == "nt":
+            result = subprocess.run(
+                ["taskkill", "/PID", str(int(pid)), "/T", "/F"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=self.stop_timeout_seconds,
+            )
+            if result.returncode not in {0, 128}:
+                detail = (result.stderr or result.stdout or "").strip()
+                raise RuntimeError(detail or f"taskkill 返回 {result.returncode}")
+            return
+        try:
+            os.kill(int(pid), 15)
+        except ProcessLookupError:
+            return
+
+    def _wait_for_processes_to_stop(self, pids: set[int]) -> bool:
+        deadline = time.monotonic() + self.stop_timeout_seconds
+        while time.monotonic() < deadline:
+            if not any(self._process_exists(pid) for pid in pids):
+                return True
+            time.sleep(0.1)
+        return not any(self._process_exists(pid) for pid in pids)
+
+    @staticmethod
+    def _process_exists(pid: int) -> bool:
+        if os.name == "nt":
+            return _windows_process_exists(pid)
+        try:
+            os.kill(int(pid), 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+        return True
 
     def _command(self, account_id: str) -> list[str]:
         entry = self.trader_entry

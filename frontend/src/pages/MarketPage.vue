@@ -45,6 +45,8 @@ const verdictLabels: Record<string, string> = {
   ALLOWED: '准入通过',
   BLOCKED_SCORE: '评分未通过',
   BLOCKED_COST: '交易经济性不足',
+  BLOCKED_ECONOMICS: '网格经济性不足',
+  BLOCKED_RISK: '风险预算不足',
   BLOCKED_HARD: '硬条件阻断',
   BLOCKED_DATA: '数据阻断',
 }
@@ -73,9 +75,23 @@ const componentRows = computed(() => Object.entries(
 }))
 
 const scoreHistory = computed(() => history.value.map((item) => item.gridScore))
-const marketStateLabel = computed(() => stateLabels[currentRegime.value?.state || ''] || currentRegime.value?.state || '等待首个快照')
+const marketStateLabel = computed(() => {
+  const regime = currentRegime.value
+  if (!regime) return '等待首个快照'
+  if (regime.state === 'UNKNOWN' && regime.verdict === 'BLOCKED_SCORE') {
+    return '历史评分未通过'
+  }
+  if (regime.state === 'UNKNOWN' && regime.verdict === 'ALLOWED') {
+    return '历史评分已通过'
+  }
+  return stateLabels[regime.state] || regime.state
+})
 const verdictLabel = computed(() => verdictLabels[currentRegime.value?.verdict || ''] || currentRegime.value?.verdict || '等待准入判断')
 const cost = computed(() => currentRegime.value?.costBreakdown || {})
+const costScore = computed(() => finiteCostValue('cost_score'))
+const costEvaluationLabel = computed(() => costScore.value == null
+  ? '成本未评估'
+  : `成本得分 ${costScore.value.toFixed(1)}`)
 
 onMounted(ensureSelectedSymbol)
 watch(availableSymbols, ensureSelectedSymbol)
@@ -122,6 +138,11 @@ function pct(value: number | null) {
 
 function scoreLabel(value: number | null) {
   return value == null ? '未接入' : value.toFixed(0)
+}
+
+function finiteCostValue(key: string) {
+  const value = cost.value[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 </script>
 
@@ -214,19 +235,19 @@ function scoreLabel(value: number | null) {
           <h2 id="cost-economics-title">计划格距减去全部预计成本</h2>
         </div>
         <StatusBadge
-          :tone="currentRegime.verdict === 'BLOCKED_COST' ? 'danger' : 'neutral'"
-          :label="`成本得分 ${Number(cost.cost_score || 0).toFixed(1)}`"
+          :tone="['BLOCKED_COST', 'BLOCKED_ECONOMICS'].includes(currentRegime.verdict) ? 'danger' : 'neutral'"
+          :label="costEvaluationLabel"
         />
       </div>
       <div class="metric-grid metric-grid--cost">
-        <div><span>计划格距</span><strong>{{ pct(Number(cost.planned_step_pct || 0)) }}</strong></div>
-        <div><span>Maker 往返费</span><strong>{{ pct(Number(cost.maker_round_trip_pct || 0)) }}</strong></div>
-        <div><span>逆向选择缓冲</span><strong>{{ pct(Number(cost.adverse_selection_pct || 0)) }}</strong></div>
-        <div><span>滑点缓冲</span><strong>{{ pct(Number(cost.slippage_pct || 0)) }}</strong></div>
-        <div><span>安全边际</span><strong>{{ pct(Number(cost.safety_margin_pct || 0)) }}</strong></div>
-        <div><span>预计资金费</span><strong>{{ pct(Number(cost.projected_funding_pct || 0)) }}</strong></div>
-        <div><span>预计总成本</span><strong>{{ pct(Number(cost.total_cost_pct || 0)) }}</strong></div>
-        <div><span>净边际</span><strong>{{ pct(Number(cost.net_edge_pct || 0)) }}</strong></div>
+        <div><span>计划格距</span><strong>{{ pct(finiteCostValue('planned_step_pct')) }}</strong></div>
+        <div><span>Maker 往返费</span><strong>{{ pct(finiteCostValue('maker_round_trip_pct')) }}</strong></div>
+        <div><span>逆向选择缓冲</span><strong>{{ pct(finiteCostValue('adverse_selection_pct')) }}</strong></div>
+        <div><span>滑点缓冲</span><strong>{{ pct(finiteCostValue('slippage_pct')) }}</strong></div>
+        <div><span>安全边际</span><strong>{{ pct(finiteCostValue('safety_margin_pct')) }}</strong></div>
+        <div><span>预计资金费</span><strong>{{ pct(finiteCostValue('projected_funding_pct')) }}</strong></div>
+        <div><span>预计总成本</span><strong>{{ pct(finiteCostValue('total_cost_pct')) }}</strong></div>
+        <div><span>净边际</span><strong>{{ pct(finiteCostValue('net_edge_pct')) }}</strong></div>
       </div>
     </section>
 

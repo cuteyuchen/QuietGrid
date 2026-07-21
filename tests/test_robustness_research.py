@@ -403,6 +403,30 @@ def test_freeze_archive_is_immutable_and_verifiable(tmp_path: Path) -> None:
         verify_frozen_dataset(manifest_path)
 
 
+def test_freeze_archive_records_spot_market_identity(tmp_path: Path) -> None:
+    start = datetime(2026, 7, 1, tzinfo=UTC)
+    source = FakeArchiveSource([_row(start, 100)], start + timedelta(days=2))
+    source.market_path = "spot"
+
+    data_path, manifest_path = asyncio.run(
+        freeze_binance_archives(
+            FreezeRequest(
+                symbol="BTCUSDT",
+                start_time=start,
+                end_time=start + timedelta(hours=1),
+                output_dir=tmp_path,
+                market_path="spot",
+            ),
+            source_factory=lambda: source,
+        )
+    )
+
+    manifest = verify_frozen_dataset(manifest_path)
+    assert manifest["market"] == "SPOT"
+    assert manifest["market_path"] == "spot"
+    assert data_path.name.startswith("binance_spot_btcusdt_1m_")
+
+
 def test_weekend_window_excludes_normal_weekday_overnight(tmp_path: Path) -> None:
     friday_close = datetime(2026, 7, 17, 20, 0, tzinfo=UTC)
     monday_force_close = datetime(2026, 7, 20, 6, 0, tzinfo=UTC)

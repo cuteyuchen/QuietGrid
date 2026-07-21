@@ -1,4 +1,4 @@
-export type SessionState = 'RUNNING' | 'PAUSED' | 'OBSERVING' | 'COOLDOWN' | 'STOPPED'
+export type SessionState = 'RUNNING' | 'DEFENSIVE' | 'PAUSED' | 'OBSERVING' | 'COOLDOWN' | 'CLOSING' | 'STOPPED'
 
 export type ConsoleSummary = {
   mode: string
@@ -94,19 +94,26 @@ export type LiquidityCandidate = {
     levelCount?: number | null
   }
   economics?: {
+    directionMode?: GridDirectionMode
     makerFeeRate?: number | null
     makerFeeSource?: string
     makerFeeCheckedAt?: string
+    takerFeeRate?: number | null
     makerRoundTripPct?: number | null
     projectedFundingPct?: number | null
     grossStepPct?: number | null
     hardCostPct?: number | null
     feeNetEdgePct?: number | null
     riskDiscountPct?: number | null
+    seedExecutionCostPct?: number | null
     estimatedCrossingsPerHour?: number | null
     objectiveValue?: number | null
+    configuredCapital?: number | null
+    minimumRequiredCapital?: number | null
     plannedMinOrderNotional?: number | null
     minimumOrderNotional?: number | null
+    worstCaseStopLoss?: number | null
+    riskBudget?: number | null
     rejectedReason?: string
   }
 }
@@ -131,6 +138,11 @@ export type GridSession = {
   stateLabel: string
   softBreachCount?: number
   lastRetentionDecisionAt: string
+  cooldownCurrentAtr: number | null
+  cooldownAmplitudePct: number | null
+  cooldownAmplitudeLimitPct: number | null
+  cooldownReason: string
+  cooldownEvaluatedAt: string
   directionMode: GridDirectionMode
   directionSource: string
   seedPositionSide: string
@@ -519,6 +531,11 @@ export const sessions: GridSession[] = [
     state: 'STOPPED',
     stateLabel: '已停止',
     lastRetentionDecisionAt: '23:21:10',
+    cooldownCurrentAtr: null,
+    cooldownAmplitudePct: null,
+    cooldownAmplitudeLimitPct: null,
+    cooldownReason: '',
+    cooldownEvaluatedAt: '',
     directionMode: 'NEUTRAL',
     directionSource: 'global',
     seedPositionSide: '',
@@ -605,6 +622,11 @@ export const sessions: GridSession[] = [
     state: 'STOPPED',
     stateLabel: '已停止',
     lastRetentionDecisionAt: '23:20:50',
+    cooldownCurrentAtr: null,
+    cooldownAmplitudePct: null,
+    cooldownAmplitudeLimitPct: null,
+    cooldownReason: '',
+    cooldownEvaluatedAt: '',
     directionMode: 'NEUTRAL',
     directionSource: 'global',
     seedPositionSide: '',

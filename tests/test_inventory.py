@@ -60,6 +60,19 @@ def test_caution_suppresses_orders_that_increase_long_inventory() -> None:
     assert decision.snapshot.utilization == 0.5
 
 
+def test_directional_seed_is_baseline_for_inventory_risk() -> None:
+    decision = InventoryManager().evaluate(
+        [_filled("seed", OrderSide.BUY, 100, 1)],
+        mark_price=100,
+        max_inventory_notional=200,
+        baseline_inventory_notional=100,
+    )
+
+    assert decision.action == InventoryAction.ALLOW
+    assert decision.snapshot.utilization == 0.0
+    assert decision.snapshot.level == InventoryLevel.NORMAL
+
+
 def test_critical_inventory_closes_session() -> None:
     decision = InventoryManager().evaluate(
         [_filled("open", OrderSide.SELL, 100, 2)],

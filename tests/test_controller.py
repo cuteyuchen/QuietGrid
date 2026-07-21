@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from core.models import GridState, OrderStatus, RiskAction
+from core.models import GridDirectionMode, GridState, OrderStatus, RiskAction
 from db.database import init_db
 from db.repository import Repository
 from exchange.mock import MockExchangeClient
@@ -17,6 +18,7 @@ from strategy.controller import (
     _positive_price,
     _ticker_last_price,
 )
+from strategy.cooldown import CooldownDecision
 from strategy.grid_calculator import GridConfig
 from strategy.observer import ObservationAborted, ObserverConfig
 from strategy.selector import SelectionConfig
@@ -49,7 +51,11 @@ class ForceCloseOnSecondCheckScheduler(FakeScheduler):
 
 class CooldownRecoveryExchange(MockExchangeClient):
     async def get_klines(self, symbol: str, interval: str, limit: int):
-        if limit == 30:
+        # v2 recovery preflight asks for enough rows for both the cooldown
+        # evaluator and the long Regime window.  Keep the recovery sample calm
+        # at either size so this fixture continues to exercise recovery rather
+        # than accidentally testing the default mock's volatile history.
+        if limit in {30, 62}:
             return [
                 {"open": 100, "high": 100.01, "low": 99.99, "close": 100 + ((idx % 3) - 1) * 0.002}
                 for idx in range(limit)
@@ -558,6 +564,66 @@ class FilledDuringRoundStartFailureExchange(AccountingMarketCloseExchange):
                 }
             ]
         raise RuntimeError("stop protection rejected after entry fill")
+
+
+class PartialDirectionalSeedExchange(AccountingMarketCloseExchange):
+    def __init__(self) -> None:
+        super().__init__()
+        self.seed_response: dict | None = None
+
+    async def place_market_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        reduce_only: bool = True,
+        position_side: str | None = None,
+        client_id: str | None = None,
+    ):
+        if not reduce_only and position_side == "LONG":
+            response = await MockExchangeClient.place_market_order(
+                self,
+                symbol,
+                side,
+                qty,
+                reduce_only,
+                position_side,
+                client_id,
+            )
+            partial_qty = qty / 2
+            self.hedge_positions[symbol]["LONG"] = partial_qty
+            response.update(
+                status="PARTIALLY_FILLED",
+                executedQty=partial_qty,
+                avgPrice=100.0,
+            )
+            self.seed_response = response
+            self.order_trades[(symbol, str(response["orderId"]))] = [
+                {
+                    "symbol": symbol,
+                    "orderId": response["orderId"],
+                    "side": side,
+                    "price": "100.0",
+                    "qty": str(partial_qty),
+                    "commission": "0.02",
+                    "realizedPnl": "0",
+                    "time": 1780000001000,
+                }
+            ]
+            return response
+        return await super().place_market_order(
+            symbol,
+            side,
+            qty,
+            reduce_only,
+            position_side,
+            client_id,
+        )
+
+    async def get_order(self, symbol: str, order_id: str, client_id: str):
+        if self.seed_response is not None and client_id == self.seed_response.get("clientOrderId"):
+            return self.seed_response
+        return await super().get_order(symbol, order_id, client_id)
 
 
 class DelayedUntrackedMarketOrderLookupExchange(MockExchangeClient):
@@ -4942,6 +5008,55 @@ def test_round_start_failure_records_fill_and_closes_position_immediately(tmp_pa
     asyncio.run(run())
 
 
+def test_partial_directional_seed_is_recorded_and_safely_closed(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller-partial-direction-seed.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        exchange = PartialDirectionalSeedExchange()
+        now = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+        repo.register_runtime("runtime-partial-seed", now)
+        repo.request_round_start("启动", "round-partial-seed", now)
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(
+                max_concurrent=1,
+                scan_candidate_count=1,
+                symbol_blacklist=("TSLAPREUSDT",),
+            ),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=500,
+                leverage=1,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=2000,
+                direction_mode=GridDirectionMode.LONG,
+            ),
+        )
+
+        result = await controller.start_round(now)
+
+        session = repo.recent_rows("sessions", limit=1)[0]
+        trades = sorted(repo.recent_rows("trades", limit=10), key=lambda row: row["id"])
+        assert result.started_symbols == []
+        assert controller.active_sessions == {}
+        assert exchange.hedge_positions["AAPLUSDT"]["LONG"] == 0.0
+        assert exchange.orders.get("AAPLUSDT", []) == []
+        assert session["state"] == "STOPPED"
+        assert session["close_reason"] == "grid_start_failed"
+        assert session["direction_mode"] == "LONG"
+        assert session["seed_qty"] > 0
+        assert session["seed_entry_price"] == 100.0
+        assert [trade["side"] for trade in trades] == ["BUY", "SELL"]
+        assert trades[0]["qty"] == session["seed_qty"]
+
+    asyncio.run(run())
+
+
 def test_session_pause_and_resume_update_round_candidate_stage_immediately(tmp_path) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller-session-pause-stage.db"
@@ -5635,7 +5750,7 @@ def test_controller_recovers_from_cooldown_and_restarts_grid(tmp_path) -> None:
         await controller.handle_price_update_event(
             {
                 "symbol": "AAPLUSDT",
-                "price": session.params.lower - 0.01,  # type: ignore[union-attr]
+                "price": session.params.stop_loss_price - 0.01,  # type: ignore[union-attr]
                 "event_time": datetime(2026, 7, 4, 10, 1, tzinfo=NY),
             }
         )
@@ -5647,6 +5762,59 @@ def test_controller_recovers_from_cooldown_and_restarts_grid(tmp_path) -> None:
         assert exchange.orders["AAPLUSDT"]
         triggers = {row["trigger"] for row in Repository(db_path).recent_rows("state_logs", limit=10)}
         assert {"cooldown_recovered", "grid_restarted"}.issubset(triggers)
+
+    asyncio.run(run())
+
+
+def test_controller_cooldown_recovery_uses_session_actual_grid_step(tmp_path) -> None:
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = CooldownRecoveryExchange()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(min_step_pct=0.0015),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        session = controller.active_sessions["AAPLUSDT"]
+        assert session.params is not None
+        session.params = replace(session.params, step_pct=0.007068)
+        captured: dict[str, float] = {}
+
+        def capture_step(*_args, **kwargs):
+            captured["min_step_pct"] = float(kwargs["min_step_pct"])
+            return CooldownDecision(False, "captured")
+
+        controller.cooldown.evaluate = capture_step  # type: ignore[method-assign]
+        await controller._enter_cooldown(
+            session,
+            "hard stop",
+            datetime(2026, 7, 4, 10, 1, tzinfo=NY),
+        )
+
+        recovered = await controller._try_recover_from_cooldown(
+            session,
+            datetime(2026, 7, 4, 10, 20, tzinfo=NY),
+        )
+
+        assert recovered is False
+        assert captured["min_step_pct"] == 0.007068
+        assert captured["min_step_pct"] != controller.grid_config.min_step_pct
+        persisted = Repository(db_path).get_session(session.session_id)
+        assert persisted is not None
+        assert persisted["cooldown_amplitude_limit_pct"] == 0.007068 * controller.cooldown.config.amplitude_multiplier
+        assert persisted["cooldown_reason"] == "captured"
 
     asyncio.run(run())
 
@@ -5676,7 +5844,7 @@ def test_controller_stops_session_when_cooldown_recovery_fails(tmp_path) -> None
         await controller.handle_price_update_event(
             {
                 "symbol": "AAPLUSDT",
-                "price": session.params.lower - 0.01,  # type: ignore[union-attr]
+                "price": session.params.stop_loss_price - 0.01,  # type: ignore[union-attr]
                 "event_time": datetime(2026, 7, 4, 10, 1, tzinfo=NY),
             }
         )
@@ -5726,7 +5894,7 @@ def test_controller_keeps_session_closing_when_cooldown_recovery_failure_close_f
         await controller.handle_price_update_event(
             {
                 "symbol": "AAPLUSDT",
-                "price": session.params.lower - 0.01,  # type: ignore[union-attr]
+                "price": session.params.stop_loss_price - 0.01,  # type: ignore[union-attr]
                 "event_time": datetime(2026, 7, 4, 10, 1, tzinfo=NY),
             }
         )

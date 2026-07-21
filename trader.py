@@ -1252,24 +1252,51 @@ async def _require_binance_signed_write_health(
     config,
     eligible_symbols: list[str],
     caller: str,
+    *,
+    recovery_mode: bool = False,
 ) -> dict[str, Any]:
     symbol = eligible_symbols[0]
     leverage = int(config.raw.get("trading", {}).get("leverage", 1))
     errors: list[str] = []
-    try:
-        await exchange.set_margin_type(symbol, "ISOLATED")
-    except Exception as exc:
-        errors.append(f"set margin type failed: {exc}")
-    try:
-        await exchange.set_leverage(symbol, leverage)
-    except Exception as exc:
-        errors.append(f"set leverage failed: {exc}")
+    checks: dict[str, Any] = {}
+    if recovery_mode:
+        # 恢复已有会话时交易所通常仍有挂单。Binance 会以 -4067 拒绝修改
+        # 保证金模式，此时强行执行配置写检查反而会阻断合法恢复。改为验证
+        # 签名账户、持仓和订单读取；会话恢复随后会逐单对账。
+        try:
+            await exchange.get_account_summary()
+            checks["account"] = "ok"
+        except Exception as exc:
+            errors.append(f"signed account query failed: {exc}")
+        try:
+            await exchange.get_position(symbol)
+            checks["position"] = "ok"
+        except Exception as exc:
+            errors.append(f"signed position query failed: {exc}")
+        try:
+            open_orders = await exchange.get_open_orders(symbol)
+            checks["open_orders"] = len(open_orders)
+        except Exception as exc:
+            errors.append(f"signed open orders query failed: {exc}")
+    else:
+        try:
+            await exchange.set_margin_type(symbol, "ISOLATED")
+            checks["margin_type"] = "ISOLATED"
+        except Exception as exc:
+            errors.append(f"set margin type failed: {exc}")
+        try:
+            await exchange.set_leverage(symbol, leverage)
+            checks["leverage"] = leverage
+        except Exception as exc:
+            errors.append(f"set leverage failed: {exc}")
 
     result = {
         "signed_write_ok": not errors,
         "caller": caller,
         "symbol": symbol,
         "leverage": leverage,
+        "recovery_mode": recovery_mode,
+        "checks": checks,
         "proxy_enabled": _proxy_enabled(config.raw.get("proxy")),
         "errors": errors,
     }
@@ -1733,7 +1760,13 @@ async def _run_binance_loop(config, max_iterations: int | None = None, max_secon
         bounded_timeout_reached = False
         try:
             eligible = await _require_binance_tradable_allowlist_symbols(exchange, config)
-            await _require_binance_signed_write_health(exchange, config, eligible, "binance_loop")
+            await _require_binance_signed_write_health(
+                exchange,
+                config,
+                eligible,
+                "binance_loop",
+                recovery_mode=bool(repository.unclosed_sessions()),
+            )
             controller = _build_controller(exchange, config, live_observation=True)
             controller_repository = getattr(controller, "repository", None) or repository
             if not hasattr(controller, "repository"):
@@ -2750,6 +2783,7 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             },
             seed_execution=str(entry.get("seed_execution", "MARKET")).strip().upper(),
             seed_max_slippage_pct=float(entry.get("seed_max_slippage_pct", 0.002)),
+            startup_auto_entry=bool(timing.get("startup_auto_entry", False)),
         ),
         cooldown_config=CooldownConfig(
             atr_period=int(cooldown["atr_period"]),

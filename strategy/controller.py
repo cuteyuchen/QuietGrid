@@ -103,6 +103,7 @@ class ControllerConfig:
     reduce_target_step_fraction_by_symbol: dict[str, float] = field(default_factory=dict)
     seed_execution: str = "MARKET"
     seed_max_slippage_pct: float = 0.002
+    startup_auto_entry: bool = False
 
 
 @dataclass(frozen=True)
@@ -402,6 +403,10 @@ class TradingController:
                 leverage=int(row.get("leverage") or self.config.leverage),
                 open_time=current_time,
                 state_entered_at=current_time,
+                direction_mode=GridDirectionMode(
+                    str(row.get("direction_mode") or "NEUTRAL").upper()
+                ),
+                direction_source=str(row.get("direction_source") or "global"),
             )
             try:
                 await self.engine.force_close(session, "进程启动时发现未关闭会话，执行安全恢复。")
@@ -506,6 +511,7 @@ class TradingController:
         observation_sessions: list[tuple[int, str]] = []
         for symbol in fee_eligible_symbols:
             direction_mode = self._direction_mode_for_symbol(symbol)
+            direction_source = self._direction_source_for_symbol(symbol)
             session_id = self.repository.create_session(
                 window_id=window_id,
                 symbol=symbol,
@@ -514,6 +520,7 @@ class TradingController:
                 leverage=self.config.leverage,
                 open_time=current_time,
                 direction_mode=direction_mode,
+                direction_source=direction_source,
             )
             self.state_machine.transition(symbol, GridState.OBSERVING, "window_open", at=current_time)
             self.repository.log_state(
@@ -616,7 +623,10 @@ class TradingController:
                     current_time,
                 )
                 continue
-            allowed = effective_risk.can_open_new_symbol(list(self.active_sessions.values()), self.config.capital_per_symbol)
+            allowed = effective_risk.can_open_new_symbol(
+                list(self.active_sessions.values()), self.config.capital_per_symbol,
+                consecutive_session_losses=self.repository.consecutive_session_losses(self.current_window_id),
+            )
             if allowed.action != RiskAction.NONE:
                 self.repository.close_session(session_id, "risk_limit_reached", current_time)
                 self.state_machine.transition(symbol, GridState.STOPPED, "risk_limit", allowed.reason, current_time)
@@ -642,12 +652,19 @@ class TradingController:
                 open_time=current_time,
                 state_entered_at=current_time,
                 direction_mode=params.direction_mode,
+                direction_source=self._direction_source_for_symbol(symbol),
             )
             try:
                 await self.engine.start(session, current_price)
                 self._persist_seed_execution(session, current_time)
             except Exception as exc:
+                self._persist_seed_execution(session, current_time)
                 self._persist_session_orders(session)
+                if session.seed_qty > 0:
+                    self.active_sessions[symbol] = session
+                    await self._record_grid_start_failure_fills(session, current_time)
+                    await self._close_session(session, "grid_start_failed", current_time)
+                    continue
                 if any(order.status == OrderStatus.OPEN for order in session.orders):
                     session.state = GridState.CLOSING
                     session.state_entered_at = current_time
@@ -1632,6 +1649,7 @@ class TradingController:
             account_equity=self._account_equity or self.config.total_capital_limit,
             window_pnl=self.repository.window_realized_pnl(self.current_window_id),
             window_stop_count=self.repository.window_stop_count(self.current_window_id),
+            consecutive_session_losses=self.repository.consecutive_session_losses(self.current_window_id),
         )
         if entry_risk.action != RiskAction.NONE:
             self.repository.create_risk_snapshot(
@@ -1686,6 +1704,7 @@ class TradingController:
             self.config.leverage,
             at,
             direction_mode,
+            self._direction_source_for_symbol(symbol),
         )
         self.state_machine.transition(symbol, GridState.OBSERVING, "round_candidate_eligible", at=at)
         self.repository.log_state(
@@ -1704,12 +1723,14 @@ class TradingController:
             open_time=at,
             state_entered_at=at,
             direction_mode=direction_mode,
+            direction_source=self._direction_source_for_symbol(symbol),
         )
         self.repository.mark_round_candidate_stage(self.current_window_id, symbol, "placing_orders", at, session_id)
         try:
             await self.engine.start(session, live_price)
             self._persist_seed_execution(session, at)
         except Exception as exc:
+            self._persist_seed_execution(session, at)
             self._persist_session_orders(session)
             self.active_sessions[symbol] = session
             await self._record_grid_start_failure_fills(session, at)
@@ -1853,6 +1874,19 @@ class TradingController:
         if isinstance(selected, GridDirectionMode):
             return selected
         return GridDirectionMode(str(selected).strip().upper())
+
+    def _direction_source_for_symbol(self, symbol: str) -> str:
+        normalized = str(symbol).strip().upper()
+        draft = self.repository.strategy_config_draft() or {}
+        raw_overrides = draft.get(
+            "direction_overrides",
+            self.config.direction_overrides,
+        )
+        overrides = raw_overrides if isinstance(raw_overrides, dict) else {}
+        return "symbol_override" if normalized in {
+            str(item).strip().upper()
+            for item in overrides
+        } else "global"
 
     def _session_risk_budget(self) -> float | None:
         if self.config.max_session_loss_pct <= 0:
@@ -2856,6 +2890,12 @@ class TradingController:
                     session.orders,
                     mark_price=last_price,
                     max_inventory_notional=max_inventory_notional,
+                    baseline_inventory_notional=(
+                        session.seed_qty * last_price
+                        if session.direction_mode != GridDirectionMode.NEUTRAL
+                        and session.seed_qty > 0
+                        else 0.0
+                    ),
                     trend_direction=(
                         regime_decision.features.trend_direction
                         if regime_decision is not None
@@ -3079,7 +3119,19 @@ class TradingController:
     def bootstrap_auto_entry(self, now: datetime | None = None) -> list[str]:
         current_time = now or datetime.now(timezone.utc)
         control = self.repository.auto_trading_control()
-        if not isinstance(control, dict) or not bool(control.get("enabled")):
+        if not isinstance(control, dict):
+            if not bool(getattr(self.config, "startup_auto_entry", False)):
+                return []
+            control = {
+                "enabled": True,
+                "requested_at": current_time.isoformat(),
+                "requested_by": "startup_default",
+                "request_id": f"startup-default:{self.repository.account_id}",
+                "mode": "AUTO_WINDOW",
+                "account_id": self.repository.account_id,
+            }
+            self.repository.set_auto_trading_control(control, current_time)
+        if not bool(control.get("enabled")):
             return []
         classify = getattr(self.scheduler, "classify_window", None)
         if callable(classify):
@@ -3718,13 +3770,24 @@ class TradingController:
             )
             return False, ""
         if decision.verdict == "BLOCKED_SCORE":
-            session.soft_breach_count += 1
+            limit = self.regime.config.soft_breach_limit
+            if session.state == GridState.DEFENSIVE:
+                # DEFENSIVE 已经是软性违约达到阈值后的稳定状态。继续消费新的
+                # 闭合 K 线以便识别恢复，但计数应保持在阈值，避免页面出现
+                # 9/3 这类失真的状态，也避免把防御持续时间误解为新的触发次数。
+                session.soft_breach_count = limit
+                self.repository.update_session_retention(
+                    session.session_id,
+                    session.soft_breach_count,
+                    decision.as_of,
+                )
+                return False, f"防御模式持续 {limit}/{limit}: {decision.state}"
+            session.soft_breach_count = min(session.soft_breach_count + 1, limit)
             self.repository.update_session_retention(
                 session.session_id,
                 session.soft_breach_count,
                 decision.as_of,
             )
-            limit = self.regime.config.soft_breach_limit
             return (
                 session.soft_breach_count >= limit,
                 "Regime 连续软性不达标 "
@@ -3855,6 +3918,17 @@ class TradingController:
         session.state = GridState.COOLDOWN
         session.state_entered_at = at
         self.repository.update_session_state(session.session_id, GridState.COOLDOWN.value)
+        if session.params is not None:
+            self.repository.update_session_cooldown_evaluation(
+                session.session_id,
+                current_atr=None,
+                amplitude_pct=None,
+                amplitude_limit_pct=(
+                    session.params.step_pct * self.cooldown.config.amplitude_multiplier
+                ),
+                reason=reason,
+                evaluated_at=at,
+            )
         if self.round_active and self.current_window_id is not None:
             self.repository.mark_round_candidate_stage(
                 self.current_window_id, session.symbol, "cooldown", at, session.session_id
@@ -3891,6 +3965,16 @@ class TradingController:
             min_step_pct=session.params.step_pct,
             cooldown_started_at=session.state_entered_at,
             now=at,
+        )
+        self.repository.update_session_cooldown_evaluation(
+            session.session_id,
+            current_atr=decision.current_atr,
+            amplitude_pct=decision.amplitude_pct,
+            amplitude_limit_pct=(
+                session.params.step_pct * self.cooldown.config.amplitude_multiplier
+            ),
+            reason=decision.reason,
+            evaluated_at=at,
         )
         if not decision.can_reobserve:
             return False
@@ -4112,22 +4196,30 @@ class TradingController:
             account_equity=self._account_equity or self.config.total_capital_limit,
             window_pnl=window_pnl,
             window_stop_count=window_stop_count,
+            consecutive_session_losses=self.repository.consecutive_session_losses(self.current_window_id),
         )
         if entry_risk.action != RiskAction.NONE:
             self.repository.create_risk_snapshot(
                 as_of_time=at,
-                scope="SESSION",
-                scope_id=str(session.session_id),
+                risk_level=(
+                    "HALT"
+                    if entry_risk.action == RiskAction.HALT_WINDOW
+                    else "BLOCK"
+                ),
                 action=entry_risk.action.value,
                 reason=entry_risk.reason,
-                priority=entry_risk.priority,
-                metrics={
+                session_id=session.session_id,
+                window_id=self.current_window_id,
+                symbol=session.symbol,
+                session_pnl=session.realized_pnl,
+                window_pnl=window_pnl,
+                limits={
                     "phase": "cooldown_recovery",
-                    "window_pnl": window_pnl,
+                    "max_session_loss_pct": self.config.max_session_loss_pct,
+                    "max_window_loss_pct": self.config.max_window_loss_pct,
+                    "max_window_stop_count": self.config.max_window_stop_count,
                     "window_stop_count": window_stop_count,
                 },
-                session_id=session.session_id,
-                symbol=session.symbol,
             )
             return False
 

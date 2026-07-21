@@ -97,6 +97,7 @@ async def _download(args: argparse.Namespace) -> None:
         source_factory = None
         if args.proxy_url:
             source_factory = lambda: BinanceArchiveHistoricalDataSource(
+                market_path=args.market_path,
                 proxy_config={
                     "enabled": True,
                     "https": args.proxy_url,
@@ -109,6 +110,7 @@ async def _download(args: argparse.Namespace) -> None:
                 end_time=end,
                 output_dir=Path(args.output_dir),
                 max_missing_ratio=args.max_missing_ratio,
+                market_path=args.market_path,
             ),
             source_factory=source_factory,
         )
@@ -811,7 +813,7 @@ def _finalize_joint_oos(args: argparse.Namespace) -> None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "冻结 Binance 官方 USD-M 归档，并以严格开发/验证/OOS 协议"
+            "冻结 Binance 官方归档，并以严格开发/验证/OOS 协议"
             "执行 QuietGrid 周末窗口稳健性回测。"
         )
     )
@@ -823,6 +825,11 @@ def _parser() -> argparse.ArgumentParser:
     download.add_argument("--end", help="ISO-8601，默认当前 UTC 时间")
     download.add_argument("--output-dir", default="data/backtests/robustness")
     download.add_argument("--max-missing-ratio", type=float, default=0.001)
+    download.add_argument(
+        "--market-path",
+        choices=("futures/um", "futures/cm", "spot"),
+        default="futures/um",
+    )
     download.add_argument(
         "--proxy-url",
         help="可选 HTTP/SOCKS 代理，例如 http://127.0.0.1:7897",

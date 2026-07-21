@@ -44,6 +44,7 @@ const LIFECYCLE = [
   { key: 'SCANNING', label: '扫描评估', hint: '拉取三小时 K 线并评估' },
   { key: 'PLANNING', label: '生成网格', hint: '计算自适应网格' },
   { key: 'RUNNING', label: '运行', hint: '网格挂单与成交' },
+  { key: 'DEFENSIVE', label: '防御', hint: '保留减仓和保护订单，等待评分恢复' },
   { key: 'COOLDOWN', label: '冷却', hint: '止损后等待恢复' },
   { key: 'CLOSING', label: '强制离场', hint: '盘前撤单平仓' },
   { key: 'COMPLETED', label: '本轮完成', hint: '生成本轮报告' },
@@ -62,6 +63,15 @@ const observingSessions = computed(() =>
 const runningSessions = computed(() =>
   activeSessionItems.value.filter((session) => session.state === 'RUNNING'),
 )
+
+const defensiveSessions = computed(() =>
+  activeSessionItems.value.filter((session) => session.state === 'DEFENSIVE'),
+)
+
+const managedSessions = computed(() => [
+  ...runningSessions.value,
+  ...defensiveSessions.value,
+])
 
 const cooldownSessions = computed(() =>
   activeSessionItems.value.filter((session) => session.state === 'COOLDOWN'),
@@ -82,6 +92,7 @@ const phase = computed<LifecyclePhase>(() => {
   if (['CLOSING', 'FORCE_CLOSE', 'FORCE_EXIT', 'STOPPING'].includes(roundState)) return 'CLOSING'
   if (['COMPLETED', 'DONE', 'FINISHED', 'STOPPED'].includes(roundState)) return 'COMPLETED'
   if (cooldownSessions.value.length) return 'COOLDOWN'
+  if (defensiveSessions.value.length || roundState === 'DEFENSIVE') return 'DEFENSIVE'
   if (runningSessions.value.length || roundState === 'RUNNING') return 'RUNNING'
   if (props.candidates.some((item) => String(item.stage || '').toLowerCase() === 'planning' || String(item.stage || '').toLowerCase() === 'placing_orders')) {
     return 'PLANNING'
@@ -106,10 +117,10 @@ const startupSteps = computed<StartupStep[]>(() => {
     step('process', '启动交易进程', doneOr(online, starting)),
     step('heartbeat', '等待首个心跳', doneOr(online, starting)),
     step('recover', '恢复和交易所对账', doneOr(online && round !== 'WAITING', online && round === 'START_QUEUED')),
-    step('window', '检查周末窗口', doneOr(['SCANNING', 'PLANNING', 'RUNNING', 'COOLDOWN', 'CLOSING', 'COMPLETED'].includes(round), round === 'START_QUEUED')),
-    step('kline', '获取最近三小时 K线', doneOr(['PLANNING', 'RUNNING', 'COOLDOWN', 'CLOSING', 'COMPLETED'].includes(round), round === 'SCANNING')),
-    step('eval', '波动率与 Regime 评估', doneOr(['PLANNING', 'RUNNING', 'COOLDOWN', 'CLOSING', 'COMPLETED'].includes(round), round === 'SCANNING')),
-    step('grid', '生成并提交网格', doneOr(['RUNNING', 'COOLDOWN', 'CLOSING', 'COMPLETED'].includes(round), round === 'PLANNING')),
+    step('window', '检查周末窗口', doneOr(['SCANNING', 'PLANNING', 'RUNNING', 'DEFENSIVE', 'COOLDOWN', 'CLOSING', 'COMPLETED'].includes(round), round === 'START_QUEUED')),
+    step('kline', '获取最近三小时 K线', doneOr(['PLANNING', 'RUNNING', 'DEFENSIVE', 'COOLDOWN', 'CLOSING', 'COMPLETED'].includes(round), round === 'SCANNING')),
+    step('eval', '波动率与 Regime 评估', doneOr(['PLANNING', 'RUNNING', 'DEFENSIVE', 'COOLDOWN', 'CLOSING', 'COMPLETED'].includes(round), round === 'SCANNING')),
+    step('grid', '生成并提交网格', doneOr(['RUNNING', 'DEFENSIVE', 'COOLDOWN', 'CLOSING', 'COMPLETED'].includes(round), round === 'PLANNING')),
   ]
 })
 
@@ -127,7 +138,12 @@ const currentPhaseIndex = computed(() =>
 
 const currentPhaseMeta = computed(() => LIFECYCLE[currentPhaseIndex.value] || LIFECYCLE[0])
 
-const nextPhaseMeta = computed(() => LIFECYCLE[currentPhaseIndex.value + 1] || null)
+const nextPhaseMeta = computed(() => {
+  if (phase.value === 'DEFENSIVE') {
+    return { key: 'RUNNING', label: '恢复运行', hint: '评分恢复后对账并补齐网格' }
+  }
+  return LIFECYCLE[currentPhaseIndex.value + 1] || null
+})
 
 // 观察进度：取正在观察的会话中进度最靠前的一个作为主线展示。
 const observationProgress = computed(() => {
@@ -140,7 +156,7 @@ const observationProgress = computed(() => {
 
 // 距强制离场：取运行会话中最近的关闭时间，换算成剩余分钟。
 const forceExitCountdown = computed(() => {
-  const deadlines = runningSessions.value
+  const deadlines = managedSessions.value
     .map((session) => session.closeTime)
     .filter((value) => Boolean(value))
     .map((value) => new Date(value).getTime())
@@ -169,7 +185,7 @@ const inventoryUsed = computed(() =>
 
 // 止损距离：运行会话中，标记价距止损线的最小百分比距离，越小越危险。
 const stopDistancePct = computed(() => {
-  const distances = runningSessions.value
+  const distances = managedSessions.value
     .map((session) => {
       const mark = session.position.markPrice
       const stop = session.stopLossPrice
@@ -218,7 +234,7 @@ function stepIsActive(index: number) {
           <h2 id="lifecycle-title">当前处于「{{ currentPhaseMeta.label }}」阶段</h2>
         </div>
         <StatusBadge
-          :tone="phase === 'RUNNING' ? 'good' : phase === 'CLOSING' || phase === 'COOLDOWN' ? 'warning' : 'neutral'"
+          :tone="phase === 'RUNNING' ? 'good' : ['DEFENSIVE', 'CLOSING', 'COOLDOWN'].includes(phase) ? 'warning' : 'neutral'"
           :label="currentPhaseMeta.label"
         />
       </div>
@@ -362,11 +378,11 @@ function stepIsActive(index: number) {
           </div>
         </div>
 
-        <div v-else-if="runningSessions.length" class="session-preview-list">
-          <article v-for="session in runningSessions.slice(0, 3)" :key="session.id" class="session-preview">
+        <div v-else-if="managedSessions.length" class="session-preview-list">
+          <article v-for="session in managedSessions.slice(0, 3)" :key="session.id" class="session-preview">
             <div>
               <strong>{{ session.symbol }}</strong>
-              <StatusBadge tone="good" :label="session.stateLabel" />
+              <StatusBadge :tone="session.state === 'DEFENSIVE' ? 'warning' : 'good'" :label="session.stateLabel" />
             </div>
             <dl>
               <div><dt>已实现盈亏</dt><dd :class="session.pnl >= 0 ? 'positive' : 'negative'">{{ money(session.pnl) }}</dd></div>

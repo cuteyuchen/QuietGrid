@@ -118,6 +118,7 @@ class SymbolSession:
     stop_protection_sides: set[str] = field(default_factory=set)
     soft_breach_count: int = 0
     direction_mode: GridDirectionMode = GridDirectionMode.NEUTRAL
+    direction_source: str = "global"
     seed_position_side: str | None = None
     seed_qty: float = 0.0
     seed_entry_price: float | None = None

@@ -18,13 +18,13 @@ from strategy.controller import (
     TradingController,
     V2FeatureFlags,
 )
-from strategy.cooldown import CooldownConfig
+from strategy.cooldown import CooldownConfig, CooldownDecision
 from strategy.grid_calculator import GridConfig
 from strategy.inventory import InventoryConfig
 from strategy.observer import ObserverConfig
 from strategy.regime import RegimeConfig
 from strategy.selector import SelectionConfig, SelectionScore
-from core.models import GridParams, GridState, SymbolSession
+from core.models import GridParams, GridState, RiskAction, RiskDecision, SymbolSession
 
 
 class OpenScheduler:
@@ -377,6 +377,72 @@ def test_v2_cooldown_recovery_requires_flat_exchange_position(tmp_path) -> None:
     asyncio.run(run())
 
 
+def test_v2_cooldown_recovery_risk_block_persists_snapshot_without_crashing(tmp_path) -> None:
+    async def run() -> None:
+        controller = _controller(tmp_path)
+        controller.feature_flags = V2FeatureFlags()
+        now = datetime.now(timezone.utc)
+        window_id = controller.repository.create_window(now)
+        controller.current_window_id = window_id
+        session = SymbolSession(
+            session_id=controller.repository.create_session(
+                window_id=window_id,
+                symbol="AAPLUSDT",
+                state=GridState.COOLDOWN.value,
+                capital=200,
+                leverage=1,
+                open_time=now,
+            ),
+            symbol="AAPLUSDT",
+            state=GridState.COOLDOWN,
+            params=GridParams(
+                symbol="AAPLUSDT",
+                upper=101,
+                lower=99,
+                center=100,
+                grid_num=8,
+                step_pct=0.0025,
+                grid_prices=[99 + index * 0.25 for index in range(9)],
+                baseline_atr=1,
+                stop_loss_price=98,
+                calculated_at=now,
+            ),
+            orders=[],
+            realized_pnl=-1.25,
+            capital=200,
+            leverage=1,
+            open_time=now,
+            state_entered_at=now - timedelta(minutes=20),
+        )
+        controller.active_sessions[session.symbol] = session
+        controller.cooldown.evaluate = lambda *_args, **_kwargs: CooldownDecision(  # type: ignore[method-assign]
+            True,
+            "恢复条件已满足。",
+        )
+        controller.risk.can_open_new_symbol = lambda *_args, **_kwargs: RiskDecision(  # type: ignore[method-assign]
+            RiskAction.BLOCK,
+            "测试恢复风控阻断。",
+            1,
+        )
+
+        recovered = await controller._try_recover_from_cooldown(session, now)
+
+        assert recovered is False
+        assert session.state == GridState.COOLDOWN
+        snapshot = controller.repository.latest_risk_snapshot(session.session_id)
+        assert snapshot is not None
+        assert snapshot["session_id"] == session.session_id
+        assert snapshot["window_id"] == window_id
+        assert snapshot["symbol"] == "AAPLUSDT"
+        assert snapshot["risk_level"] == "BLOCK"
+        assert snapshot["action"] == RiskAction.BLOCK.value
+        assert snapshot["session_pnl"] == pytest.approx(-1.25)
+        assert snapshot["window_pnl"] == pytest.approx(0.0)
+        assert snapshot["limits"]["phase"] == "cooldown_recovery"
+
+    asyncio.run(run())
+
+
 def test_regime_soft_breach_requires_three_consecutive_closed_bars(tmp_path) -> None:
     controller = _controller(tmp_path)
     now = datetime.now(timezone.utc)
@@ -432,6 +498,16 @@ def test_regime_soft_breach_requires_three_consecutive_closed_bars(tmp_path) -> 
     assert session.soft_breach_count == 3
     assert "3/3" in reason
     assert controller.repository.get_session(session_id)["soft_breach_count"] == 3
+
+    session.state = GridState.DEFENSIVE
+    should_cooldown, reason = controller._update_regime_retention(session, blocked(7))
+
+    assert should_cooldown is False
+    assert session.soft_breach_count == 3
+    assert "3/3" in reason
+    persisted = controller.repository.get_session(session_id)
+    assert persisted["soft_breach_count"] == 3
+    assert persisted["last_retention_decision_at"] == blocked(7).as_of.isoformat()
 
 
 def test_regime_hard_block_is_immediate(tmp_path) -> None:

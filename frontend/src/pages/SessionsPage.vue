@@ -237,6 +237,17 @@ function eventLabel(value: string) {
           <span><strong>防御模式 {{ selected.softBreachCount || 0 }}/3</strong>仅撤销增加库存的订单，不会因普通评分下降市价平仓；评分恢复后将对账并补齐网格。</span>
         </div>
 
+        <div v-if="selected.state === 'COOLDOWN'" class="inline-alert inline-alert--warning" role="status">
+          <ShieldAlert :size="18" />
+          <span>
+            <strong>硬止损冷静期</strong>
+            {{ selected.cooldownReason || '等待 ATR 和振幅恢复。' }}
+            实际格距 {{ pct(selected.stepPct) }}，恢复振幅上限 {{ pct(selected.cooldownAmplitudeLimitPct) }}，
+            当前 ATR {{ selected.cooldownCurrentAtr == null ? '—' : price(selected.cooldownCurrentAtr) }}，
+            当前振幅 {{ pct(selected.cooldownAmplitudePct) }}。
+          </span>
+        </div>
+
         <dl v-if="selected.seedQty" class="metadata-grid metadata-grid--wide seed-summary">
           <div><dt>种子持仓侧</dt><dd>{{ selected.seedPositionSide }}</dd></div>
           <div><dt>成交价</dt><dd>{{ price(selected.seedEntryPrice) }}</dd></div>
@@ -300,6 +311,12 @@ function eventLabel(value: string) {
                 <div><dt>Regime 分</dt><dd>{{ gridPlan.regimeScore?.toFixed(0) || '—' }}</dd></div>
                 <div><dt>参数版本</dt><dd>{{ gridPlan.parameterVersion || '—' }}</dd></div>
                 <div><dt>生成时间</dt><dd>{{ gridPlan.asOfTime || '—' }}</dd></div>
+                <div><dt>配置本金</dt><dd>{{ money(gridPlan.economics.configuredCapital) }}</dd></div>
+                <div><dt>最低所需本金</dt><dd>{{ money(gridPlan.economics.minimumRequiredCapital) }}</dd></div>
+                <div><dt>交易所最小名义</dt><dd>{{ money(gridPlan.economics.minimumOrderNotional) }}</dd></div>
+                <div><dt>计划最小订单</dt><dd>{{ money(gridPlan.economics.plannedMinOrderNotional) }}</dd></div>
+                <div><dt>最坏止损损失</dt><dd>{{ money(gridPlan.economics.worstCaseStopLoss) }}</dd></div>
+                <div><dt>剩余风险预算</dt><dd>{{ money(gridPlan.economics.remainingRiskBudget) }}</dd></div>
               </dl>
             </section>
 

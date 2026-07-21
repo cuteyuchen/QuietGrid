@@ -269,31 +269,39 @@ class GridEngine:
         if (
             str(response.get("status") or "").upper() != "FILLED"
             or _exchange_executed_qty(response) + _fill_qty_tolerance(seed_qty) < seed_qty
+            or _exchange_order_price_or_none(response) is None
         ):
             confirmed = await self.exchange.get_order(session.symbol, order_id, client_id)
         executed_qty = _exchange_executed_qty(confirmed)
-        if executed_qty + _fill_qty_tolerance(seed_qty) < seed_qty:
-            raise ValueError("方向网格种子仓位未完全成交，拒绝启动网格。")
-        fill_price = _exchange_order_price(confirmed, 0.0)
-        slippage_pct = abs(fill_price / current_price - 1.0)
-        if slippage_pct > self.config.seed_max_slippage_pct:
-            raise ValueError(
-                "方向网格种子仓位滑点超过上限："
-                f"{slippage_pct:.6f} > {self.config.seed_max_slippage_pct:.6f}"
+        fill_price = _exchange_order_price_or_none(confirmed)
+        if (
+            executed_qty + _fill_qty_tolerance(seed_qty) < seed_qty
+            or fill_price is None
+        ):
+            trade_fill = _summarize_order_trades(
+                await self.exchange.get_order_trades(session.symbol, order_id)
             )
+            if trade_fill is not None:
+                executed_qty = max(executed_qty, trade_fill[0])
+                fill_price = trade_fill[1]
+        if executed_qty <= 0:
+            raise ValueError("方向网格种子仓位未完全成交，拒绝启动网格。")
+        if fill_price is None:
+            raise ValueError("方向网格种子仓位成交价格无法确认，拒绝启动网格。")
+        slippage_pct = abs(fill_price / current_price - 1.0)
         session.seed_position_side = position_side
-        session.seed_qty = seed_qty
+        session.seed_qty = executed_qty
         session.seed_entry_price = fill_price
         session.seed_slippage_pct = slippage_pct
         now = datetime.now(timezone.utc)
-        return GridOrder(
+        seed_order = GridOrder(
             symbol=session.symbol,
             order_id=order_id,
             client_id=client_id,
             grid_index=-1,
             side=seed_side,
             price=fill_price,
-            qty=seed_qty,
+            qty=executed_qty,
             status=OrderStatus.FILLED,
             created_at=now,
             filled_at=now,
@@ -301,6 +309,17 @@ class GridEngine:
             position_side=position_side,
             order_intent=OrderIntent.SEED,
         )
+        if executed_qty + _fill_qty_tolerance(seed_qty) < seed_qty:
+            # 失败启动也必须把已成交的种子数量交给控制器持久化和安全平仓。
+            session.orders.append(seed_order)
+            raise ValueError("方向网格种子仓位未完全成交，拒绝启动网格。")
+        if slippage_pct > self.config.seed_max_slippage_pct:
+            session.orders.append(seed_order)
+            raise ValueError(
+                "方向网格种子仓位滑点超过上限："
+                f"{slippage_pct:.6f} > {self.config.seed_max_slippage_pct:.6f}"
+            )
+        return seed_order
 
     async def pause_grid_orders(self, session: SymbolSession) -> list[GridOrder]:
         cancelled = [order for order in session.orders if order.status == OrderStatus.OPEN]
@@ -322,6 +341,9 @@ class GridEngine:
             for order in session.orders
             if order.status == OrderStatus.OPEN
             and order.order_intent == OrderIntent.OPEN
+            # Older in-memory/DB orders may predate ``order_intent`` and use
+            # ``entry_price`` to mark a reduce-side order.  Keep that order
+            # live during inventory suppression as well.
             and order.entry_price is None
             and (
                 order.side == increasing_side
@@ -1054,6 +1076,33 @@ def _exchange_order_price(order: dict, fallback: float) -> float:
     if saw_value:
         raise invalid_error or ValueError("exchange order price invalid")
     return _positive_float(fallback, "fallback price")
+
+
+def _exchange_order_price_or_none(order: dict) -> float | None:
+    for key in ("avgPrice", "ap", "price", "p"):
+        value = order.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            price = float(value)
+        except (TypeError, ValueError):
+            continue
+        if isfinite(price) and price > 0:
+            return price
+    return None
+
+
+def _summarize_order_trades(trades: list[dict]) -> tuple[float, float] | None:
+    total_qty = 0.0
+    total_quote = 0.0
+    for trade in trades:
+        qty = _positive_float(trade.get("qty", trade.get("q")), "trade qty")
+        price = _positive_float(trade.get("price", trade.get("p")), "trade price")
+        total_qty += qty
+        total_quote += price * qty
+    if total_qty <= 0:
+        return None
+    return total_qty, total_quote / total_qty
 
 
 def _exchange_order_qty(order: dict, fallback: float) -> float:

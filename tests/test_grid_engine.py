@@ -97,6 +97,153 @@ class ExcessiveSeedSlippageExchange(MockExchangeClient):
         return response
 
 
+class ZeroPriceSeedResponseExchange(MockExchangeClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.seed_qty = 0.0
+        self.order_lookup_count = 0
+        self.trade_lookup_count = 0
+
+    async def place_market_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        reduce_only: bool = True,
+        position_side: str | None = None,
+        client_id: str | None = None,
+    ):
+        response = await super().place_market_order(
+            symbol,
+            side,
+            qty,
+            reduce_only,
+            position_side,
+            client_id,
+        )
+        self.seed_qty = qty
+        response["avgPrice"] = "0"
+        response["price"] = "0"
+        return response
+
+    async def get_order(self, symbol: str, order_id: str, client_id: str):
+        self.order_lookup_count += 1
+        return {
+            "symbol": symbol,
+            "orderId": order_id,
+            "clientOrderId": client_id,
+            "status": "FILLED",
+            "executedQty": str(self.seed_qty),
+            "avgPrice": "0",
+            "price": "0",
+        }
+
+    async def get_order_trades(self, symbol: str, order_id: str):
+        self.trade_lookup_count += 1
+        return [
+            {
+                "symbol": symbol,
+                "orderId": order_id,
+                "side": "BUY",
+                "qty": str(self.seed_qty),
+                "price": "100.1",
+            }
+        ]
+
+
+class DelayedSeedMarketOrderLookupExchange(MockExchangeClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.seed_response: dict | None = None
+        self.lookup_count = 0
+
+    async def place_market_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        reduce_only: bool = True,
+        position_side: str | None = None,
+        client_id: str | None = None,
+    ):
+        response = await super().place_market_order(
+            symbol,
+            side,
+            qty,
+            reduce_only,
+            position_side,
+            client_id,
+        )
+        if not reduce_only and client_id and "-seed-" in client_id:
+            self.seed_response = response
+            raise RuntimeError(
+                "APIError(code=-1007): Timeout waiting for response from backend server. "
+                "Send status unknown; execution status unknown."
+            )
+        return response
+
+    async def get_order(self, symbol: str, order_id: str, client_id: str):
+        if self.seed_response is not None and client_id == self.seed_response.get("clientOrderId"):
+            self.lookup_count += 1
+            if self.lookup_count < 3:
+                return {
+                    "symbol": symbol,
+                    "orderId": "",
+                    "clientOrderId": client_id,
+                    "status": "UNKNOWN",
+                }
+            return self.seed_response
+        return await super().get_order(symbol, order_id, client_id)
+
+
+class PartialSeedFillExchange(MockExchangeClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.seed_response: dict | None = None
+
+    async def place_market_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        reduce_only: bool = True,
+        position_side: str | None = None,
+        client_id: str | None = None,
+    ):
+        response = await super().place_market_order(
+            symbol,
+            side,
+            qty,
+            reduce_only,
+            position_side,
+            client_id,
+        )
+        if not reduce_only and client_id and "-seed-" in client_id:
+            partial_qty = qty / 2
+            self.hedge_positions[symbol][str(position_side)] = partial_qty
+            response.update(
+                status="PARTIALLY_FILLED",
+                executedQty=partial_qty,
+                avgPrice=100.0,
+            )
+            self.seed_response = response
+            self.order_trades[(symbol, str(response["orderId"]))] = [
+                {
+                    "symbol": symbol,
+                    "orderId": response["orderId"],
+                    "side": side,
+                    "qty": str(partial_qty),
+                    "price": "100.0",
+                }
+            ]
+        return response
+
+    async def get_order(self, symbol: str, order_id: str, client_id: str):
+        if self.seed_response is not None and client_id == self.seed_response.get("clientOrderId"):
+            return self.seed_response
+        return await super().get_order(symbol, order_id, client_id)
+
+
 class MissingOrderIdExchange(MockExchangeClient):
     async def place_limit_order_post_only(
         self,
@@ -555,6 +702,73 @@ def test_grid_engine_places_post_only_orders() -> None:
         assert stop_by_side["BUY"]["stopPrice"] > session.params.upper  # type: ignore[union-attr]
         assert all(order.status == OrderStatus.OPEN for order in orders)
         assert {order.side.value for order in orders} == {"BUY", "SELL"}
+
+    asyncio.run(run())
+
+
+def test_grid_engine_recovers_direction_seed_price_from_trade_vwap() -> None:
+    async def run() -> None:
+        exchange = ZeroPriceSeedResponseExchange()
+        session = _session()
+        session.capital = 500
+        session.leverage = 1
+        session.direction_mode = GridDirectionMode.LONG
+        assert session.params is not None
+        session.params = replace(session.params, direction_mode=GridDirectionMode.LONG)
+
+        created = await GridEngine(exchange).start(session, current_price=100.0)
+
+        assert created
+        assert exchange.order_lookup_count == 1
+        assert exchange.trade_lookup_count == 1
+        assert session.seed_entry_price == pytest.approx(100.1)
+        assert session.seed_qty == pytest.approx(exchange.seed_qty)
+        assert all(order.status == OrderStatus.OPEN for order in created)
+
+    asyncio.run(run())
+
+
+def test_grid_engine_recovers_direction_seed_after_unknown_create(monkeypatch) -> None:
+    async def run() -> None:
+        monkeypatch.setattr("strategy.grid_engine.ORDER_CREATE_RECOVERY_DELAY_SECONDS", 0)
+        exchange = DelayedSeedMarketOrderLookupExchange()
+        session = _session()
+        session.capital = 500
+        session.leverage = 1
+        session.direction_mode = GridDirectionMode.LONG
+        assert session.params is not None
+        session.params = replace(session.params, direction_mode=GridDirectionMode.LONG)
+
+        created = await GridEngine(exchange).start(session, current_price=100.0)
+
+        assert created
+        assert exchange.lookup_count == 3
+        assert session.seed_qty > 0
+        assert session.seed_entry_price == pytest.approx(100.0)
+        assert len([order for order in session.orders if order.order_intent == OrderIntent.SEED]) == 1
+
+    asyncio.run(run())
+
+
+def test_grid_engine_preserves_partial_seed_for_cleanup_accounting() -> None:
+    async def run() -> None:
+        exchange = PartialSeedFillExchange()
+        session = _session()
+        session.capital = 500
+        session.leverage = 1
+        session.direction_mode = GridDirectionMode.LONG
+        assert session.params is not None
+        session.params = replace(session.params, direction_mode=GridDirectionMode.LONG)
+
+        with pytest.raises(ValueError, match="未完全成交"):
+            await GridEngine(exchange).start(session, current_price=100.0)
+
+        seed_orders = [order for order in session.orders if order.order_intent == OrderIntent.SEED]
+        assert len(seed_orders) == 1
+        assert seed_orders[0].qty == pytest.approx(session.seed_qty)
+        assert seed_orders[0].qty > 0
+        assert seed_orders[0].status == OrderStatus.FILLED
+        assert exchange.hedge_positions[session.symbol]["LONG"] == pytest.approx(session.seed_qty)
 
     asyncio.run(run())
 
@@ -1755,5 +1969,10 @@ def test_grid_engine_rejects_direction_seed_when_slippage_exceeds_limit() -> Non
             assert "滑点超过上限" in str(exc)
         else:
             raise AssertionError("excessive seed slippage must reject directional grid")
+
+        seed_orders = [order for order in session.orders if order.order_intent == OrderIntent.SEED]
+        assert len(seed_orders) == 1
+        assert seed_orders[0].qty == pytest.approx(session.seed_qty)
+        assert session.seed_entry_price == pytest.approx(100.3)
 
     asyncio.run(run())

@@ -4,10 +4,7 @@ trading:
   capital_per_symbol: 500
   total_capital_limit: 2000
   direction_mode: "NEUTRAL"
-  direction_overrides:
-    BTCUSDT: "LONG"
-    ETHUSDT: "SHORT"
-    BCHUSDT: "NEUTRAL"
+  direction_overrides: {}
   take_profit_usdt: 10
   stop_buffer_pct: 0.015
   max_concurrent: 3
@@ -17,6 +14,8 @@ trading:
 entry:
   seed_execution: "MARKET"
   seed_max_slippage_pct: 0.002
+  max_price_drift_pct: 0.002
+  revalidate_before_place: true
 
 features:
   regime_v2: true
@@ -52,10 +51,6 @@ runtime:
   heartbeat_stale_seconds: 20
   heartbeat_offline_seconds: 60
   startup_timeout_seconds: 15
-
-entry:
-  max_price_drift_pct: 0.002
-  revalidate_before_place: true
 
 grid:
   range_method: "std"
@@ -235,7 +230,8 @@ backtest:
       tolerate_missing_latest_tail: true
   online_data:
     enabled: true
-    max_range_days_1m: 180
+    # 允许冻结最多约两年的 1m 数据；下载仍按官方月/日归档分段并逐段校验。
+    max_range_days_1m: 800
     max_concurrent_jobs: 1
     page_limit: 1500
     page_pause_seconds: 0.05

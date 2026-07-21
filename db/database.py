@@ -41,12 +41,18 @@ CREATE TABLE IF NOT EXISTS sessions (
     close_time      DATETIME,
     close_reason    TEXT,
     direction_mode TEXT NOT NULL DEFAULT 'NEUTRAL',
+    direction_source TEXT NOT NULL DEFAULT 'global',
     seed_position_side TEXT,
     seed_qty        REAL NOT NULL DEFAULT 0,
     seed_entry_price REAL,
     seed_slippage_pct REAL,
     seed_fee        REAL NOT NULL DEFAULT 0,
     last_retention_decision_at DATETIME,
+    cooldown_current_atr REAL,
+    cooldown_amplitude_pct REAL,
+    cooldown_amplitude_limit_pct REAL,
+    cooldown_reason TEXT,
+    cooldown_evaluated_at DATETIME,
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -232,6 +238,7 @@ CREATE TABLE IF NOT EXISTS grid_plans (
     regime_score        REAL,
     parameter_version   TEXT NOT NULL,
     direction_mode      TEXT NOT NULL DEFAULT 'NEUTRAL',
+    economics_json      TEXT NOT NULL DEFAULT '{}',
     expires_at          DATETIME,
     created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -479,12 +486,18 @@ SESSION_COLUMN_MIGRATIONS = {
     "parameter_version": "TEXT",
     "soft_breach_count": "INTEGER NOT NULL DEFAULT 0",
     "direction_mode": "TEXT NOT NULL DEFAULT 'NEUTRAL'",
+    "direction_source": "TEXT NOT NULL DEFAULT 'global'",
     "seed_position_side": "TEXT",
     "seed_qty": "REAL NOT NULL DEFAULT 0",
     "seed_entry_price": "REAL",
     "seed_slippage_pct": "REAL",
     "seed_fee": "REAL NOT NULL DEFAULT 0",
     "last_retention_decision_at": "DATETIME",
+    "cooldown_current_atr": "REAL",
+    "cooldown_amplitude_pct": "REAL",
+    "cooldown_amplitude_limit_pct": "REAL",
+    "cooldown_reason": "TEXT",
+    "cooldown_evaluated_at": "DATETIME",
 }
 
 ORDER_COLUMN_MIGRATIONS = {
@@ -494,6 +507,7 @@ ORDER_COLUMN_MIGRATIONS = {
 
 GRID_PLAN_COLUMN_MIGRATIONS = {
     "direction_mode": "TEXT NOT NULL DEFAULT 'NEUTRAL'",
+    "economics_json": "TEXT NOT NULL DEFAULT '{}'",
 }
 
 WINDOW_COLUMN_MIGRATIONS = {

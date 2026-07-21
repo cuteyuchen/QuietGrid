@@ -197,20 +197,36 @@ class Repository:
         leverage: int,
         open_time: datetime,
         direction_mode: GridDirectionMode | str = GridDirectionMode.NEUTRAL,
+        direction_source: str = "global",
     ) -> int:
         mode = (
             direction_mode.value
             if isinstance(direction_mode, GridDirectionMode)
             else GridDirectionMode(str(direction_mode).upper()).value
         )
+        source = (
+            "symbol_override"
+            if str(direction_source).strip().lower() == "symbol_override"
+            else "global"
+        )
         with connect(self.db_path) as conn:
             cur = conn.execute(
                 """
                 INSERT INTO sessions
-                    (window_id, symbol, state, capital, leverage, open_time, direction_mode)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (window_id, symbol, state, capital, leverage, open_time,
+                     direction_mode, direction_source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (window_id, symbol, state, capital, leverage, open_time.isoformat(), mode),
+                (
+                    window_id,
+                    symbol,
+                    state,
+                    capital,
+                    leverage,
+                    open_time.isoformat(),
+                    mode,
+                    source,
+                ),
             )
             conn.commit()
             return int(cur.lastrowid)
@@ -341,6 +357,38 @@ class Repository:
                 (
                     max(0, int(count)),
                     decision_at.isoformat() if decision_at else None,
+                    session_id,
+                ),
+            )
+            conn.commit()
+
+    def update_session_cooldown_evaluation(
+        self,
+        session_id: int,
+        *,
+        current_atr: float | None,
+        amplitude_pct: float | None,
+        amplitude_limit_pct: float,
+        reason: str,
+        evaluated_at: datetime,
+    ) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE sessions
+                SET cooldown_current_atr = ?,
+                    cooldown_amplitude_pct = ?,
+                    cooldown_amplitude_limit_pct = ?,
+                    cooldown_reason = ?,
+                    cooldown_evaluated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    current_atr,
+                    amplitude_pct,
+                    float(amplitude_limit_pct),
+                    str(reason),
+                    evaluated_at.isoformat(),
                     session_id,
                 ),
             )
@@ -1751,8 +1799,9 @@ class Repository:
                 INSERT INTO grid_plans
                     (session_id, symbol, as_of_time, center, lower_price, upper_price,
                      step_pct, grid_num, prices_json, qty_weights_json, cost_floor_pct,
-                     regime_score, parameter_version, direction_mode, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     regime_score, parameter_version, direction_mode, economics_json,
+                     expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -1769,6 +1818,7 @@ class Repository:
                     params.regime_score,
                     params.parameter_version,
                     params.direction_mode.value,
+                    _json(params.economics or {}),
                     None,
                 ),
             )
@@ -1962,7 +2012,12 @@ class Repository:
                 """,
                 (session_id,),
             ).fetchone()
-            return _decoded_row(row, "prices_json", "qty_weights_json")
+            return _decoded_row(
+                row,
+                "prices_json",
+                "qty_weights_json",
+                "economics_json",
+            )
 
     def inventory_lots(self, session_id: int) -> list[dict[str, Any]]:
         with connect(self.db_path) as conn:
@@ -2009,6 +2064,25 @@ class Repository:
                 (window_id,),
             ).fetchone()
             return float(row["value"] or 0.0)
+
+    def consecutive_session_losses(self, window_id: int | None = None) -> int:
+        with connect(self.db_path) as conn:
+            clause = "" if window_id is None else " AND window_id = ?"
+            params = () if window_id is None else (window_id,)
+            rows = conn.execute(
+                f"""
+                SELECT realized_pnl
+                FROM sessions
+                WHERE close_time IS NOT NULL{clause}
+                ORDER BY close_time DESC, id DESC
+                """, params
+            ).fetchall()
+        count = 0
+        for row in rows:
+            if float(row["realized_pnl"] or 0.0) >= 0:
+                break
+            count += 1
+        return count
 
     def window_stop_count(self, window_id: int | None) -> int:
         if window_id is None:

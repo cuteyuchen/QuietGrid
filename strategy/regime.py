@@ -382,9 +382,10 @@ def _normalized_cost_breakdown(
             "fee_net_edge_pct": step - hard_cost,
             "risk_adjusted_net_edge_pct": step - economic_cost,
             "net_edge_pct": step - economic_cost,
-            "cost_score": float(cost_score or 0.0),
         }
     )
+    if cost_score is not None:
+        result["cost_score"] = float(cost_score)
     return result
 
 

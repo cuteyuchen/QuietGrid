@@ -74,7 +74,7 @@ def test_current_round_includes_active_sessions_for_current_window(tmp_path: Pat
     repo.register_runtime("rt-live", now, pid=7, state="RUNNING")
     repo.request_round_start("test", "round-1", now)
     window_id = repo.claim_round_window("rt-live", now)
-    session_id = repo.create_session(window_id, "BCHUSDT", "RUNNING", 200, 1, now)
+    session_id = repo.create_session(window_id, "BCHUSDT", "DEFENSIVE", 200, 1, now)
     repo.update_session_soft_breach_count(session_id, 2)
     client = TestClient(create_app(config))
 
@@ -82,4 +82,5 @@ def test_current_round_includes_active_sessions_for_current_window(tmp_path: Pat
 
     assert len(body["sessions"]) == 1
     assert body["sessions"][0]["symbol"] == "BCHUSDT"
+    assert body["sessions"][0]["state_label"] == "防御模式"
     assert body["sessions"][0]["soft_breach_count"] == 2

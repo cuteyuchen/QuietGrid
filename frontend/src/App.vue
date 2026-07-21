@@ -179,8 +179,9 @@ const v2Dashboard = ref<V2DashboardData>({
   },
 })
 const currentRound = ref<CurrentRoundSnapshot | null>(null)
+const autoTradingResponseState = ref<AutoTradingUiState | null>(null)
 const autoTradingState = computed<AutoTradingUiState>(() => {
-  const current = currentRound.value?.autoTrading
+  const current = autoTradingResponseState.value || currentRound.value?.autoTrading
   const enabled = Boolean(current?.enabled)
   const transitioning = Boolean(autoTradingTransition.value)
   return {
@@ -228,6 +229,7 @@ let refreshTimer: number | undefined
 let eventSource: EventSource | undefined
 let eventRefreshTimer: number | undefined
 let hasLoadedData = false
+let refreshQueued = false
 
 function pageFromHash(): PageKey {
   const value = window.location.hash.replace(/^#\/?/, '') as PageKey
@@ -244,7 +246,10 @@ function navigate(page: string) {
 }
 
 async function refreshData(showInitial = false) {
-  if (refreshing.value) return
+  if (refreshing.value) {
+    refreshQueued = true
+    return
+  }
   refreshing.value = true
   if (showInitial) initialLoading.value = true
   try {
@@ -270,6 +275,7 @@ async function refreshData(showInitial = false) {
     v2Dashboard.value = dashboard
     if (roundSnapshot) {
       currentRound.value = roundSnapshot
+      autoTradingResponseState.value = null
       traderProcessState.value = roundSnapshot.trader
       if (roundSnapshot.round.state) {
         controlState.value = {
@@ -303,6 +309,10 @@ async function refreshData(showInitial = false) {
   } finally {
     refreshing.value = false
     initialLoading.value = false
+    if (refreshQueued) {
+      refreshQueued = false
+      void refreshData()
+    }
   }
 }
 
@@ -503,6 +513,19 @@ async function confirmAction(reason: string) {
         reason,
       })
       actionMessage.value = result.message
+      if (
+        (action.key === 'auto-trading-start' || action.key === 'auto-trading-stop')
+        && typeof result.enabled === 'boolean'
+      ) {
+        autoTradingResponseState.value = {
+          enabled: result.enabled,
+          transitioning: false,
+          transitionState: result.transition_state || (result.enabled ? 'ENABLED' : 'DISABLED'),
+          canStart: Boolean(result.can_start ?? !result.enabled),
+          canStop: Boolean(result.can_stop ?? result.enabled),
+          blockedReason: result.blocked_reason || '',
+        }
+      }
     }
     pendingAction.value = null
     await refreshData()

@@ -1,7 +1,7 @@
 {
-  "pid": 48188,
+  "pid": 55844,
   "account_id": "default",
-  "started_at": "2026-07-18T13:31:21.772403+00:00",
+  "started_at": "2026-07-20T00:51:53.696961+00:00",
   "command": [
     ".venv/Scripts/python.exe",
     "E:\\project\\QuietGrid\\trader.py",

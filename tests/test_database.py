@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from core.models import GridOrder, OrderSide, OrderStatus
+from core.models import GridDirectionMode, GridOrder, GridParams, OrderIntent, OrderSide, OrderStatus
 from db.database import connect, init_db
 from db.repository import Repository
 
@@ -105,7 +105,127 @@ def test_database_init_migrates_existing_sessions_with_volatility_columns(tmp_pa
         "volatility_current_value",
         "volatility_current_window",
         "volatility_current_at",
+        "direction_mode",
+        "direction_source",
+        "seed_position_side",
+        "seed_qty",
+        "seed_entry_price",
+        "seed_slippage_pct",
+        "seed_fee",
+        "last_retention_decision_at",
+        "cooldown_current_atr",
+        "cooldown_amplitude_pct",
+        "cooldown_amplitude_limit_pct",
+        "cooldown_reason",
+        "cooldown_evaluated_at",
     }.issubset(columns)
+
+
+def test_repository_persists_cooldown_evaluation_details(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "BCHUSDT", "COOLDOWN", 500, 1, now)
+
+    repo.update_session_cooldown_evaluation(
+        session_id,
+        current_atr=0.42,
+        amplitude_pct=0.00372,
+        amplitude_limit_pct=0.014136,
+        reason="最近窗口振幅仍然过大。",
+        evaluated_at=now,
+    )
+
+    session = repo.get_session(session_id)
+    assert session is not None
+    assert session["cooldown_current_atr"] == 0.42
+    assert session["cooldown_amplitude_pct"] == 0.00372
+    assert session["cooldown_amplitude_limit_pct"] == 0.014136
+    assert session["cooldown_reason"] == "最近窗口振幅仍然过大。"
+    assert session["cooldown_evaluated_at"] == now.isoformat()
+
+
+def test_repository_persists_v22_direction_source_and_order_semantics(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(
+        window_id,
+        "BTCUSDT",
+        "RUNNING",
+        500,
+        1,
+        now,
+        GridDirectionMode.LONG,
+        "symbol_override",
+    )
+    repo.upsert_order(
+        session_id,
+        GridOrder(
+            symbol="BTCUSDT",
+            order_id="reduce-1",
+            client_id="qg-reduce-1",
+            grid_index=3,
+            side=OrderSide.SELL,
+            price=65_000,
+            qty=0.001,
+            status=OrderStatus.OPEN,
+            created_at=now,
+            position_side="LONG",
+            order_intent=OrderIntent.REDUCE,
+        ),
+    )
+
+    session = repo.recent_rows("sessions", limit=1)[0]
+    order = repo.recent_rows("orders", limit=1)[0]
+
+    assert session["direction_mode"] == "LONG"
+    assert session["direction_source"] == "symbol_override"
+    assert order["position_side"] == "LONG"
+    assert order["order_intent"] == "REDUCE"
+
+
+def test_repository_persists_v22_grid_plan_economics(tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    init_db(db_path)
+    repo = Repository(db_path)
+    now = datetime(2026, 7, 4, tzinfo=timezone.utc)
+    window_id = repo.create_window(now)
+    session_id = repo.create_session(window_id, "BTCUSDT", "RUNNING", 500, 1, now)
+    repo.create_grid_plan(
+        session_id,
+        GridParams(
+            symbol="BTCUSDT",
+            upper=102,
+            lower=98,
+            center=100,
+            grid_num=4,
+            step_pct=0.01,
+            grid_prices=[98, 99, 100, 101, 102],
+            baseline_atr=1,
+            stop_loss_price=96,
+            calculated_at=now,
+            economics={
+                "configured_capital": 500,
+                "minimum_required_capital": 317,
+                "minimum_order_notional": 50,
+                "planned_min_order_notional": 78.9,
+                "worst_case_stop_loss": 2.1,
+                "risk_budget": 2.5,
+            },
+        ),
+    )
+
+    plan = repo.latest_grid_plan(session_id)
+
+    assert plan is not None
+    assert plan["economics"]["minimum_required_capital"] == 317
+    assert plan["economics"]["planned_min_order_notional"] == 78.9
+    assert plan["economics"]["worst_case_stop_loss"] == 2.1
 
 
 def test_dashboard_summary_counts_open_orders(tmp_path) -> None:

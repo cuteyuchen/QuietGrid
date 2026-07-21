@@ -129,6 +129,21 @@ def test_hard_blocks_override_score(kwargs: dict[str, float], expected_state: st
     assert decision.hard_blocks
 
 
+def test_skipped_cost_evaluation_is_not_reported_as_zero() -> None:
+    decision = RegimeEngine().evaluate(
+        "BTCUSDT",
+        _range_klines(),
+        spread_pct=0.002,
+        depth_usdt=20_000,
+        expected_step_pct=0.003,
+        cost_floor_pct=0.001,
+        include_cost=False,
+    )
+
+    assert decision.component_scores["cost"] is None
+    assert "cost_score" not in decision.cost_breakdown
+
+
 def test_hysteresis_uses_lower_stay_threshold_for_running_session() -> None:
     config = RegimeConfig(enter_threshold=95, stay_threshold=80)
     engine = RegimeEngine(config)

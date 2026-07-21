@@ -25,6 +25,7 @@ import MetricCard from '../components/MetricCard.vue'
 import MiniLineChart from '../components/MiniLineChart.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import BacktestDataPanel from '../components/backtest/BacktestDataPanel.vue'
+import type { GridDirectionMode } from '../mock'
 
 const props = defineProps<{
   accountId: string
@@ -42,14 +43,16 @@ const form = ref({
   datasetId: '',
   symbol: 'BTCUSDT',
   observeRows: 30,
-  capital: 200,
+  capital: 500,
   leverage: 1,
+  directionMode: 'NEUTRAL' as GridDirectionMode,
   makerFeeRate: 0,
   fillModel: 'L0_CONSERVATIVE',
   makerFillProbability: 0.65,
   maxFillsPerBar: 2,
   takerFeeRate: 0.0005,
   stopSlippageBps: 10,
+  seedSlippageBps: 10,
   fundingRatePerBar: 0,
   walkForwardTestRows: 12,
   monteCarloSimulations: 1000,
@@ -198,6 +201,14 @@ function sampleLabel(value: unknown) {
   return labels[String(value || '')] || String(value || '未标记')
 }
 
+function directionLabel(value: unknown) {
+  return {
+    NEUTRAL: '中性网格',
+    LONG: '做多网格',
+    SHORT: '做空网格',
+  }[String(value || 'NEUTRAL').toUpperCase()] || String(value || '—')
+}
+
 function metric(name: string) {
   const raw = selected.value?.metrics[name]
   return typeof raw === 'number' ? raw : Number(raw || 0)
@@ -343,6 +354,15 @@ function downloadReport() {
           <small>研究默认 1 倍，上限 2 倍。</small>
         </label>
         <label class="field">
+          <span>网格方向</span>
+          <select v-model="form.directionMode">
+            <option value="NEUTRAL">中性网格</option>
+            <option value="LONG">做多网格（含种子多仓）</option>
+            <option value="SHORT">做空网格（含种子空仓）</option>
+          </select>
+          <small>做多/做空模式会模拟种子市价仓位及 Taker 成本。</small>
+        </label>
+        <label class="field">
           <span>数据角色</span>
           <select v-model="form.sampleLabel" @change="form.parametersFrozen = false">
             <option value="DEVELOPMENT">开发集</option>
@@ -383,6 +403,11 @@ function downloadReport() {
             <label class="field">
               <span>止损滑点（bp）</span>
               <input v-model.number="form.stopSlippageBps" type="number" min="0" max="1000" step="1">
+            </label>
+            <label class="field">
+              <span>种子建仓滑点（bp）</span>
+              <input v-model.number="form.seedSlippageBps" type="number" min="0" max="20" step="1">
+              <small>仅做多/做空网格使用，最大 20 bp。</small>
             </label>
             <label class="field">
               <span>每 Bar 资金费率</span>
@@ -443,7 +468,7 @@ function downloadReport() {
               <strong>{{ run.symbol }}</strong>
               <StatusBadge :tone="run.status === 'COMPLETED' ? 'good' : run.status === 'FAILED' ? 'danger' : 'warning'" :label="run.status" />
             </span>
-            <small>{{ sampleLabel(run.config.sample_label) }} · {{ time(run.startedAt) }}</small>
+            <small>{{ sampleLabel(run.config.sample_label) }} · {{ directionLabel(run.config.direction_mode) }} · {{ time(run.startedAt) }}</small>
             <small v-if="run.datasetId" class="run-dataset-ref">Dataset {{ run.datasetId.slice(0, 24) }}… · {{ run.dataProvider || '—' }}</small>
             <small v-if="run.datasetChecksum" class="mono">Hash {{ run.datasetChecksum.slice(0, 12) }}… · {{ run.windowMode || 'NYSE_CLOSED_ONLY' }} · {{ run.windowCount ?? '—' }} 窗口</small>
             <small>{{ run.fillModel }} · DD {{ money(Number(run.metrics.max_drawdown || 0)) }}</small>
@@ -466,7 +491,7 @@ function downloadReport() {
             <div>
               <p class="eyebrow">回测报告</p>
               <h2 id="report-title">{{ selected.symbol }} · {{ selected.runId.slice(0, 8) }}</h2>
-              <p>{{ sampleLabel(validation?.sample_label || selected.config.sample_label) }} · {{ selected.fillModel }}</p>
+              <p>{{ sampleLabel(validation?.sample_label || selected.config.sample_label) }} · {{ directionLabel(selected.config.direction_mode) }} · {{ selected.fillModel }}</p>
             </div>
             <div class="header-actions">
               <StatusBadge

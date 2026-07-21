@@ -26,6 +26,7 @@ from trader import (
     _run_binance_order_smoke,
     _run_binance_price_stream_smoke,
     _run_binance_signed_write_health,
+    _require_binance_signed_write_health,
     _run_binance_test_order_smoke,
     _run_binance_listen_key_smoke,
     _run_binance_algo_stop_smoke,
@@ -1333,6 +1334,47 @@ def test_binance_live_entrypoints_require_signed_write_health(monkeypatch, tmp_p
             assert log["module"] == "binance_signed_write_health"
             assert caller in log["message"]
             assert "signed write timeout" in log["detail"]
+
+    asyncio.run(run())
+
+
+def test_binance_recovery_health_skips_account_configuration_writes(tmp_path) -> None:
+    class RecoveryExchange(OrderSmokeExchange):
+        async def set_margin_type(self, symbol: str, margin_type: str) -> None:
+            raise AssertionError("恢复已有会话时不应修改保证金模式")
+
+        async def set_leverage(self, symbol: str, leverage: int) -> None:
+            raise AssertionError("恢复已有会话时不应修改杠杆")
+
+    async def run() -> None:
+        db_path = tmp_path / "trader.db"
+        init_db(db_path)
+        exchange = RecoveryExchange()
+        exchange.orders["BTCUSDT"] = [{"orderId": "existing-1"}]
+        config = SimpleNamespace(
+            database_path=db_path,
+            raw={
+                "trading": {"leverage": 1},
+                "proxy": {"enabled": False},
+                "database": {"path": str(db_path)},
+            },
+        )
+
+        result = await _require_binance_signed_write_health(
+            exchange,
+            config,
+            ["BTCUSDT"],
+            "binance_loop",
+            recovery_mode=True,
+        )
+
+        assert result["signed_write_ok"] is True
+        assert result["recovery_mode"] is True
+        assert result["checks"] == {
+            "account": "ok",
+            "position": "ok",
+            "open_orders": 1,
+        }
 
     asyncio.run(run())
 

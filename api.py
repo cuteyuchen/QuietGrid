@@ -609,7 +609,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 if latest_risk
                 else "LOW"
             ),
-            "data_health": "HEALTHY" if latest_regime else "WAITING",
+            "data_health": _regime_data_health(ctx.config, latest_regime),
             "latest_regime": latest_regime,
             "latest_inventory": latest_inventory,
             "latest_risk": latest_risk,
@@ -640,6 +640,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 ),
             },
         }
+
 
     @app.get("/api/v2/regime/{symbol}")
     def v2_regime(
@@ -1184,6 +1185,29 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         return _enqueue_v2_command(ctx, request, "SAFETY_SWEEP", "SYSTEM", None, "SAFETY-SWEEP")
 
     return app
+
+
+def _regime_data_health(
+    config: AppConfig,
+    latest_regime: dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> str:
+    if not latest_regime:
+        return "WAITING"
+    raw_time = latest_regime.get("as_of_time")
+    if not raw_time:
+        return "STALE"
+    try:
+        as_of = datetime.fromisoformat(str(raw_time).replace("Z", "+00:00"))
+    except ValueError:
+        return "STALE"
+    if as_of.tzinfo is None:
+        as_of = as_of.replace(tzinfo=timezone.utc)
+    regime_config = config.raw.get("regime", {}) if isinstance(config.raw, dict) else {}
+    max_age_seconds = float(regime_config.get("max_data_age_seconds", 90.0))
+    age_seconds = ((now or datetime.now(timezone.utc)) - as_of.astimezone(timezone.utc)).total_seconds()
+    return "HEALTHY" if 0 <= age_seconds <= max_age_seconds else "STALE"
 
 
 class ConsoleActionRequest(BaseModel):
@@ -4003,7 +4027,9 @@ def _run_auto_trading_action(
     control, changed = repo.ensure_auto_trading_control(control, now)
     trader_state = _trader_process_status(config, repo)
     start_payload: dict[str, Any] | None = None
-    if changed and enabled and not trader_state.get("alive"):
+    trader_start_attempted = False
+    if enabled and not trader_state.get("alive"):
+        trader_start_attempted = True
         try:
             start_payload = _run_trader_process_action(
                 config, repo, request, "start", wait_for_heartbeat=True
@@ -4038,7 +4064,11 @@ def _run_auto_trading_action(
             (
                 "自动交易已启用，系统将在 Trader 在线后检查交易窗口。"
                 if changed
-                else "自动交易已经启用。"
+                else (
+                    "自动交易已经启用，已请求恢复离线 Trader。"
+                    if trader_start_attempted
+                    else "自动交易已经启用。"
+                )
             )
             if enabled
             else (
@@ -4327,11 +4357,26 @@ def _session_payload(
         "close_reason": row.get("close_reason"),
         "soft_breach_count": int(row.get("soft_breach_count") or 0),
         "last_retention_decision_at": row.get("last_retention_decision_at"),
+        "cooldown_current_atr": row.get("cooldown_current_atr"),
+        "cooldown_amplitude_pct": row.get("cooldown_amplitude_pct"),
+        "cooldown_amplitude_limit_pct": row.get("cooldown_amplitude_limit_pct"),
+        "cooldown_reason": row.get("cooldown_reason"),
+        "cooldown_evaluated_at": row.get("cooldown_evaluated_at"),
         "direction_mode": str(row.get("direction_mode") or "NEUTRAL").upper(),
-        "direction_source": "symbol_override" if symbol.upper() in {
-            str(item).upper()
-            for item in config.raw.get("trading", {}).get("direction_overrides", {})
-        } else "global",
+        "direction_source": (
+            str(row.get("direction_source") or "").strip().lower()
+            or (
+                "symbol_override"
+                if symbol.upper()
+                in {
+                    str(item).upper()
+                    for item in config.raw.get("trading", {}).get(
+                        "direction_overrides", {}
+                    )
+                }
+                else "global"
+            )
+        ),
         "seed_position_side": row.get("seed_position_side"),
         "seed_qty": row.get("seed_qty"),
         "seed_entry_price": row.get("seed_entry_price"),

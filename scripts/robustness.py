@@ -63,6 +63,7 @@ class FreezeRequest:
     output_dir: Path
     interval: str = "1m"
     max_missing_ratio: float = 0.001
+    market_path: str = "futures/um"
 
 
 @dataclass(frozen=True)
@@ -320,7 +321,12 @@ async def freeze_binance_archives(
     output_dir = request.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     staging = output_dir / f".{symbol.lower()}_{uuid4().hex}.csv.tmp"
-    source = (source_factory or BinanceArchiveHistoricalDataSource)()
+    source = (
+        source_factory()
+        if source_factory is not None
+        else BinanceArchiveHistoricalDataSource(market_path=request.market_path)
+    )
+    market_code, market_name = _archive_market_identity(source.market_path)
     available_end = datetime.combine(
         source.archive_available_until() + timedelta(days=1),
         time.min,
@@ -387,7 +393,7 @@ async def freeze_binance_archives(
 
         checksum = _sha256_file(staging)
         dataset_id = (
-            f"binance_um_{symbol.lower()}_1m_"
+            f"binance_{market_code}_{symbol.lower()}_1m_"
             f"{first_open_time}_{last_open_time}_{checksum[:12]}"
         )
         data_path = output_dir / f"{dataset_id}.csv"
@@ -407,7 +413,7 @@ async def freeze_binance_archives(
             "schema_version": SCHEMA_VERSION,
             "dataset_id": dataset_id,
             "provider": "binance_archive",
-            "market": "USDS_M",
+            "market": market_name,
             "market_path": source.market_path,
             "symbol": symbol,
             "interval": "1m",
@@ -457,6 +463,18 @@ def verify_frozen_dataset(manifest_path: str | Path) -> dict[str, Any]:
     if counted != int(manifest.get("row_count") or 0):
         raise ValueError("冻结数据集行数与 manifest 不一致。")
     return manifest
+
+
+def _archive_market_identity(market_path: str) -> tuple[str, str]:
+    normalized = str(market_path).strip("/").lower()
+    identities = {
+        "futures/um": ("um", "USDS_M"),
+        "futures/cm": ("cm", "COIN_M"),
+        "spot": ("spot", "SPOT"),
+    }
+    if normalized not in identities:
+        raise ValueError(f"不支持的 Binance 归档市场: {market_path}")
+    return identities[normalized]
 
 
 def load_weekend_windows(

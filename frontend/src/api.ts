@@ -269,6 +269,15 @@ export type V2GridPlan = {
   regimeScore: number | null
   parameterVersion: string
   directionMode: 'LONG' | 'SHORT' | 'NEUTRAL'
+  economics: {
+    configuredCapital: number | null
+    minimumRequiredCapital: number | null
+    minimumOrderNotional: number | null
+    plannedMinOrderNotional: number | null
+    worstCaseStopLoss: number | null
+    riskBudget: number | null
+    remainingRiskBudget: number | null
+  }
 }
 
 export type V2SessionWorkspace = {
@@ -578,12 +587,14 @@ export type V2BacktestRequest = {
   observeRows: number
   capital: number
   leverage: number
+  directionMode: 'LONG' | 'SHORT' | 'NEUTRAL'
   makerFeeRate: number
   fillModel: string
   makerFillProbability: number
   maxFillsPerBar: number
   takerFeeRate: number
   stopSlippageBps: number
+  seedSlippageBps: number
   fundingRatePerBar: number
   walkForwardTestRows: number
   monteCarloSimulations: number
@@ -654,6 +665,11 @@ type ApiSession = {
   state_label: string
   soft_breach_count?: number
   last_retention_decision_at?: string
+  cooldown_current_atr?: number | null
+  cooldown_amplitude_pct?: number | null
+  cooldown_amplitude_limit_pct?: number | null
+  cooldown_reason?: string | null
+  cooldown_evaluated_at?: string | null
   direction_mode?: 'LONG' | 'SHORT' | 'NEUTRAL'
   direction_source?: string
   seed_position_side?: string | null
@@ -905,6 +921,11 @@ export type ConsoleActionResult = {
   label: string
   request_id: string
   message: string
+  enabled?: boolean
+  transition_state?: string
+  can_start?: boolean
+  can_stop?: boolean
+  blocked_reason?: string
   control_state?: ApiControlState
   result?: unknown
 }
@@ -1299,12 +1320,14 @@ export async function startV2Backtest(
       observe_rows: request.observeRows,
       capital: request.capital,
       leverage: request.leverage,
+      direction_mode: request.directionMode,
       maker_fee_rate: request.makerFeeRate,
       fill_model: request.fillModel,
       maker_fill_probability: request.makerFillProbability,
       max_fills_per_bar: request.maxFillsPerBar,
       taker_fee_rate: request.takerFeeRate,
       stop_slippage_bps: request.stopSlippageBps,
+      seed_slippage_bps: request.seedSlippageBps,
       funding_rate_per_bar: request.fundingRatePerBar,
       walk_forward_test_rows: request.walkForwardTestRows,
       monte_carlo_simulations: request.monteCarloSimulations,
@@ -1380,6 +1403,15 @@ function mapV2Risk(value: ApiV2RiskSnapshot): V2RiskSnapshot {
 }
 
 function mapV2GridPlan(value: Record<string, unknown>): V2GridPlan {
+  const economics = (
+    value.economics && typeof value.economics === 'object'
+      ? value.economics
+      : value.economics_json && typeof value.economics_json === 'object'
+        ? value.economics_json
+        : {}
+  ) as Record<string, unknown>
+  const riskBudget = nullableUnknownNumber(economics.risk_budget)
+  const worstCaseStopLoss = nullableUnknownNumber(economics.worst_case_stop_loss)
   return {
     symbol: String(value.symbol || ''),
     asOfTime: String(value.as_of_time || ''),
@@ -1398,6 +1430,17 @@ function mapV2GridPlan(value: Record<string, unknown>): V2GridPlan {
     regimeScore: nullableUnknownNumber(value.regime_score),
     parameterVersion: String(value.parameter_version || ''),
     directionMode: (String(value.direction_mode || 'NEUTRAL').toUpperCase() as 'LONG' | 'SHORT' | 'NEUTRAL'),
+    economics: {
+      configuredCapital: nullableUnknownNumber(economics.configured_capital),
+      minimumRequiredCapital: nullableUnknownNumber(economics.minimum_required_capital),
+      minimumOrderNotional: nullableUnknownNumber(economics.minimum_order_notional),
+      plannedMinOrderNotional: nullableUnknownNumber(economics.planned_min_order_notional),
+      worstCaseStopLoss,
+      riskBudget,
+      remainingRiskBudget: riskBudget == null || worstCaseStopLoss == null
+        ? null
+        : Math.max(0, riskBudget - worstCaseStopLoss),
+    },
   }
 }
 
@@ -2102,21 +2145,30 @@ export function mapLiquidityCandidate(value: ApiLiquidityCandidate): LiquidityCa
       levelCount: nullableUnknownNumber(gridPreview.level_count),
     },
     economics: {
+      directionMode: economics.direction_mode
+        ? String(economics.direction_mode).toUpperCase() as 'LONG' | 'SHORT' | 'NEUTRAL'
+        : undefined,
       makerFeeRate: nullableUnknownNumber(economics.maker_fee_rate ?? value.maker_fee_rate),
       makerFeeSource: String(economics.maker_fee_source || value.maker_fee_source || ''),
       makerFeeCheckedAt: String(
         economics.maker_fee_checked_at || value.maker_fee_checked_at || '',
       ),
+      takerFeeRate: nullableUnknownNumber(economics.taker_fee_rate),
       makerRoundTripPct: nullableUnknownNumber(economics.maker_round_trip_pct),
       projectedFundingPct: nullableUnknownNumber(economics.projected_funding_pct),
       grossStepPct: nullableUnknownNumber(economics.gross_step_pct),
       hardCostPct: nullableUnknownNumber(economics.hard_cost_pct),
       feeNetEdgePct: nullableUnknownNumber(economics.fee_net_edge_pct),
       riskDiscountPct: nullableUnknownNumber(economics.risk_discount_pct),
+      seedExecutionCostPct: nullableUnknownNumber(economics.seed_execution_cost_pct),
       estimatedCrossingsPerHour: nullableUnknownNumber(economics.estimated_crossings_per_hour),
       objectiveValue: nullableUnknownNumber(economics.objective_value),
+      configuredCapital: nullableUnknownNumber(economics.configured_capital),
+      minimumRequiredCapital: nullableUnknownNumber(economics.minimum_required_capital),
       plannedMinOrderNotional: nullableUnknownNumber(economics.planned_min_order_notional),
       minimumOrderNotional: nullableUnknownNumber(economics.minimum_order_notional),
+      worstCaseStopLoss: nullableUnknownNumber(economics.worst_case_stop_loss),
+      riskBudget: nullableUnknownNumber(economics.risk_budget),
       rejectedReason: String(economics.rejected_reason || ''),
     },
   }
@@ -2173,6 +2225,11 @@ function mapSession(value: ApiSession): GridSession {
     stateLabel: value.state_label,
     softBreachCount: Math.trunc(toNumber(value.soft_breach_count)),
     lastRetentionDecisionAt: compactTime(value.last_retention_decision_at || ''),
+    cooldownCurrentAtr: nullableNumber(value.cooldown_current_atr),
+    cooldownAmplitudePct: nullableNumber(value.cooldown_amplitude_pct),
+    cooldownAmplitudeLimitPct: nullableNumber(value.cooldown_amplitude_limit_pct),
+    cooldownReason: value.cooldown_reason || '',
+    cooldownEvaluatedAt: compactTime(value.cooldown_evaluated_at || ''),
     directionMode: value.direction_mode || 'NEUTRAL',
     directionSource: value.direction_source || 'global',
     seedPositionSide: value.seed_position_side || '',

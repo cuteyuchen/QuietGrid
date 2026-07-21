@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 import api as api_module
 from api import create_app
 from core.config import AccountConfig, AppConfig
-from core.models import GridOrder, OrderSide, OrderStatus
+from core.models import GridDirectionMode, GridOrder, GridParams, OrderSide, OrderStatus
 from db.database import init_db
 from db.repository import Repository
 from data_sources.base import HistoricalDataSource
@@ -100,7 +100,16 @@ def test_console_api_exposes_summary_and_active_sessions(tmp_path) -> None:
     repo = Repository(db_path)
     now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc)
     window_id = repo.create_window(now)
-    session_id = repo.create_session(window_id, "BTCUSDT", "RUNNING", 200, 10, now)
+    session_id = repo.create_session(
+        window_id,
+        "BTCUSDT",
+        "RUNNING",
+        200,
+        10,
+        now,
+        direction_mode="LONG",
+        direction_source="symbol_override",
+    )
     repo.update_session_grid(
         session_id,
         grid_upper=101.0,
@@ -114,6 +123,14 @@ def test_console_api_exposes_summary_and_active_sessions(tmp_path) -> None:
         volatility_window=60,
     )
     repo.update_session_current_volatility(session_id, 0.0105, 30, now)
+    repo.update_session_cooldown_evaluation(
+        session_id,
+        current_atr=0.42,
+        amplitude_pct=0.00372,
+        amplitude_limit_pct=0.014136,
+        reason="最近窗口振幅仍然过大。",
+        evaluated_at=now,
+    )
     repo.upsert_order(
         session_id,
         GridOrder(
@@ -149,9 +166,16 @@ def test_console_api_exposes_summary_and_active_sessions(tmp_path) -> None:
     sessions = client.get("/api/sessions/active").json()["items"]
     assert len(sessions) == 1
     assert sessions[0]["id"] == session_id
+    assert sessions[0]["direction_mode"] == "LONG"
+    assert sessions[0]["direction_source"] == "symbol_override"
     assert sessions[0]["state_label"] == "网格运行"
     assert sessions[0]["volatility_method_label"] == "Garman-Klass"
     assert sessions[0]["current_volatility"] == 0.0105
+    assert sessions[0]["cooldown_current_atr"] == 0.42
+    assert sessions[0]["cooldown_amplitude_pct"] == 0.00372
+    assert sessions[0]["cooldown_amplitude_limit_pct"] == 0.014136
+    assert sessions[0]["cooldown_reason"] == "最近窗口振幅仍然过大。"
+    assert sessions[0]["cooldown_evaluated_at"] == now.isoformat()
     assert sessions[0]["open_order_count"] == 1
     assert sessions[0]["volatility_stage"] == "trading"
     assert sessions[0]["volatility_progress_pct"] == 1.0
@@ -913,6 +937,11 @@ def test_console_strategy_config_draft_api_persists_diff(tmp_path) -> None:
     response = client.post(
         "/api/strategy-config/draft",
         json={
+            "direction_mode": "LONG",
+            "direction_overrides": {
+                "ETHUSDT": "SHORT",
+                "BCHUSDT": "NEUTRAL",
+            },
             "volatility_method": "yang_zhang",
             "leverage": 7,
             "capital_per_symbol": 150,
@@ -951,6 +980,11 @@ def test_console_strategy_config_draft_api_persists_diff(tmp_path) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["draft"]["volatility_method"] == "yang_zhang"
+    assert body["draft"]["direction_mode"] == "LONG"
+    assert body["draft"]["direction_overrides"] == {
+        "ETHUSDT": "SHORT",
+        "BCHUSDT": "NEUTRAL",
+    }
     assert body["draft"]["leverage"] == 7
     assert body["draft"]["capital_per_symbol"] == 150
     assert body["draft"]["observe_kline_interval"] == "5m"
@@ -958,6 +992,8 @@ def test_console_strategy_config_draft_api_persists_diff(tmp_path) -> None:
     assert body["draft"]["safety_multiplier"] == 4.2
     assert body["draft"]["take_profit_usdt"] == 8
     assert {item["key"] for item in body["diff"]} >= {
+        "direction_mode",
+        "direction_overrides",
         "volatility_method",
         "leverage",
         "capital_per_symbol",
@@ -1112,6 +1148,55 @@ def test_trader_process_command_mode_runs_configured_stop_command_with_audit(mon
     assert calls == [["qgctl", "status"], ["qgctl", "status"], ["qgctl", "stop"], ["qgctl", "status"]]
     logs = Repository(db_path).recent_rows("system_logs", limit=2)
     assert [row["message"] for row in logs] == ["Console action completed.", "Console action requested."]
+
+
+def test_auto_trading_start_recovers_offline_trader_when_already_enabled(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "quietgrid.db"
+    config = _test_config(db_path)
+    client = TestClient(create_app(config))
+    repo = Repository(db_path)
+    now = datetime.now(timezone.utc)
+    repo.ensure_auto_trading_control(
+        {
+            "enabled": True,
+            "requested_at": now.isoformat(),
+            "requested_by": "test",
+            "request_id": "existing-auto-control",
+            "mode": "AUTO_WINDOW",
+            "account_id": "default",
+        },
+        now,
+    )
+    starts = []
+
+    monkeypatch.setattr(
+        api_module,
+        "_trader_process_status",
+        lambda *_args, **_kwargs: {
+            "alive": False,
+            "process_state": "OFFLINE",
+            "state": "stopped",
+        },
+    )
+
+    def fake_start(config, repo, request, operation, *, wait_for_heartbeat=True):
+        starts.append((operation, wait_for_heartbeat))
+        return {"ok": True, "action": "trader_loop_start"}
+
+    monkeypatch.setattr(api_module, "_run_trader_process_action", fake_start)
+
+    response = client.post(
+        "/api/actions/auto-trading/start",
+        json={"confirm": True, "reason": "恢复离线 Trader", "request_id": "recover-trader"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["changed"] is False
+    assert body["trader_start"]["action"] == "trader_loop_start"
+    assert body["message"] == "自动交易已经启用，已请求恢复离线 Trader。"
+    assert starts == [("start", True)]
+    assert Repository(db_path).auto_trading_control()["request_id"] == "existing-auto-control"
 
 
 def test_console_bounded_run_uses_current_environment(monkeypatch, tmp_path) -> None:
@@ -1290,6 +1375,26 @@ def test_v2_health_dashboard_and_active_config(tmp_path) -> None:
     assert "database" not in active_config.json()["sections"]
 
 
+def test_regime_data_health_uses_snapshot_age(tmp_path) -> None:
+    from api import _regime_data_health
+
+    config = _test_config(tmp_path / "quietgrid-regime-health.db")
+    config.raw["regime"] = {"max_data_age_seconds": 90}
+    now = datetime(2026, 7, 20, 12, 0, tzinfo=timezone.utc)
+
+    assert _regime_data_health(config, None, now=now) == "WAITING"
+    assert _regime_data_health(
+        config,
+        {"as_of_time": "2026-07-20T11:59:30+00:00"},
+        now=now,
+    ) == "HEALTHY"
+    assert _regime_data_health(
+        config,
+        {"as_of_time": "2026-07-20T11:55:00+00:00"},
+        now=now,
+    ) == "STALE"
+
+
 def test_v2_control_command_is_idempotent_and_audited(tmp_path) -> None:
     db_path = tmp_path / "quietgrid-v2-command.db"
     client = TestClient(create_app(_test_config(db_path)))
@@ -1380,10 +1485,12 @@ def test_v2_backtest_center_lists_datasets_runs_and_reports(tmp_path) -> None:
             "dataset": "btc-1m.csv",
             "symbol": "BTCUSDT",
             "observe_rows": 30,
-            "capital": 200,
+            "capital": 500,
             "leverage": 1,
+            "direction_mode": "LONG",
             "maker_fee_rate": 0,
             "fill_model": "L0_CONSERVATIVE",
+            "seed_slippage_bps": 7,
         },
     )
 
@@ -1393,6 +1500,8 @@ def test_v2_backtest_center_lists_datasets_runs_and_reports(tmp_path) -> None:
     body = created.json()
     assert body["status"] == "COMPLETED"
     assert body["symbol"] == "BTCUSDT"
+    assert body["config"]["direction_mode"] == "LONG"
+    assert body["config"]["seed_slippage_bps"] == 7
     assert body["metrics"]["profit_factor"] >= 0
     assert body["metrics"]["walk_forward_fold_count"] >= 1
     assert body["report"]["equity_curve"]
@@ -1865,6 +1974,30 @@ def test_v2_workspace_history_and_order_reconciliation(monkeypatch, tmp_path) ->
     now = datetime.now(timezone.utc)
     window_id = repo.create_window(now)
     session_id = repo.create_session(window_id, "BTCUSDT", "RUNNING", 100, 1, now)
+    repo.create_grid_plan(
+        session_id,
+        GridParams(
+            symbol="BTCUSDT",
+            upper=102,
+            lower=98,
+            center=100,
+            grid_num=4,
+            step_pct=0.01,
+            grid_prices=[98, 99, 100, 101, 102],
+            baseline_atr=1,
+            stop_loss_price=96,
+            calculated_at=now,
+            direction_mode=GridDirectionMode.LONG,
+            economics={
+                "configured_capital": 500,
+                "minimum_required_capital": 317,
+                "planned_min_order_notional": 78.9,
+                "minimum_order_notional": 50,
+                "worst_case_stop_loss": 2.1,
+                "risk_budget": 2.5,
+            },
+        ),
+    )
     feature_id = repo.create_feature_snapshot(
         session_id=session_id,
         symbol="BTCUSDT",
@@ -1951,6 +2084,11 @@ def test_v2_workspace_history_and_order_reconciliation(monkeypatch, tmp_path) ->
     assert [item["grid_score"] for item in history.json()["items"]] == [81.0, 86.0]
     assert workspace.status_code == 200
     assert workspace.json()["orders"][0]["client_id"] == "grid-local-1"
+    grid_plan = workspace.json()["grid_plan"]
+    assert grid_plan["direction_mode"] == "LONG"
+    assert grid_plan["economics"]["minimum_required_capital"] == 317
+    assert grid_plan["economics"]["planned_min_order_notional"] == 78.9
+    assert grid_plan["economics"]["worst_case_stop_loss"] == 2.1
     assert reconciliation.status_code == 200
     body = reconciliation.json()
     assert body["consistent"] is False

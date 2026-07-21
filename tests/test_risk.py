@@ -220,3 +220,20 @@ def test_v2_entry_requires_regime_approval() -> None:
     decision = manager.can_open_new_symbol([], 200, regime_allowed=False)
 
     assert decision.action == RiskAction.BLOCK
+
+
+def test_v2_entry_halts_after_consecutive_session_losses() -> None:
+    manager = RiskManager(
+        scheduler=FakeScheduler(force_close=False),
+        config=RiskConfig(
+            take_profit_usdt=10,
+            total_capital_limit=1000,
+            max_concurrent=3,
+            max_consecutive_session_losses=2,
+        ),
+    )
+
+    decision = manager.can_open_new_symbol([], 200, consecutive_session_losses=2)
+
+    assert decision.action == RiskAction.HALT_WINDOW
+    assert "连续亏损" in decision.reason

@@ -33,8 +33,40 @@ function number(value: number | null | undefined, digits = 3) {
   return value.toFixed(digits)
 }
 
+function directionLabel(value: string | null | undefined) {
+  if (!value) return '—'
+  return {
+    LONG: '做多',
+    SHORT: '做空',
+    NEUTRAL: '中性',
+  }[String(value).toUpperCase()] || String(value)
+}
+
+function marketStateLabel(value: string | null | undefined) {
+  return {
+    QUIET_RANGE: '震荡区间',
+    TREND_UP: '上升趋势',
+    TREND_DOWN: '下降趋势',
+    TREND: '趋势行情',
+    VOLATILE: '高波动',
+    ILLIQUID: '流动性不足',
+    EVENT_RISK: '事件风险',
+    UNKNOWN_DATA: '数据异常',
+  }[String(value || '').toUpperCase()] || String(value || '—')
+}
+
 function resultLabel(item: LiquidityCandidate) {
-  if (item.verdict) return item.verdict
+  const value = item.verdict || (item.thresholdMet ? 'ALLOWED' : item.blockCode || '')
+  const labels: Record<string, string> = {
+    ALLOWED: '准入通过',
+    BLOCKED_SCORE: '评分不足',
+    BLOCKED_COST: '成本不成立',
+    BLOCKED_ECONOMICS: '网格经济性不成立',
+    BLOCKED_RISK: '风险预算不足',
+    BLOCKED_HARD: '硬条件阻断',
+    BLOCKED_DATA: '数据阻断',
+  }
+  if (value) return labels[value] || value
   return item.thresholdMet ? 'ALLOWED' : item.blockCode || '未通过'
 }
 </script>
@@ -50,6 +82,7 @@ function resultLabel(item: LiquidityCandidate) {
           <th>数据年龄</th>
           <th>市场状态</th>
           <th>评分</th>
+          <th>方向</th>
           <th>网格方案</th>
           <th>实际格距</th>
           <th>硬成本</th>
@@ -57,6 +90,8 @@ function resultLabel(item: LiquidityCandidate) {
           <th>预计穿越/小时</th>
           <th>目标值</th>
           <th>每格金额/门槛</th>
+          <th>本金/最低所需</th>
+          <th>最坏损失/预算</th>
           <th>准入结果</th>
           <th>原因</th>
         </tr>
@@ -67,8 +102,9 @@ function resultLabel(item: LiquidityCandidate) {
           <td>{{ item.stage || '—' }}</td>
           <td>{{ klineLabel(item) }}</td>
           <td>{{ ageLabel(item) }}</td>
-          <td>{{ item.marketState || '—' }}</td>
+          <td>{{ marketStateLabel(item.marketState) }}</td>
           <td>{{ item.regimeScore == null ? '—' : item.regimeScore.toFixed(0) }}</td>
+          <td>{{ directionLabel(item.economics?.directionMode) }}</td>
           <td>{{ gridLabel(item) }}</td>
           <td>{{ pct(item.economics?.grossStepPct, 3) }}</td>
           <td
@@ -87,6 +123,16 @@ function resultLabel(item: LiquidityCandidate) {
             {{ number(item.economics?.minimumOrderNotional, 2) }} USDT
           </td>
           <td>
+            {{ number(item.economics?.configuredCapital, 2) }}
+            /
+            {{ number(item.economics?.minimumRequiredCapital, 2) }} USDT
+          </td>
+          <td>
+            {{ number(item.economics?.worstCaseStopLoss, 2) }}
+            /
+            {{ number(item.economics?.riskBudget, 2) }} USDT
+          </td>
+          <td>
             <span
               class="verdict"
               :class="{ allowed: item.thresholdMet, blocked: !item.thresholdMet }"
@@ -97,7 +143,7 @@ function resultLabel(item: LiquidityCandidate) {
           <td>{{ item.economics?.rejectedReason || item.blockCode || item.error || '—' }}</td>
         </tr>
         <tr v-if="!candidates.length">
-          <td colspan="15">暂无候选评估</td>
+          <td colspan="18">暂无候选评估</td>
         </tr>
       </tbody>
     </table>

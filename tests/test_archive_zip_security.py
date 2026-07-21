@@ -60,6 +60,24 @@ def test_reads_archive_with_header_row() -> None:
     assert len(rows) == 1
 
 
+def test_normalizes_spot_microsecond_timestamps_to_milliseconds() -> None:
+    open_time_us = 1_782_864_000_000_000
+    close_time_us = open_time_us + 59_999_999
+    body = (
+        f"{open_time_us},100,101,99,100,12.5,"
+        f"{close_time_us},1250,9,0,0,0"
+    )
+
+    rows = read_archive_klines(
+        _make_zip(body=body),
+        expected_csv_name=CSV_NAME,
+        max_uncompressed_bytes=10_000_000,
+    )
+
+    assert rows[0].open_time == 1_782_864_000_000
+    assert rows[0].close_time == 1_782_864_059_999
+
+
 def test_rejects_multiple_csv() -> None:
     data = _make_zip(extra_files={"BTCUSDT-1m-2026-04-02.csv": _kline_line(1)})
     with pytest.raises(DataSourceError, match="只允许一个"):

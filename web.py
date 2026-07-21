@@ -306,6 +306,7 @@ _VALUE_LABELS = {
     "IDLE": "空闲",
     "OBSERVING": "观察期",
     "RUNNING": "网格运行",
+    "DEFENSIVE": "防御模式",
     "COOLDOWN": "冷静期",
     "CLOSING": "强制离场",
     "STOPPED": "已停止",

@@ -73,6 +73,7 @@ class InventoryManager:
         *,
         mark_price: float,
         max_inventory_notional: float,
+        baseline_inventory_notional: float = 0.0,
         trend_direction: int = 0,
         minutes_to_close: float | None = None,
     ) -> InventoryDecision:
@@ -80,6 +81,7 @@ class InventoryManager:
             orders,
             mark_price=mark_price,
             max_inventory_notional=max_inventory_notional,
+            baseline_inventory_notional=baseline_inventory_notional,
             trend_direction=trend_direction,
             minutes_to_close=minutes_to_close,
         )
@@ -100,11 +102,13 @@ class InventoryManager:
         *,
         mark_price: float,
         max_inventory_notional: float,
+        baseline_inventory_notional: float = 0.0,
         trend_direction: int = 0,
         minutes_to_close: float | None = None,
     ) -> InventorySnapshot:
         mark = _positive(mark_price, "mark_price")
         cap = _positive(max_inventory_notional, "max_inventory_notional")
+        baseline = _non_negative(baseline_inventory_notional, "baseline_inventory_notional")
         long_lots: list[InventoryLot] = []
         short_lots: list[InventoryLot] = []
         filled = sorted(
@@ -144,7 +148,17 @@ class InventoryManager:
         net_notional = net_qty * mark
         gross_notional = (long_qty + short_qty) * mark
         directional_notional = max(abs(net_notional), gross_notional * 0.5)
-        utilization = directional_notional / cap
+        # Directional grids intentionally seed inventory before placing their
+        # reduce-side orders.  Treat that planned seed as consumed baseline
+        # rather than immediately classifying the fresh session as HIGH.
+        baseline = min(baseline, cap)
+        incremental_notional = max(0.0, directional_notional - baseline)
+        incremental_capacity = cap - baseline
+        utilization = (
+            incremental_notional / incremental_capacity
+            if incremental_capacity > 1e-12
+            else (1.0 if incremental_notional > 1e-12 else 0.0)
+        )
         if net_qty > 0:
             avg_entry = _weighted_average(long_lots)
         elif net_qty < 0:
@@ -241,4 +255,14 @@ def _positive(value: Any, label: str) -> float:
         raise ValueError(f"{label} 必须为正的有限数。") from exc
     if not isfinite(number) or number <= 0:
         raise ValueError(f"{label} 必须为正的有限数。")
+    return number
+
+
+def _non_negative(value: Any, label: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} 必须为非负有限数。") from exc
+    if not isfinite(number) or number < 0:
+        raise ValueError(f"{label} 必须为非负有限数。")
     return number

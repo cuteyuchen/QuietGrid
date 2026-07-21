@@ -885,6 +885,9 @@ def test_joint_seed_diagnostic_keeps_final_oos_sealed(
     assert report["symbol_policies"]["ETHUSDT"]["max_unpaired_lots_per_side"] == 0
     assert report["symbol_policies"]["ETHUSDT"]["reduce_target_step_fraction"] == pytest.approx(1.0)
     assert captured_symbol_policies >= {(1, 0.5), (0, 1.0)}
+    checks = report["seeds"][0]["scenarios"]["BASE"]["checks"]
+    assert isinstance(checks["development_each_symbol_positive"], bool)
+    assert isinstance(checks["validation_each_symbol_profit_factor"], bool)
     assert report["symbol_policies"]["ETHUSDT"]["entry_filter"]["filter_id"] == "de1.00_ve10.00_rr0.00"
     assert all(cache_key[2] != final_window_id for cache_key in research._cache)
     json_path, md_path = write_joint_seed_diagnostic(report, tmp_path, stem="joint")

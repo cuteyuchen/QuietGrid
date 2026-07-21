@@ -1694,6 +1694,18 @@ class RobustnessResearch:
                     fill_seed_salt=salt,
                 )
                 checks = _entry_filter_checks(dev_metrics, validation_metrics)
+                checks.update({
+                    f"development_{check_name}": passed
+                    for check_name, passed in _symbol_metric_checks(
+                        dev_ops["symbol_metrics"]
+                    ).items()
+                })
+                checks.update({
+                    f"validation_{check_name}": passed
+                    for check_name, passed in _symbol_metric_checks(
+                        validation_ops["symbol_metrics"]
+                    ).items()
+                })
                 scenarios[name] = {
                     "maker_fee_rate": maker_fee,
                     "taker_fee_rate": taker_fee,
@@ -3834,16 +3846,6 @@ def _joint_oos_checks(
     portfolio: AggregateMetrics,
     symbol_metrics: dict[str, dict[str, Any]],
 ) -> dict[str, bool]:
-    def acceptable_profit_factor(metrics: dict[str, Any]) -> bool:
-        profit_factor = metrics.get("profit_factor")
-        return (
-            profit_factor is not None and float(profit_factor) >= 1.05
-        ) or (
-            profit_factor is None
-            and float(metrics.get("total_pnl") or 0.0) > 0
-            and float(metrics.get("max_drawdown") or 0.0) == 0
-        )
-
     return {
         "portfolio_positive": portfolio.total_pnl > 0,
         "portfolio_profit_factor": (
@@ -3856,6 +3858,24 @@ def _joint_oos_checks(
         "portfolio_max_drawdown": portfolio.max_drawdown_pct <= 0.05,
         "portfolio_trade_coverage": portfolio.trade_coverage >= 0.25,
         "portfolio_not_single_window": portfolio.best_window_concentration <= 0.35,
+        **_symbol_metric_checks(symbol_metrics),
+    }
+
+
+def _symbol_metric_checks(
+    symbol_metrics: dict[str, dict[str, Any]],
+) -> dict[str, bool]:
+    def acceptable_profit_factor(metrics: dict[str, Any]) -> bool:
+        profit_factor = metrics.get("profit_factor")
+        return (
+            profit_factor is not None and float(profit_factor) >= 1.05
+        ) or (
+            profit_factor is None
+            and float(metrics.get("total_pnl") or 0.0) > 0
+            and float(metrics.get("max_drawdown") or 0.0) == 0
+        )
+
+    return {
         "each_symbol_positive": all(
             float(item.get("total_pnl") or 0.0) > 0
             for item in symbol_metrics.values()

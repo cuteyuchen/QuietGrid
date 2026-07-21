@@ -9,7 +9,7 @@ from typing import Any
 from strategy.grid_calculator import GridCalculationError, calculate_atr
 
 
-REGIME_MODEL_VERSION = "regime-rules-v2.1.1"
+REGIME_MODEL_VERSION = "regime-rules-v2.2.0"
 REGIME_FEATURE_VERSION = "regime-features-v2.1.0"
 
 
@@ -35,6 +35,11 @@ class RegimeConfig:
     min_depth_usdt: float = 10_000.0
     soft_breach_limit: int = 3
     weights: RegimeWeights = RegimeWeights()
+    # 中性网格只在低方向效率时入场。运行中阈值更宽，超限后作为软违约，
+    # 由 Controller 连续确认后进入 DEFENSIVE，而不是单根 K 线立即市价止损。
+    trend_filter_enabled: bool = True
+    entry_max_directional_efficiency: float = 0.55
+    running_max_directional_efficiency: float = 0.70
     # 没有事件数据 Provider 时不给 event 维度免费满分：置其权重为 0 并把权重
     # 重新归一化到其余维度（计划 §9.1）。接入事件源后再设为 True 启用 event。
     event_source_available: bool = False
@@ -123,6 +128,23 @@ class RegimeEngine:
         if event_risk:
             hard_blocks.append("存在事件风险硬阻断")
 
+        entry_trend_blocked = (
+            config.trend_filter_enabled
+            and not running
+            and features.directional_efficiency > config.entry_max_directional_efficiency
+        )
+        if entry_trend_blocked:
+            hard_blocks.append(
+                "方向效率超过中性网格入场上限 "
+                f"({features.directional_efficiency:.4f} > "
+                f"{config.entry_max_directional_efficiency:.4f})"
+            )
+        running_trend_breached = (
+            config.trend_filter_enabled
+            and running
+            and features.directional_efficiency > config.running_max_directional_efficiency
+        )
+
         volatility_score = _volatility_score(
             features.volatility_expansion,
             config.max_vol_expansion_ratio,
@@ -167,8 +189,18 @@ class RegimeEngine:
             and _non_negative(cost_floor_pct, "cost_floor_pct")
             >= _positive(expected_step_pct, "expected_step_pct")
         )
-        allowed = not hard_blocks and not cost_blocked and grid_score >= threshold
-        state = _regime_state(features, hard_blocks)
+        allowed = (
+            not hard_blocks
+            and not cost_blocked
+            and not running_trend_breached
+            and grid_score >= threshold
+        )
+        trend_threshold = (
+            config.running_max_directional_efficiency
+            if running
+            else config.entry_max_directional_efficiency
+        )
+        state = _regime_state(features, hard_blocks, trend_threshold=trend_threshold)
         verdict = _regime_verdict(
             hard_blocks,
             allowed=allowed,
@@ -188,6 +220,13 @@ class RegimeEngine:
             f"方向效率 {features.directional_efficiency:.2f}，反转比例 {features.reversal_ratio:.2f}",
             f"点差 {features.spread_pct:.4%}，前档深度 {features.depth_usdt:.2f} USDT",
         ]
+        if running_trend_breached:
+            reasons_list.append(
+                "运行中方向效率超过保持上限 "
+                f"({features.directional_efficiency:.4f} > "
+                f"{config.running_max_directional_efficiency:.4f})，"
+                "计为软违约并等待连续确认。"
+            )
         if include_cost:
             reasons_list.append(
                 "计划格距 "
@@ -270,7 +309,12 @@ class RegimeEngine:
         )
 
 
-def _regime_state(features: FeatureSnapshot, hard_blocks: list[str]) -> str:
+def _regime_state(
+    features: FeatureSnapshot,
+    hard_blocks: list[str],
+    *,
+    trend_threshold: float = 0.70,
+) -> str:
     if any("过期" in item for item in hard_blocks):
         return "UNKNOWN_DATA"
     if any("深度" in item or "价差" in item for item in hard_blocks):
@@ -279,7 +323,7 @@ def _regime_state(features: FeatureSnapshot, hard_blocks: list[str]) -> str:
         return "EVENT_RISK"
     if features.volatility_expansion > 2.0:
         return "VOLATILE"
-    if features.directional_efficiency > 0.70:
+    if features.directional_efficiency > trend_threshold:
         direction = "UP" if features.trend_direction > 0 else "DOWN"
         return f"TREND_{direction}"
     return "QUIET_RANGE"
@@ -295,6 +339,8 @@ def _regime_verdict(
 ) -> str:
     if any("过期" in item for item in hard_blocks):
         return "BLOCKED_DATA"
+    if any("方向效率超过中性网格入场上限" in item for item in hard_blocks):
+        return "BLOCKED_TREND"
     if hard_blocks:
         return "BLOCKED_HARD"
     if include_cost and _non_negative(cost_floor_pct, "cost_floor_pct") >= _positive(
@@ -396,6 +442,17 @@ def _validate_config(config: RegimeConfig) -> None:
         raise ValueError("Regime 进入/保持阈值无效。")
     if config.soft_breach_limit < 1:
         raise ValueError("Regime 连续软违约次数必须至少为 1。")
+    if not (
+        0
+        <= config.entry_max_directional_efficiency
+        <= config.running_max_directional_efficiency
+        <= 1
+    ):
+        raise ValueError(
+            "Regime 方向效率阈值必须满足 "
+            "0 <= entry_max_directional_efficiency <= "
+            "running_max_directional_efficiency <= 1。"
+        )
     _positive(config.max_data_age_seconds, "max_data_age_seconds")
     _positive(config.max_spread_pct, "max_spread_pct")
     _positive(config.max_vol_expansion_ratio, "max_vol_expansion_ratio")

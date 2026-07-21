@@ -93,6 +93,7 @@ cooldown:
 regime:
   short_window: 15
   long_window: 60
+  entry_filters_by_symbol: {}
   enter_threshold: 75
   stay_threshold: 65
   soft_breach_limit: 3

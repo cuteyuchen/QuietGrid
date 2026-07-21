@@ -3194,6 +3194,16 @@ def test_build_controller_reads_max_maker_fee_rate(tmp_path) -> None:
                 "amplitude_multiplier": 1.5,
                 "min_calm_minutes": 9,
             },
+            "regime": {
+                "entry_filters_by_symbol": {
+                    "ethusdt": {
+                        "max_directional_efficiency": 0.50,
+                        "max_volatility_expansion": 1.05,
+                        "min_reversal_ratio": 0.25,
+                    }
+                }
+            },
+            "features": {"regime_v2": True},
             "selection": {
                 "volume_weight": 0.7,
                 "depth_weight": 0.3,
@@ -3209,6 +3219,10 @@ def test_build_controller_reads_max_maker_fee_rate(tmp_path) -> None:
     assert controller.config.maker_fee_check_interval_seconds == 123
     assert controller.config.grid_range_multiplier_by_symbol == {"BTCUSDT": 1.25}
     assert controller.config.grid_min_step_pct_by_symbol == {"ETHUSDT": 0.0018}
+    eth_filter = controller.config.entry_filters_by_symbol["ETHUSDT"]
+    assert eth_filter.max_directional_efficiency == 0.50
+    assert eth_filter.max_volatility_expansion == 1.05
+    assert eth_filter.min_reversal_ratio == 0.25
     assert controller.cooldown.config.calm_window_minutes == 17
     assert controller.cooldown.config.atr_recovery_ratio == 0.65
     assert controller.cooldown.config.amplitude_multiplier == 1.5

@@ -13,6 +13,7 @@ from exchange.mock import MockExchangeClient
 from strategy.adaptive_grid import AdaptiveGridConfig, GridEconomicsError
 from strategy.controller import (
     ControllerConfig,
+    EntryFilterConfig,
     RegimeAdmissionError,
     TradingController,
     V2FeatureFlags,
@@ -193,6 +194,52 @@ def test_score_block_keeps_completed_grid_economics_for_candidate_diagnostics(tm
         decision = controller.repository.latest_regime_decision("AAPLUSDT")
         assert decision is not None
         assert decision["verdict"] == "BLOCKED_SCORE"
+
+    asyncio.run(run())
+
+
+def test_symbol_entry_filter_blocks_candidate_and_persists_reason(tmp_path) -> None:
+    async def run() -> None:
+        controller = _controller(tmp_path)
+        controller.config = replace(
+            controller.config,
+            entry_filters_by_symbol={
+                "AAPLUSDT": EntryFilterConfig(
+                    max_directional_efficiency=0.0,
+                    max_volatility_expansion=0.0001,
+                    min_reversal_ratio=1.0,
+                )
+            },
+        )
+        item = SelectionScore(
+            symbol="AAPLUSDT",
+            score=1,
+            volume_score=1,
+            depth_score=1,
+            volume_24h=1_000_000,
+            depth_usdt=2_000,
+            bid_price=99.9,
+            ask_price=100.1,
+            spread_pct=0.002,
+        )
+
+        with pytest.raises(RegimeAdmissionError) as caught:
+            await controller._analyze_round_candidate(
+                item,
+                ObserverConfig(observe_hours=1, min_samples=30),
+                GridConfig(),
+                datetime.now(timezone.utc),
+            )
+
+        assert caught.value.params.grid_mode == "adaptive_v2"
+        assert "入口过滤器" in str(caught.value)
+        decision = controller.repository.latest_regime_decision("AAPLUSDT")
+        assert decision is not None
+        assert decision["allowed"] == 0
+        assert decision["verdict"] == "BLOCKED_ENTRY_FILTER"
+        assert any("方向效率" in reason for reason in decision["hard_blocks"])
+        assert any("波动扩张" in reason for reason in decision["hard_blocks"])
+        assert any("反转比例" in reason for reason in decision["hard_blocks"])
 
     asyncio.run(run())
 

@@ -35,7 +35,13 @@ from strategy.backtest import (
 from strategy.cooldown import CooldownConfig
 from strategy.adaptive_grid import AdaptiveGridConfig
 from core.models import GridDirectionMode
-from strategy.controller import ControllerConfig, TradingController, V2FeatureFlags, _position_close_specs
+from strategy.controller import (
+    ControllerConfig,
+    EntryFilterConfig,
+    TradingController,
+    V2FeatureFlags,
+    _position_close_specs,
+)
 from strategy.grid_calculator import GridConfig, calculate_grid_params
 from strategy.inventory import InventoryConfig
 from strategy.observer import ObserverConfig
@@ -2718,6 +2724,16 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
                 str(symbol).strip().upper(): float(value)
                 for symbol, value in (
                     grid.get("min_step_pct_by_symbol", {}) or {}
+                ).items()
+            },
+            entry_filters_by_symbol={
+                str(symbol).strip().upper(): EntryFilterConfig(
+                    max_directional_efficiency=float(values["max_directional_efficiency"]),
+                    max_volatility_expansion=float(values["max_volatility_expansion"]),
+                    min_reversal_ratio=float(values["min_reversal_ratio"]),
+                )
+                for symbol, values in (
+                    regime.get("entry_filters_by_symbol", {}) or {}
                 ).items()
             },
             max_unpaired_lots_per_side_by_symbol={

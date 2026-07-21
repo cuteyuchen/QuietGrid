@@ -98,10 +98,26 @@ class ControllerConfig:
     direction_overrides: dict[str, GridDirectionMode] = field(default_factory=dict)
     grid_range_multiplier_by_symbol: dict[str, float] = field(default_factory=dict)
     grid_min_step_pct_by_symbol: dict[str, float] = field(default_factory=dict)
+    entry_filters_by_symbol: dict[str, EntryFilterConfig] = field(default_factory=dict)
     max_unpaired_lots_per_side_by_symbol: dict[str, int] = field(default_factory=dict)
     reduce_target_step_fraction_by_symbol: dict[str, float] = field(default_factory=dict)
     seed_execution: str = "MARKET"
     seed_max_slippage_pct: float = 0.002
+
+
+@dataclass(frozen=True)
+class EntryFilterConfig:
+    max_directional_efficiency: float
+    max_volatility_expansion: float
+    min_reversal_ratio: float
+
+    def __post_init__(self) -> None:
+        if not isfinite(self.max_directional_efficiency) or not 0 <= self.max_directional_efficiency <= 1:
+            raise ValueError("max_directional_efficiency 必须在 [0, 1] 内。")
+        if not isfinite(self.max_volatility_expansion) or self.max_volatility_expansion <= 0:
+            raise ValueError("max_volatility_expansion 必须为正的有限数。")
+        if not isfinite(self.min_reversal_ratio) or not 0 <= self.min_reversal_ratio <= 1:
+            raise ValueError("min_reversal_ratio 必须在 [0, 1] 内。")
 
 
 @dataclass(frozen=True)
@@ -174,6 +190,8 @@ class TradingController:
         self.state_machine = StateMachine()
         self.config = controller_config
         self.feature_flags = feature_flags or V2FeatureFlags()
+        if controller_config.entry_filters_by_symbol and not self.feature_flags.regime_v2:
+            raise ValueError("配置了入口过滤器时必须启用 regime_v2。")
         self.regime = RegimeEngine(regime_config or RegimeConfig())
         self.adaptive_grid = AdaptiveGridGenerator(adaptive_grid_config or AdaptiveGridConfig())
         for symbol in {
@@ -1310,8 +1328,26 @@ class TradingController:
                 cost_floor_pct=cost_breakdown["hard_cost_pct"],
                 economics=economics,
             )
+            entry_filter_reasons = (
+                self._entry_filter_reasons(item.symbol, regime_decision)
+                if regime_decision.allowed
+                else []
+            )
+            if entry_filter_reasons:
+                regime_decision = replace(
+                    regime_decision,
+                    allowed=False,
+                    verdict="BLOCKED_ENTRY_FILTER",
+                    hard_blocks=regime_decision.hard_blocks + tuple(entry_filter_reasons),
+                    reasons=regime_decision.reasons + tuple(entry_filter_reasons),
+                )
             self._regime_by_symbol[item.symbol] = regime_decision
             self._persist_regime_decision(item.symbol, regime_decision, calculated_at)
+            if entry_filter_reasons:
+                raise RegimeAdmissionError(
+                    "入口过滤器禁止启动网格: " + "；".join(entry_filter_reasons),
+                    params=params,
+                )
             if not regime_decision.allowed:
                 detail = regime_decision.hard_blocks or regime_decision.reasons
                 raise RegimeAdmissionError(
@@ -1403,6 +1439,36 @@ class TradingController:
         if effective_config == base:
             return self.adaptive_grid
         return AdaptiveGridGenerator(effective_config)
+
+    def _entry_filter_reasons(
+        self,
+        symbol: str,
+        decision: RegimeDecision,
+    ) -> list[str]:
+        entry_filter = self.config.entry_filters_by_symbol.get(str(symbol).strip().upper())
+        if entry_filter is None:
+            return []
+        features = decision.features
+        reasons: list[str] = []
+        if features.directional_efficiency > entry_filter.max_directional_efficiency:
+            reasons.append(
+                "方向效率 "
+                f"{features.directional_efficiency:.4f} > "
+                f"{entry_filter.max_directional_efficiency:.4f}"
+            )
+        if features.volatility_expansion > entry_filter.max_volatility_expansion:
+            reasons.append(
+                "波动扩张 "
+                f"{features.volatility_expansion:.4f} > "
+                f"{entry_filter.max_volatility_expansion:.4f}"
+            )
+        if features.reversal_ratio < entry_filter.min_reversal_ratio:
+            reasons.append(
+                "反转比例 "
+                f"{features.reversal_ratio:.4f} < "
+                f"{entry_filter.min_reversal_ratio:.4f}"
+            )
+        return reasons
 
     @staticmethod
     def _regime_cost_breakdown(economics: dict[str, Any]) -> dict[str, float]:
@@ -3997,6 +4063,22 @@ class TradingController:
                         regime_score=regime_decision.grid_score,
                         cost_floor_pct=cost_breakdown["total_cost_pct"],
                     )
+                    entry_filter_reasons = (
+                        self._entry_filter_reasons(session.symbol, regime_decision)
+                        if regime_decision.allowed
+                        else []
+                    )
+                    if entry_filter_reasons:
+                        regime_decision = replace(
+                            regime_decision,
+                            allowed=False,
+                            verdict="BLOCKED_ENTRY_FILTER",
+                            hard_blocks=(
+                                regime_decision.hard_blocks
+                                + tuple(entry_filter_reasons)
+                            ),
+                            reasons=regime_decision.reasons + tuple(entry_filter_reasons),
+                        )
                     self._regime_by_symbol[session.symbol] = regime_decision
                     self._persist_regime_decision(
                         session.symbol,
@@ -4004,6 +4086,8 @@ class TradingController:
                         at,
                         session_id=session.session_id,
                     )
+                    if entry_filter_reasons:
+                        return False
             except Exception as exc:
                 self.repository.log_system(
                     "WARN",

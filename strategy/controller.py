@@ -96,6 +96,8 @@ class ControllerConfig:
     block_risk_increase_hot_reload: bool = True
     direction_mode: GridDirectionMode = GridDirectionMode.NEUTRAL
     direction_overrides: dict[str, GridDirectionMode] = field(default_factory=dict)
+    grid_range_multiplier_by_symbol: dict[str, float] = field(default_factory=dict)
+    grid_min_step_pct_by_symbol: dict[str, float] = field(default_factory=dict)
     max_unpaired_lots_per_side_by_symbol: dict[str, int] = field(default_factory=dict)
     reduce_target_step_fraction_by_symbol: dict[str, float] = field(default_factory=dict)
     seed_execution: str = "MARKET"
@@ -174,6 +176,11 @@ class TradingController:
         self.feature_flags = feature_flags or V2FeatureFlags()
         self.regime = RegimeEngine(regime_config or RegimeConfig())
         self.adaptive_grid = AdaptiveGridGenerator(adaptive_grid_config or AdaptiveGridConfig())
+        for symbol in {
+            *controller_config.grid_range_multiplier_by_symbol,
+            *controller_config.grid_min_step_pct_by_symbol,
+        }:
+            self._adaptive_grid_for_symbol(symbol)
         self.inventory = InventoryManager(inventory_config or InventoryConfig())
         self.risk = RiskManager(
             scheduler,
@@ -1130,6 +1137,12 @@ class TradingController:
             maker_fee_rate,
             projected_funding_cost,
         )
+        adaptive_grid = self._adaptive_grid_for_symbol(item.symbol)
+        expected_min_step_pct = (
+            adaptive_grid.config.min_step_pct
+            if self.feature_flags.adaptive_grid_v2
+            else grid_config.min_step_pct
+        )
         regime_decision: RegimeDecision | None = None
         structural_decision: RegimeDecision | None = None
         if self.feature_flags.regime_v2:
@@ -1139,7 +1152,7 @@ class TradingController:
                 spread_pct=float(item.spread_pct),
                 depth_usdt=float(item.depth_usdt),
                 funding_rate=float(funding_rate),
-                expected_step_pct=grid_config.min_step_pct,
+                expected_step_pct=expected_min_step_pct,
                 cost_floor_pct=0.0,
                 running=item.symbol in self.active_sessions,
                 include_cost=False,
@@ -1174,7 +1187,7 @@ class TradingController:
             )
         elif self.feature_flags.adaptive_grid_v2:
             try:
-                params = self.adaptive_grid.generate(
+                params = adaptive_grid.generate(
                     item.symbol,
                     klines,
                     current_price=current_price,
@@ -1212,7 +1225,7 @@ class TradingController:
                 economics = dict(exc.economics)
                 gross_step = float(
                     economics.get("gross_step_pct")
-                    or grid_config.min_step_pct
+                    or expected_min_step_pct
                 )
                 economics.update(
                     {
@@ -1365,6 +1378,31 @@ class TradingController:
             result["hard_cost_pct"] + result["risk_discount_pct"]
         )
         return result
+
+    def _adaptive_grid_for_symbol(self, symbol: str) -> AdaptiveGridGenerator:
+        normalized = str(symbol).strip().upper()
+        base = self.adaptive_grid.config
+        range_multiplier = self.config.grid_range_multiplier_by_symbol.get(
+            normalized,
+            1.0,
+        )
+        min_step_pct = self.config.grid_min_step_pct_by_symbol.get(
+            normalized,
+            base.min_step_pct,
+        )
+        if not _positive_finite_number(range_multiplier):
+            raise ValueError(f"{normalized} 网格区间倍率必须为正的有限数。")
+        if not _positive_finite_number(min_step_pct):
+            raise ValueError(f"{normalized} 最小网格格距必须为正的有限数。")
+        effective_config = replace(
+            base,
+            k_atr_range=base.k_atr_range * float(range_multiplier),
+            k_sigma_range=base.k_sigma_range * float(range_multiplier),
+            min_step_pct=float(min_step_pct),
+        )
+        if effective_config == base:
+            return self.adaptive_grid
+        return AdaptiveGridGenerator(effective_config)
 
     @staticmethod
     def _regime_cost_breakdown(economics: dict[str, Any]) -> dict[str, float]:
@@ -3878,6 +3916,7 @@ class TradingController:
                 self._symbol_rules_by_symbol[session.symbol] = dict(symbol_rules)
                 structural_decision: RegimeDecision | None = None
                 if self.feature_flags.regime_v2:
+                    adaptive_grid = self._adaptive_grid_for_symbol(session.symbol)
                     structural_decision = self.regime.evaluate(
                         session.symbol,
                         klines,
@@ -3885,7 +3924,11 @@ class TradingController:
                         depth_usdt=depth_usdt,
                         funding_rate=float(funding_rate),
                         data_age_seconds=_kline_data_age_seconds(klines, at),
-                        expected_step_pct=self.grid_config.min_step_pct,
+                        expected_step_pct=(
+                            adaptive_grid.config.min_step_pct
+                            if self.feature_flags.adaptive_grid_v2
+                            else self.grid_config.min_step_pct
+                        ),
                         cost_floor_pct=0.0,
                         running=False,
                         include_cost=False,
@@ -3902,7 +3945,7 @@ class TradingController:
                         return False
                 if self.feature_flags.adaptive_grid_v2:
                     current_price = await self._current_price(session.symbol)
-                    prepared_params = self.adaptive_grid.generate(
+                    prepared_params = self._adaptive_grid_for_symbol(session.symbol).generate(
                         session.symbol,
                         klines,
                         current_price=current_price,
@@ -4028,7 +4071,7 @@ class TradingController:
                     raise GridCalculationError(
                         "DATA_COMMISSION_ERROR: 冷却恢复前未取得交易所 Maker 费率。"
                     )
-                params = self.adaptive_grid.generate(
+                params = self._adaptive_grid_for_symbol(session.symbol).generate(
                     session.symbol,
                     klines,
                     current_price=current_price,

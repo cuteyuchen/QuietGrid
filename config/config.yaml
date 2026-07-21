@@ -63,6 +63,8 @@ grid:
   quantile_upper: 0.95
   quantile_lower: 0.05
   min_step_pct: 0.0015
+  range_multiplier_by_symbol: {}
+  min_step_pct_by_symbol: {}
   min_tradable_range_pct: 0.0015
   safety_multiplier: 3.5
   max_grid_num: 20

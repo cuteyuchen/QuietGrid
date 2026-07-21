@@ -3179,6 +3179,8 @@ def test_build_controller_reads_max_maker_fee_rate(tmp_path) -> None:
                 "quantile_upper": 0.95,
                 "quantile_lower": 0.05,
                 "min_step_pct": 0.0015,
+                "range_multiplier_by_symbol": {"btcusdt": 1.25},
+                "min_step_pct_by_symbol": {"ethusdt": 0.0018},
                 "safety_multiplier": 3.5,
                 "max_grid_num": 20,
                 "max_range_pct": 0.05,
@@ -3205,6 +3207,8 @@ def test_build_controller_reads_max_maker_fee_rate(tmp_path) -> None:
 
     assert controller.config.max_maker_fee_rate == 0.0001
     assert controller.config.maker_fee_check_interval_seconds == 123
+    assert controller.config.grid_range_multiplier_by_symbol == {"BTCUSDT": 1.25}
+    assert controller.config.grid_min_step_pct_by_symbol == {"ETHUSDT": 0.0018}
     assert controller.cooldown.config.calm_window_minutes == 17
     assert controller.cooldown.config.atr_recovery_ratio == 0.65
     assert controller.cooldown.config.amplitude_multiplier == 1.5

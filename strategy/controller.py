@@ -96,6 +96,8 @@ class ControllerConfig:
     block_risk_increase_hot_reload: bool = True
     direction_mode: GridDirectionMode = GridDirectionMode.NEUTRAL
     direction_overrides: dict[str, GridDirectionMode] = field(default_factory=dict)
+    max_unpaired_lots_per_side_by_symbol: dict[str, int] = field(default_factory=dict)
+    reduce_target_step_fraction_by_symbol: dict[str, float] = field(default_factory=dict)
     seed_execution: str = "MARKET"
     seed_max_slippage_pct: float = 0.002
 
@@ -161,6 +163,9 @@ class TradingController:
             exchange,
             GridEngineConfig(
                 seed_max_slippage_pct=controller_config.seed_max_slippage_pct,
+                reduce_target_step_fraction_by_symbol=(
+                    controller_config.reduce_target_step_fraction_by_symbol
+                ),
             ),
             log_system=repository.log_system,
         )
@@ -2075,14 +2080,23 @@ class TradingController:
             await self._close_session(session, "网格收益计算输入异常，执行安全平仓。", trade_time)
             return None
         new_order = None
+        cap_changes: list[GridOrder] = []
         refill_error: Exception | None = None
         try:
             new_order = await self.engine.handle_order_filled(session, client_id, fill_price=price)
+            cap_changes = await self._enforce_symbol_unpaired_lot_cap(
+                session,
+                mark_price=price,
+                at=trade_time,
+            )
         except Exception as exc:
             refill_error = exc
         changed_orders = [filled_order]
         if new_order is not None:
             changed_orders.append(new_order)
+        for changed_order in cap_changes:
+            if changed_order not in changed_orders:
+                changed_orders.append(changed_order)
         self.repository.upsert_orders(session.session_id, changed_orders)
         self.repository.create_trade(
             session_id=session.session_id,
@@ -2159,6 +2173,40 @@ class TradingController:
             await self._close_session(session, "成交后交易所端止损保护失败，执行安全平仓。", trade_time)
             return None
         return new_order
+
+    async def _enforce_symbol_unpaired_lot_cap(
+        self,
+        session: SymbolSession,
+        *,
+        mark_price: float,
+        at: datetime,
+    ) -> list[GridOrder]:
+        limit = int(
+            self.config.max_unpaired_lots_per_side_by_symbol.get(
+                session.symbol.upper(),
+                0,
+            )
+        )
+        if limit == 0:
+            return []
+        if limit < 0:
+            raise ValueError("单侧未配对库存层数上限不能为负。")
+        snapshot = self.inventory.snapshot(
+            session.orders,
+            mark_price=mark_price,
+            max_inventory_notional=session.capital * session.leverage,
+        )
+        return await self.engine.enforce_unpaired_lot_cap(
+            session,
+            long_lot_count=sum(
+                1 for lot in snapshot.unpaired_lots if lot.side == "LONG"
+            ),
+            short_lot_count=sum(
+                1 for lot in snapshot.unpaired_lots if lot.side == "SHORT"
+            ),
+            max_lots_per_side=limit,
+            client_id_tag=str(int(at.timestamp())),
+        )
 
     async def _handle_partial_fill_event(self, session: SymbolSession, event: dict[str, Any]) -> None:
         event_time = event.get("trade_time")

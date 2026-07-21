@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_FLOOR
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from math import floor, isfinite
 from typing import Callable
 
@@ -23,6 +23,7 @@ class GridEngineConfig:
     qty_precision: int = 6
     price_precision: int = 6
     seed_max_slippage_pct: float = 0.002
+    reduce_target_step_fraction_by_symbol: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -313,6 +314,7 @@ class GridEngine:
         session: SymbolSession,
         *,
         net_qty: float,
+        position_side: str | None = None,
     ) -> list[GridOrder]:
         if abs(net_qty) <= 1e-12:
             return []
@@ -322,13 +324,116 @@ class GridEngine:
             for order in session.orders
             if order.status == OrderStatus.OPEN
             and order.order_intent == OrderIntent.OPEN
+            and order.entry_price is None
             and (
                 order.side == increasing_side
                 or session.direction_mode != GridDirectionMode.NEUTRAL
             )
+            and (
+                position_side is None
+                or str(order.position_side or "").upper() == position_side.upper()
+            )
         ]
         await self._cancel_grid_orders(session.symbol, cancelled)
         return cancelled
+
+    async def enforce_unpaired_lot_cap(
+        self,
+        session: SymbolSession,
+        *,
+        long_lot_count: int,
+        short_lot_count: int,
+        max_lots_per_side: int,
+        client_id_tag: str,
+    ) -> list[GridOrder]:
+        if max_lots_per_side < 0:
+            raise ValueError("max_lots_per_side 不能为负。")
+        if max_lots_per_side == 0:
+            return []
+        changed: list[GridOrder] = []
+        for position_side, lot_count, net_qty in (
+            ("LONG", long_lot_count, 1.0),
+            ("SHORT", short_lot_count, -1.0),
+        ):
+            if lot_count >= max_lots_per_side:
+                changed.extend(
+                    await self.suppress_inventory_increasing_orders(
+                        session,
+                        net_qty=net_qty,
+                        position_side=position_side,
+                    )
+                )
+                continue
+            changed.extend(
+                await self.restore_cancelled_opening_orders(
+                    session,
+                    position_side=position_side,
+                    client_id_tag=client_id_tag,
+                )
+            )
+        return changed
+
+    async def restore_cancelled_opening_orders(
+        self,
+        session: SymbolSession,
+        *,
+        position_side: str,
+        client_id_tag: str,
+    ) -> list[GridOrder]:
+        existing = {
+            (
+                order.grid_index,
+                order.side,
+                str(order.position_side or "").upper(),
+                order.order_intent,
+            )
+            for order in session.orders
+            if order.status == OrderStatus.OPEN
+        }
+        candidates = [
+            order
+            for order in session.orders
+            if order.status == OrderStatus.CANCELLED
+            and order.order_intent == OrderIntent.OPEN
+            and str(order.position_side or "").upper() == position_side.upper()
+        ]
+        restored: list[GridOrder] = []
+        for order in candidates:
+            key = (
+                order.grid_index,
+                order.side,
+                str(order.position_side or "").upper(),
+                order.order_intent,
+            )
+            if key in existing:
+                continue
+            client_id = f"{order.client_id}-cap-{client_id_tag}"
+            response = await self._place_limit_order_post_only_reconciled(
+                session.symbol,
+                order.side.value,
+                order.price,
+                order.qty,
+                client_id,
+                position_side=order.position_side,
+            )
+            restored_order = GridOrder(
+                symbol=order.symbol,
+                order_id=_response_order_id(response, client_id),
+                client_id=client_id,
+                grid_index=order.grid_index,
+                side=order.side,
+                price=order.price,
+                qty=order.qty,
+                status=OrderStatus.OPEN,
+                created_at=datetime.now(timezone.utc),
+                entry_price=None,
+                position_side=order.position_side,
+                order_intent=OrderIntent.OPEN,
+            )
+            restored.append(restored_order)
+            existing.add(key)
+        session.orders.extend(restored)
+        return restored
 
     async def enter_defensive(
         self,
@@ -658,7 +763,18 @@ class GridEngine:
         step_size = _symbol_rule_positive_float(rules, "step_size")
         min_qty = _symbol_rule_non_negative_float(rules, "min_qty", default=0.0)
         min_notional = _symbol_rule_non_negative_float(rules, "min_notional", default=0.0)
-        price = self._round_to_step(session.params.grid_prices[next_index], tick_size)
+        price = session.params.grid_prices[next_index]
+        if entry_price is not None:
+            fraction = self.config.reduce_target_step_fraction_by_symbol.get(
+                session.symbol.upper(),
+                1.0,
+            )
+            if not 0 < fraction <= 1:
+                raise ValueError("减仓目标比例必须在 (0, 1] 内。")
+            price = filled_order.price + (price - filled_order.price) * fraction
+            price = self._round_reduce_target(price, tick_size, next_side)
+        else:
+            price = self._round_to_step(price, tick_size)
         refill_qty = self._round_to_step(filled_order.qty, step_size)
         if refill_qty <= 0 or refill_qty < min_qty:
             raise ValueError("补单数量小于交易所最小下单量。")
@@ -839,6 +955,16 @@ class GridEngine:
         value_decimal = Decimal(str(value))
         step_decimal = Decimal(str(step))
         units = (value_decimal / step_decimal).to_integral_value(rounding=ROUND_FLOOR)
+        return float(units * step_decimal)
+
+    @staticmethod
+    def _round_reduce_target(value: float, step: float, side: OrderSide) -> float:
+        if step <= 0:
+            return value
+        value_decimal = Decimal(str(value))
+        step_decimal = Decimal(str(step))
+        rounding = ROUND_CEILING if side == OrderSide.SELL else ROUND_FLOOR
+        units = (value_decimal / step_decimal).to_integral_value(rounding=rounding)
         return float(units * step_decimal)
 
 

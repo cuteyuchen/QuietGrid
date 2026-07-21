@@ -4,6 +4,8 @@ import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
 
+import pytest
+
 from core.models import (
     GridDirectionMode,
     GridState,
@@ -14,7 +16,7 @@ from core.models import (
 )
 from exchange.mock import MockExchangeClient
 from strategy.grid_calculator import GridConfig, calculate_grid_params
-from strategy.grid_engine import GridEngine
+from strategy.grid_engine import GridEngine, GridEngineConfig
 
 
 def _session() -> SymbolSession:
@@ -1180,6 +1182,77 @@ def test_grid_engine_handles_fill_by_placing_opposite_order() -> None:
         assert new_order.status == OrderStatus.OPEN
         assert exchange.orders["AAPLUSDT"][-1]["timeInForce"] == "GTX"
         assert exchange.orders["AAPLUSDT"][-1]["position_side"] == "LONG"
+
+    asyncio.run(run())
+
+
+def test_grid_engine_uses_symbol_specific_fractional_reduce_target() -> None:
+    async def run() -> None:
+        exchange = MockExchangeClient()
+        session = _session()
+        engine = GridEngine(
+            exchange,
+            GridEngineConfig(
+                reduce_target_step_fraction_by_symbol={"AAPLUSDT": 0.5},
+            ),
+        )
+
+        await engine.start(session, current_price=100.0)
+        buy_order = next(order for order in session.orders if order.side.value == "BUY")
+        new_order = await engine.handle_order_filled(
+            session,
+            buy_order.client_id,
+            fill_price=buy_order.price,
+        )
+
+        assert new_order is not None
+        full_step_target = session.params.grid_prices[buy_order.grid_index + 1]  # type: ignore[union-attr]
+        expected = buy_order.price + (full_step_target - buy_order.price) * 0.5
+        assert new_order.price == pytest.approx(expected, abs=0.01)
+        assert new_order.order_intent == OrderIntent.REDUCE
+
+    asyncio.run(run())
+
+
+def test_grid_engine_enforces_and_restores_symbol_lot_cap() -> None:
+    async def run() -> None:
+        exchange = MockExchangeClient()
+        session = _session()
+        engine = GridEngine(exchange)
+        await engine.start(session, current_price=100.0)
+        initial_buy_count = sum(
+            1 for order in session.orders
+            if order.side == OrderSide.BUY and order.order_intent == OrderIntent.OPEN
+        )
+
+        cancelled = await engine.enforce_unpaired_lot_cap(
+            session,
+            long_lot_count=1,
+            short_lot_count=0,
+            max_lots_per_side=1,
+            client_id_tag="one",
+        )
+        assert cancelled
+        assert all(
+            order.status != OrderStatus.OPEN
+            for order in session.orders
+            if order.side == OrderSide.BUY and order.order_intent == OrderIntent.OPEN
+        )
+
+        restored = await engine.enforce_unpaired_lot_cap(
+            session,
+            long_lot_count=0,
+            short_lot_count=0,
+            max_lots_per_side=1,
+            client_id_tag="two",
+        )
+        assert len(restored) == initial_buy_count
+        assert sum(
+            1 for order in session.orders
+            if order.side == OrderSide.BUY
+            and order.order_intent == OrderIntent.OPEN
+            and order.status == OrderStatus.OPEN
+        ) == initial_buy_count
 
     asyncio.run(run())
 

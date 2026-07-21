@@ -2708,6 +2708,18 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
                 )
                 for symbol, mode in (trading.get("direction_overrides", {}) or {}).items()
             },
+            max_unpaired_lots_per_side_by_symbol={
+                str(symbol).strip().upper(): int(value)
+                for symbol, value in (
+                    inventory.get("max_unpaired_lots_per_side_by_symbol", {}) or {}
+                ).items()
+            },
+            reduce_target_step_fraction_by_symbol={
+                str(symbol).strip().upper(): float(value)
+                for symbol, value in (
+                    grid.get("reduce_target_step_fraction_by_symbol", {}) or {}
+                ).items()
+            },
             seed_execution=str(entry.get("seed_execution", "MARKET")).strip().upper(),
             seed_max_slippage_pct=float(entry.get("seed_max_slippage_pct", 0.002)),
         ),

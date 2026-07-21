@@ -318,6 +318,31 @@ def test_backtest_tracks_unpaired_inventory_age_at_force_close() -> None:
     assert result.exit_hedged_fraction == 0
 
 
+def test_fractional_reduce_target_completes_before_full_grid_step() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 99.2, "low": 98.9, "close": 99.0},
+            {"high": 99.6, "low": 99.4, "close": 99.5},
+        ],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=200,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            maker_fill_probability=1.0,
+            reduce_target_step_fraction=0.5,
+        ),
+    )
+
+    assert [fill.side for fill in result.fills] == ["BUY", "SELL"]
+    assert [fill.price for fill in result.fills] == [99.0, 99.5]
+    assert result.pair_completion_count == 1
+    assert result.gross_grid_pnl == 0.5
+    assert result.net_position_qty == 0
+
+
 def test_wind_down_cancels_opening_orders_but_keeps_reducing_orders() -> None:
     result = run_grid_backtest(
         _params(),

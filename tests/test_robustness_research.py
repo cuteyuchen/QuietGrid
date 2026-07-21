@@ -12,6 +12,7 @@ import pytest
 from core.models import GridDirectionMode
 from data_sources.models import NormalizedKline
 from scripts import robust_backtest as robust_cli
+from scripts import robustness as robustness_module
 from scripts.robustness import (
     DynamicModeRule,
     EntryFilter,
@@ -149,11 +150,15 @@ def test_joint_seed_cli_defaults_to_locked_symbol_policies() -> None:
     assert args.btc_capital == pytest.approx(500.0)
     assert args.eth_capital == pytest.approx(300.0)
     assert args.btc_range_multiplier == pytest.approx(1.25)
-    assert args.btc_min_step == pytest.approx(0.0015)
+    assert args.btc_min_step == pytest.approx(0.0018)
     assert args.btc_max_inventory_notional == pytest.approx(200.0)
+    assert args.btc_max_unpaired_lots_per_side == 1
+    assert args.btc_reduce_target_step_fraction == pytest.approx(0.50)
     assert args.eth_range_multiplier == pytest.approx(1.0)
     assert args.eth_min_step == pytest.approx(0.0018)
     assert args.eth_max_inventory_notional == pytest.approx(120.0)
+    assert args.eth_max_unpaired_lots_per_side == 0
+    assert args.eth_reduce_target_step_fraction == pytest.approx(1.0)
     assert args.eth_max_directional_efficiency == pytest.approx(0.50)
     assert args.eth_max_volatility_expansion == pytest.approx(1.05)
     assert args.eth_min_reversal_ratio == pytest.approx(0.25)
@@ -188,12 +193,15 @@ def test_seed_diagnostic_cli_passes_unpaired_lot_cap(
         "fixture.manifest.json",
         "--max-unpaired-lots-per-side",
         "2",
+        "--reduce-target-step-fraction",
+        "0.75",
     ])
 
     with pytest.raises(_ConfigCaptured):
         robust_cli._diagnose_seeds(args)
 
     assert captured["max_unpaired_lots_per_side"] == 2
+    assert captured["reduce_target_step_fraction"] == pytest.approx(0.75)
 
 
 def test_window_diagnostic_cli_accepts_exact_seed_cost_and_unwind_policy(
@@ -219,6 +227,8 @@ def test_window_diagnostic_cli_accepts_exact_seed_cost_and_unwind_policy(
         "1.0",
         "--max-unpaired-lots-per-side",
         "2",
+        "--reduce-target-step-fraction",
+        "0.5",
         "--maker-fee-rate",
         "0.0003",
         "--taker-fee-rate",
@@ -237,6 +247,7 @@ def test_window_diagnostic_cli_accepts_exact_seed_cost_and_unwind_policy(
     assert captured["wind_down_initial_offset_steps"] == pytest.approx(1.1)
     assert captured["wind_down_unwind_fraction"] == pytest.approx(1.0)
     assert captured["max_unpaired_lots_per_side"] == 2
+    assert captured["reduce_target_step_fraction"] == pytest.approx(0.5)
     assert captured["maker_fee_rate"] == pytest.approx(0.0003)
     assert captured["taker_fee_rate"] == pytest.approx(0.00075)
     assert captured["stop_slippage_bps"] == pytest.approx(20)
@@ -784,7 +795,26 @@ def test_small_synthetic_research_writes_json_and_markdown(tmp_path: Path) -> No
     assert "最终 OOS" in md_path.read_text(encoding="utf-8")
 
 
-def test_joint_seed_diagnostic_keeps_final_oos_sealed(tmp_path: Path) -> None:
+def test_joint_seed_diagnostic_keeps_final_oos_sealed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_symbol_policies: set[tuple[int, float]] = set()
+    original_run_grid_backtest = robustness_module.run_grid_backtest
+
+    def capture_backtest_policy(*args, **kwargs):
+        config = args[3]
+        captured_symbol_policies.add((
+            config.max_unpaired_lots_per_side,
+            config.reduce_target_step_fraction,
+        ))
+        return original_run_grid_backtest(*args, **kwargs)
+
+    monkeypatch.setattr(
+        robustness_module,
+        "run_grid_backtest",
+        capture_backtest_policy,
+    )
     windows = []
     for index in range(3):
         start = datetime(2026, 1, 2, 20, 0, tzinfo=UTC) + timedelta(days=7 * index)
@@ -826,11 +856,18 @@ def test_joint_seed_diagnostic_keeps_final_oos_sealed(tmp_path: Path) -> None:
     )
     report = research.diagnose_joint_fill_seeds(
         {
-            "BTCUSDT": SymbolResearchPolicy(btc, 100.0),
+            "BTCUSDT": SymbolResearchPolicy(
+                btc,
+                100.0,
+                max_unpaired_lots_per_side=1,
+                reduce_target_step_fraction=0.5,
+            ),
             "ETHUSDT": SymbolResearchPolicy(
                 eth,
                 80.0,
                 EntryFilter(1.0, 10.0, 0.0),
+                max_unpaired_lots_per_side=0,
+                reduce_target_step_fraction=1.0,
             ),
         },
         generate_wind_down_maker_policies(
@@ -843,6 +880,11 @@ def test_joint_seed_diagnostic_keeps_final_oos_sealed(tmp_path: Path) -> None:
 
     assert report["split"]["final_oos"]["status"] == "SEALED_NOT_EVALUATED"
     assert report["symbol_policies"]["BTCUSDT"]["capital"] == 500
+    assert report["symbol_policies"]["BTCUSDT"]["max_unpaired_lots_per_side"] == 1
+    assert report["symbol_policies"]["BTCUSDT"]["reduce_target_step_fraction"] == pytest.approx(0.5)
+    assert report["symbol_policies"]["ETHUSDT"]["max_unpaired_lots_per_side"] == 0
+    assert report["symbol_policies"]["ETHUSDT"]["reduce_target_step_fraction"] == pytest.approx(1.0)
+    assert captured_symbol_policies >= {(1, 0.5), (0, 1.0)}
     assert report["symbol_policies"]["ETHUSDT"]["entry_filter"]["filter_id"] == "de1.00_ve10.00_rr0.00"
     assert all(cache_key[2] != final_window_id for cache_key in research._cache)
     json_path, md_path = write_joint_seed_diagnostic(report, tmp_path, stem="joint")
@@ -851,11 +893,18 @@ def test_joint_seed_diagnostic_keeps_final_oos_sealed(tmp_path: Path) -> None:
 
     final_report = research.evaluate_locked_joint_oos(
         {
-            "BTCUSDT": SymbolResearchPolicy(btc, 100.0),
+            "BTCUSDT": SymbolResearchPolicy(
+                btc,
+                100.0,
+                max_unpaired_lots_per_side=1,
+                reduce_target_step_fraction=0.5,
+            ),
             "ETHUSDT": SymbolResearchPolicy(
                 eth,
                 80.0,
                 EntryFilter(1.0, 10.0, 0.0),
+                max_unpaired_lots_per_side=0,
+                reduce_target_step_fraction=1.0,
             ),
         },
         generate_wind_down_maker_policies(

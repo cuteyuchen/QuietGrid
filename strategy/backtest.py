@@ -43,6 +43,7 @@ class BacktestConfig:
     wind_down_initial_offset_steps: float = 0.0
     wind_down_unwind_fraction: float = 1.0
     max_unpaired_lots_per_side: int = 0
+    reduce_target_step_fraction: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -180,6 +181,9 @@ def backtest_config_from_mapping(raw: dict[str, Any]) -> BacktestConfig:
         ),
         max_unpaired_lots_per_side=int(
             backtest.get("max_unpaired_lots_per_side", 0)
+        ),
+        reduce_target_step_fraction=float(
+            backtest.get("reduce_target_step_fraction", 1.0)
         ),
     )
 
@@ -465,7 +469,12 @@ def run_grid_backtest(
                     order_intent=order.order_intent.value,
                 )
             )
-            next_order = _next_order(params, order)
+            next_order = _next_order(
+                params,
+                order,
+                reduce_target_step_fraction=config.reduce_target_step_fraction,
+                tick_size=min_tick_size,
+            )
             if next_order is not None:
                 if (
                     (defensive or wind_down_active)
@@ -741,6 +750,8 @@ def _validate_backtest_config(config: BacktestConfig) -> None:
         raise ValueError("wind_down_unwind_fraction必须在(0, 1]内。")
     if config.max_unpaired_lots_per_side < 0:
         raise ValueError("max_unpaired_lots_per_side不能为负。")
+    if not 0 < config.reduce_target_step_fraction <= 1:
+        raise ValueError("reduce_target_step_fraction必须在(0, 1]内。")
     if config.max_inventory_notional < 0:
         raise ValueError("max_inventory_notional不能为负。")
     if not (
@@ -1154,7 +1165,13 @@ def _reduce_lot(lots: list[_PositionLot], entry_price: float, qty: float) -> Non
             return
 
 
-def _next_order(params: GridParams, order: _BacktestOrder) -> _BacktestOrder | None:
+def _next_order(
+    params: GridParams,
+    order: _BacktestOrder,
+    *,
+    reduce_target_step_fraction: float = 1.0,
+    tick_size: float = 0.0,
+) -> _BacktestOrder | None:
     if order.side == OrderSide.BUY:
         next_index = order.grid_index + 1
         next_side = OrderSide.SELL
@@ -1168,10 +1185,21 @@ def _next_order(params: GridParams, order: _BacktestOrder) -> _BacktestOrder | N
         position_side = "LONG" if next_side == OrderSide.BUY else "SHORT"
     else:
         position_side = "SHORT" if next_side == OrderSide.BUY else "LONG"
+    next_price = params.grid_prices[next_index]
+    if order.entry_price is None and reduce_target_step_fraction < 1:
+        next_price = order.price + (
+            next_price - order.price
+        ) * reduce_target_step_fraction
+        if tick_size > 0:
+            next_price = (
+                ceil(next_price / tick_size - 1e-12) * tick_size
+                if next_side == OrderSide.SELL
+                else _round_down_to_step(next_price, tick_size)
+            )
     return _BacktestOrder(
         next_index,
         next_side,
-        params.grid_prices[next_index],
+        next_price,
         order.qty,
         entry_price,
         position_side,

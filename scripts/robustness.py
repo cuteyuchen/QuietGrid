@@ -139,6 +139,8 @@ class SymbolResearchPolicy:
     parameter: ParameterSet
     max_inventory_notional: float
     entry_filter: EntryFilter | None = None
+    max_unpaired_lots_per_side: int | None = None
+    reduce_target_step_fraction: float | None = None
 
 
 @dataclass(frozen=True)
@@ -223,6 +225,7 @@ class ResearchConfig:
     wind_down_initial_offset_steps: float = 0.0
     wind_down_unwind_fraction: float = 1.0
     max_unpaired_lots_per_side: int = 0
+    reduce_target_step_fraction: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -1110,6 +1113,9 @@ class RobustnessResearch:
                 "max_unpaired_lots_per_side": (
                     self.config.max_unpaired_lots_per_side
                 ),
+                "reduce_target_step_fraction": (
+                    self.config.reduce_target_step_fraction
+                ),
                 "maker_fee_rate": self.config.maker_fee_rate,
                 "taker_fee_rate": self.config.taker_fee_rate,
                 "stop_slippage_bps": self.config.stop_slippage_bps,
@@ -1582,6 +1588,9 @@ class RobustnessResearch:
                 "max_unpaired_lots_per_side": (
                     self.config.max_unpaired_lots_per_side
                 ),
+                "reduce_target_step_fraction": (
+                    self.config.reduce_target_step_fraction
+                ),
                 "capital_by_symbol": {
                     symbol: self._capital_for_symbol(symbol)
                     for symbol in sorted({item.window.symbol for item in self.contexts})
@@ -1631,6 +1640,18 @@ class RobustnessResearch:
             raise ValueError("联合多 seed 诊断包含研究参数集之外的参数。")
         if any(item.max_inventory_notional <= 0 for item in normalized_policies.values()):
             raise ValueError("联合多 seed 诊断的单标的库存上限必须为正。")
+        if any(
+            item.max_unpaired_lots_per_side is not None
+            and item.max_unpaired_lots_per_side < 0
+            for item in normalized_policies.values()
+        ):
+            raise ValueError("联合多 seed 诊断的单标的未配对库存上限不能为负。")
+        if any(
+            item.reduce_target_step_fraction is not None
+            and not 0 < item.reduce_target_step_fraction <= 1
+            for item in normalized_policies.values()
+        ):
+            raise ValueError("联合多 seed 诊断的单标的减仓目标比例必须在 (0, 1] 内。")
         if self.config.wind_down_bars <= 0:
             raise ValueError("联合多 seed 诊断要求 wind_down_bars 大于 0。")
         salts = list(dict.fromkeys(int(value) for value in seed_salts))
@@ -1760,6 +1781,16 @@ class RobustnessResearch:
                     ),
                     "capital": self._capital_for_symbol(symbol),
                     "max_inventory_notional": item.max_inventory_notional,
+                    "max_unpaired_lots_per_side": (
+                        self.config.max_unpaired_lots_per_side
+                        if item.max_unpaired_lots_per_side is None
+                        else item.max_unpaired_lots_per_side
+                    ),
+                    "reduce_target_step_fraction": (
+                        self.config.reduce_target_step_fraction
+                        if item.reduce_target_step_fraction is None
+                        else item.reduce_target_step_fraction
+                    ),
                 }
                 for symbol, item in sorted(normalized_policies.items())
             },
@@ -1771,6 +1802,8 @@ class RobustnessResearch:
                     symbol: self._capital_for_symbol(symbol)
                     for symbol in symbols
                 },
+                "max_unpaired_lots_per_side": self.config.max_unpaired_lots_per_side,
+                "reduce_target_step_fraction": self.config.reduce_target_step_fraction,
             },
             "split": {
                 "development": _split_summary(split.development),
@@ -1932,6 +1965,16 @@ class RobustnessResearch:
                     ),
                     "capital": self._capital_for_symbol(symbol),
                     "max_inventory_notional": item.max_inventory_notional,
+                    "max_unpaired_lots_per_side": (
+                        self.config.max_unpaired_lots_per_side
+                        if item.max_unpaired_lots_per_side is None
+                        else item.max_unpaired_lots_per_side
+                    ),
+                    "reduce_target_step_fraction": (
+                        self.config.reduce_target_step_fraction
+                        if item.reduce_target_step_fraction is None
+                        else item.reduce_target_step_fraction
+                    ),
                 }
                 for symbol, item in sorted(normalized_policies.items())
             },
@@ -2543,6 +2586,12 @@ class RobustnessResearch:
                 context,
                 self.config.maker_fill_probability,
                 max_inventory_notional=symbol_policy.max_inventory_notional,
+                max_unpaired_lots_per_side=(
+                    symbol_policy.max_unpaired_lots_per_side
+                ),
+                reduce_target_step_fraction=(
+                    symbol_policy.reduce_target_step_fraction
+                ),
                 wind_down_reprice_interval_bars=policy.reprice_interval_bars,
                 wind_down_initial_offset_steps=policy.initial_offset_steps,
                 wind_down_unwind_fraction=policy.unwind_fraction,
@@ -2747,6 +2796,8 @@ class RobustnessResearch:
         wind_down_reprice_interval_bars: int | None = None,
         wind_down_initial_offset_steps: float | None = None,
         wind_down_unwind_fraction: float | None = None,
+        max_unpaired_lots_per_side: int | None = None,
+        reduce_target_step_fraction: float | None = None,
         maker_fee_rate: float | None = None,
         taker_fee_rate: float | None = None,
         stop_slippage_bps: float | None = None,
@@ -2778,6 +2829,16 @@ class RobustnessResearch:
             if wind_down_unwind_fraction is None
             else float(wind_down_unwind_fraction)
         )
+        selected_unpaired_lots = (
+            self.config.max_unpaired_lots_per_side
+            if max_unpaired_lots_per_side is None
+            else int(max_unpaired_lots_per_side)
+        )
+        selected_reduce_target_fraction = (
+            self.config.reduce_target_step_fraction
+            if reduce_target_step_fraction is None
+            else float(reduce_target_step_fraction)
+        )
         selected_maker_fee = (
             self.config.maker_fee_rate
             if maker_fee_rate is None
@@ -2803,6 +2864,8 @@ class RobustnessResearch:
             selected_reprice_interval,
             selected_offset_steps,
             selected_unwind_fraction,
+            selected_unpaired_lots,
+            selected_reduce_target_fraction,
             selected_maker_fee,
             selected_taker_fee,
             selected_stop_slippage,
@@ -2820,6 +2883,8 @@ class RobustnessResearch:
             selected_reprice_interval,
             selected_offset_steps,
             selected_unwind_fraction,
+            selected_unpaired_lots,
+            selected_reduce_target_fraction,
             selected_maker_fee,
             selected_taker_fee,
             selected_stop_slippage,
@@ -2838,6 +2903,8 @@ class RobustnessResearch:
         wind_down_reprice_interval_bars: int,
         wind_down_initial_offset_steps: float,
         wind_down_unwind_fraction: float,
+        max_unpaired_lots_per_side: int,
+        reduce_target_step_fraction: float,
         maker_fee_rate: float,
         taker_fee_rate: float,
         stop_slippage_bps: float,
@@ -3017,9 +3084,8 @@ class RobustnessResearch:
                     wind_down_initial_offset_steps
                 ),
                 wind_down_unwind_fraction=wind_down_unwind_fraction,
-                max_unpaired_lots_per_side=(
-                    self.config.max_unpaired_lots_per_side
-                ),
+                max_unpaired_lots_per_side=max_unpaired_lots_per_side,
+                reduce_target_step_fraction=reduce_target_step_fraction,
             ),
         )
         return WindowResult(
@@ -4117,12 +4183,15 @@ def _seed_sensitivity_markdown(report: dict[str, Any]) -> str:
             )
         )
     summary = report["summary"]
+    backtest_policy = report["backtest_policy"]
     return f"""# QuietGrid 多随机 Seed 撮合敏感性
 
 生成时间：{report['generated_at']}
 
 固定参数：`{report['parameter']['parameter_id']}`
 固定去库存策略：`{report['policy']['policy_id']}`
+单侧未配对库存上限：{backtest_policy.get('max_unpaired_lots_per_side', 0)} 层
+减仓目标：{backtest_policy.get('reduce_target_step_fraction', 1.0):.2f} 个完整网格步长
 最终 OOS：`{report['split']['final_oos']['status']}`
 
 | Seed salt | 全费用通过 | BASE 开发盈亏 | BASE 开发 PF | BASE 验证盈亏 | BASE 验证 PF | COST50 开发盈亏 | COST50 验证盈亏 | 最大回撤 |
@@ -4166,7 +4235,8 @@ def _joint_seed_markdown(report: dict[str, Any]) -> str:
             )
         )
     policy_rows = "\n".join(
-        "| {symbol} | {parameter} | {entry_filter} | {capital:.0f} | {inventory:.0f} |".format(
+        "| {symbol} | {parameter} | {entry_filter} | {capital:.0f} | {inventory:.0f} | "
+        "{unpaired} | {reduce:.2f} |".format(
             symbol=symbol,
             parameter=item["parameter"]["parameter_id"],
             entry_filter=(
@@ -4176,6 +4246,8 @@ def _joint_seed_markdown(report: dict[str, Any]) -> str:
             ),
             capital=item["capital"],
             inventory=item["max_inventory_notional"],
+            unpaired=item.get("max_unpaired_lots_per_side", 0),
+            reduce=item.get("reduce_target_step_fraction", 1.0),
         )
         for symbol, item in report["symbol_policies"].items()
     )
@@ -4187,8 +4259,8 @@ def _joint_seed_markdown(report: dict[str, Any]) -> str:
 最终 OOS：`{report['split']['final_oos']['status']}`
 联合口径：{report['protocol']['aggregation']}
 
-| 标的 | 参数 | 入口过滤器 | 本金 | 最大库存 |
-|---|---|---|---:|---:|
+| 标的 | 参数 | 入口过滤器 | 本金 | 最大库存 | 单侧未配对上限 | 减仓目标格数 |
+|---|---|---|---:|---:|---:|---:|
 {policy_rows}
 
 | Seed salt | 全费用通过 | BASE 开发盈亏 | BASE 开发 PF | BASE 验证盈亏 | BASE 验证 PF | COST50 开发盈亏 | COST50 验证盈亏 | 保守最大回撤 |

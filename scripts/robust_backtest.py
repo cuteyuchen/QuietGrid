@@ -333,6 +333,7 @@ def _diagnose_windows(args: argparse.Namespace) -> None:
         wind_down_initial_offset_steps=args.initial_offset_steps,
         wind_down_unwind_fraction=args.unwind_fraction,
         max_unpaired_lots_per_side=args.max_unpaired_lots_per_side,
+        reduce_target_step_fraction=args.reduce_target_step_fraction,
         maker_fee_rate=args.maker_fee_rate,
         taker_fee_rate=args.taker_fee_rate,
         stop_slippage_bps=args.stop_slippage_bps,
@@ -532,6 +533,7 @@ def _diagnose_seeds(args: argparse.Namespace) -> None:
         wind_down_bars=args.wind_down_bars,
         max_inventory_notional=args.max_inventory_notional,
         max_unpaired_lots_per_side=args.max_unpaired_lots_per_side,
+        reduce_target_step_fraction=args.reduce_target_step_fraction,
     )
     windows = []
     manifests = []
@@ -658,11 +660,15 @@ def _diagnose_joint_seeds(args: argparse.Namespace) -> None:
             "BTCUSDT": SymbolResearchPolicy(
                 parameter=btc_parameter,
                 max_inventory_notional=args.btc_max_inventory_notional,
+                max_unpaired_lots_per_side=args.btc_max_unpaired_lots_per_side,
+                reduce_target_step_fraction=args.btc_reduce_target_step_fraction,
             ),
             "ETHUSDT": SymbolResearchPolicy(
                 parameter=eth_parameter,
                 max_inventory_notional=args.eth_max_inventory_notional,
                 entry_filter=eth_filter,
+                max_unpaired_lots_per_side=args.eth_max_unpaired_lots_per_side,
+                reduce_target_step_fraction=args.eth_reduce_target_step_fraction,
             ),
         },
         maker_policy,
@@ -719,6 +725,16 @@ def _finalize_joint_oos(args: argparse.Namespace) -> None:
             parameter=parameter,
             max_inventory_notional=float(payload["max_inventory_notional"]),
             entry_filter=entry_filter,
+            max_unpaired_lots_per_side=(
+                int(payload["max_unpaired_lots_per_side"])
+                if payload.get("max_unpaired_lots_per_side") is not None
+                else None
+            ),
+            reduce_target_step_fraction=(
+                float(payload["reduce_target_step_fraction"])
+                if payload.get("reduce_target_step_fraction") is not None
+                else None
+            ),
         )
 
     if set(symbol_policies) != {"BTCUSDT", "ETHUSDT"}:
@@ -730,6 +746,12 @@ def _finalize_joint_oos(args: argparse.Namespace) -> None:
         maker_fill_probability=float(backtest_policy["maker_fill_probability"]),
         min_windows_per_split=args.min_windows_per_split,
         wind_down_bars=int(backtest_policy["wind_down_bars"]),
+        max_unpaired_lots_per_side=int(
+            backtest_policy.get("max_unpaired_lots_per_side", 0)
+        ),
+        reduce_target_step_fraction=float(
+            backtest_policy.get("reduce_target_step_fraction", 1.0)
+        ),
     )
     policy_payload = lock_report["policy"]
     maker_policy = generate_wind_down_maker_policies(
@@ -951,6 +973,11 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
     )
+    window_diagnostic.add_argument(
+        "--reduce-target-step-fraction",
+        type=float,
+        default=1.0,
+    )
     window_diagnostic.add_argument("--maker-fee-rate", type=float, default=0.0002)
     window_diagnostic.add_argument("--taker-fee-rate", type=float, default=0.0005)
     window_diagnostic.add_argument("--stop-slippage-bps", type=float, default=10.0)
@@ -1069,6 +1096,11 @@ def _parser() -> argparse.ArgumentParser:
         default=0,
         help="每个方向最多保留的未配对库存层数；0 表示不限制。",
     )
+    seed_diagnostic.add_argument(
+        "--reduce-target-step-fraction",
+        type=float,
+        default=1.0,
+    )
     seed_diagnostic.add_argument("--max-directional-efficiency", type=float)
     seed_diagnostic.add_argument("--max-volatility-expansion", type=float)
     seed_diagnostic.add_argument("--min-reversal-ratio", type=float)
@@ -1092,12 +1124,22 @@ def _parser() -> argparse.ArgumentParser:
     joint_seed.add_argument("--initial-offset-steps", type=float, default=1.1)
     joint_seed.add_argument("--unwind-fraction", type=float, default=1.0)
     joint_seed.add_argument("--btc-range-multiplier", type=float, default=1.25)
-    joint_seed.add_argument("--btc-min-step", type=float, default=0.0015)
+    joint_seed.add_argument("--btc-min-step", type=float, default=0.0018)
     joint_seed.add_argument("--btc-stop-buffer", type=float, default=0.02)
     joint_seed.add_argument(
         "--btc-max-inventory-notional",
         type=float,
         default=200.0,
+    )
+    joint_seed.add_argument(
+        "--btc-max-unpaired-lots-per-side",
+        type=int,
+        default=1,
+    )
+    joint_seed.add_argument(
+        "--btc-reduce-target-step-fraction",
+        type=float,
+        default=0.50,
     )
     joint_seed.add_argument("--eth-range-multiplier", type=float, default=1.0)
     joint_seed.add_argument("--eth-min-step", type=float, default=0.0018)
@@ -1106,6 +1148,16 @@ def _parser() -> argparse.ArgumentParser:
         "--eth-max-inventory-notional",
         type=float,
         default=120.0,
+    )
+    joint_seed.add_argument(
+        "--eth-max-unpaired-lots-per-side",
+        type=int,
+        default=0,
+    )
+    joint_seed.add_argument(
+        "--eth-reduce-target-step-fraction",
+        type=float,
+        default=1.0,
     )
     joint_seed.add_argument(
         "--eth-max-directional-efficiency",

@@ -554,6 +554,51 @@ def test_unpaired_lot_cap_suppresses_additional_opening_layers() -> None:
     assert result.net_position_qty > 0
 
 
+def test_bar_boundary_lot_cap_allows_same_bar_fills_before_next_bar_suppression() -> None:
+    params = replace(
+        _params(),
+        lower=98.0,
+        upper=102.0,
+        grid_num=4,
+        grid_prices=[98.0, 99.0, 100.0, 101.0, 102.0],
+        stop_loss_price=90.0,
+        upper_stop_loss_price=110.0,
+    )
+
+    intrabar = run_grid_backtest(
+        params,
+        [{"high": 99.1, "low": 97.9, "close": 98.0}],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=400,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            stop_on_stop_loss=False,
+            max_unpaired_lots_per_side=1,
+            unpaired_lot_cap_enforcement="INTRABAR",
+        ),
+    )
+    bar_boundary = run_grid_backtest(
+        params,
+        [{"high": 99.1, "low": 97.9, "close": 98.0}],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=400,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            stop_on_stop_loss=False,
+            max_unpaired_lots_per_side=1,
+            unpaired_lot_cap_enforcement="BAR_BOUNDARY",
+        ),
+    )
+
+    assert [fill.price for fill in intrabar.fills] == [99.0]
+    assert [fill.price for fill in bar_boundary.fills] == [99.0, 98.0]
+    assert bar_boundary.inventory_suppression_count == 0
+
+
 def test_inventory_critical_closes_session_after_fill() -> None:
     params = replace(
         _params(),

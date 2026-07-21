@@ -44,6 +44,7 @@ class BacktestConfig:
     wind_down_unwind_fraction: float = 1.0
     max_unpaired_lots_per_side: int = 0
     reduce_target_step_fraction: float = 1.0
+    unpaired_lot_cap_enforcement: str = "INTRABAR"
 
 
 @dataclass(frozen=True)
@@ -185,6 +186,9 @@ def backtest_config_from_mapping(raw: dict[str, Any]) -> BacktestConfig:
         reduce_target_step_fraction=float(
             backtest.get("reduce_target_step_fraction", 1.0)
         ),
+        unpaired_lot_cap_enforcement=str(
+            backtest.get("unpaired_lot_cap_enforcement", "INTRABAR")
+        ).upper(),
     )
 
 
@@ -310,6 +314,8 @@ def run_grid_backtest(
             max_unpaired_lot_age_bars,
             _oldest_lot_age_bars(long_lots, short_lots, bar_index),
         )
+        bar_start_long_lot_count = len(long_lots)
+        bar_start_short_lot_count = len(short_lots)
 
         remaining_bars = len(klines) - bar_index
         if (
@@ -433,10 +439,16 @@ def run_grid_backtest(
         for order in touched:
             if order not in open_orders:
                 continue
+            if config.unpaired_lot_cap_enforcement == "BAR_BOUNDARY":
+                long_lot_count = bar_start_long_lot_count
+                short_lot_count = bar_start_short_lot_count
+            else:
+                long_lot_count = len(long_lots)
+                short_lot_count = len(short_lots)
             if _unpaired_lot_limit_reached(
                 order,
-                long_lots,
-                short_lots,
+                long_lot_count,
+                short_lot_count,
                 config.max_unpaired_lots_per_side,
             ):
                 inventory_suppression_count += 1
@@ -752,6 +764,10 @@ def _validate_backtest_config(config: BacktestConfig) -> None:
         raise ValueError("max_unpaired_lots_per_side不能为负。")
     if not 0 < config.reduce_target_step_fraction <= 1:
         raise ValueError("reduce_target_step_fraction必须在(0, 1]内。")
+    if config.unpaired_lot_cap_enforcement not in {"INTRABAR", "BAR_BOUNDARY"}:
+        raise ValueError(
+            "unpaired_lot_cap_enforcement必须为INTRABAR或BAR_BOUNDARY。"
+        )
     if config.max_inventory_notional < 0:
         raise ValueError("max_inventory_notional不能为负。")
     if not (
@@ -1129,17 +1145,17 @@ def _apply_position_fill(
 
 def _unpaired_lot_limit_reached(
     order: _BacktestOrder,
-    long_lots: list[_PositionLot],
-    short_lots: list[_PositionLot],
+    long_lot_count: int,
+    short_lot_count: int,
     limit: int,
 ) -> bool:
     if limit <= 0 or order.order_intent != OrderIntent.OPEN:
         return False
     position_side = str(order.position_side or "").upper()
     if position_side == "LONG":
-        return len(long_lots) >= limit
+        return long_lot_count >= limit
     if position_side == "SHORT":
-        return len(short_lots) >= limit
+        return short_lot_count >= limit
     return False
 
 

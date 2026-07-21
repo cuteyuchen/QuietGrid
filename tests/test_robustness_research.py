@@ -159,6 +159,7 @@ def test_joint_seed_cli_defaults_to_locked_symbol_policies() -> None:
     assert args.eth_max_inventory_notional == pytest.approx(120.0)
     assert args.eth_max_unpaired_lots_per_side == 0
     assert args.eth_reduce_target_step_fraction == pytest.approx(1.0)
+    assert args.unpaired_lot_cap_enforcement == "INTRABAR"
     assert args.eth_max_directional_efficiency == pytest.approx(0.50)
     assert args.eth_max_volatility_expansion == pytest.approx(1.05)
     assert args.eth_min_reversal_ratio == pytest.approx(0.25)

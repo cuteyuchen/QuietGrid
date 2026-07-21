@@ -226,6 +226,7 @@ class ResearchConfig:
     wind_down_unwind_fraction: float = 1.0
     max_unpaired_lots_per_side: int = 0
     reduce_target_step_fraction: float = 1.0
+    unpaired_lot_cap_enforcement: str = "INTRABAR"
 
 
 @dataclass(frozen=True)
@@ -1116,6 +1117,9 @@ class RobustnessResearch:
                 "reduce_target_step_fraction": (
                     self.config.reduce_target_step_fraction
                 ),
+                "unpaired_lot_cap_enforcement": (
+                    self.config.unpaired_lot_cap_enforcement
+                ),
                 "maker_fee_rate": self.config.maker_fee_rate,
                 "taker_fee_rate": self.config.taker_fee_rate,
                 "stop_slippage_bps": self.config.stop_slippage_bps,
@@ -1591,6 +1595,9 @@ class RobustnessResearch:
                 "reduce_target_step_fraction": (
                     self.config.reduce_target_step_fraction
                 ),
+                "unpaired_lot_cap_enforcement": (
+                    self.config.unpaired_lot_cap_enforcement
+                ),
                 "capital_by_symbol": {
                     symbol: self._capital_for_symbol(symbol)
                     for symbol in sorted({item.window.symbol for item in self.contexts})
@@ -1816,6 +1823,7 @@ class RobustnessResearch:
                 },
                 "max_unpaired_lots_per_side": self.config.max_unpaired_lots_per_side,
                 "reduce_target_step_fraction": self.config.reduce_target_step_fraction,
+                "unpaired_lot_cap_enforcement": self.config.unpaired_lot_cap_enforcement,
             },
             "split": {
                 "development": _split_summary(split.development),
@@ -3098,6 +3106,7 @@ class RobustnessResearch:
                 wind_down_unwind_fraction=wind_down_unwind_fraction,
                 max_unpaired_lots_per_side=max_unpaired_lots_per_side,
                 reduce_target_step_fraction=reduce_target_step_fraction,
+                unpaired_lot_cap_enforcement=self.config.unpaired_lot_cap_enforcement,
             ),
         )
         return WindowResult(
@@ -3925,6 +3934,10 @@ def _validate_research_config(config: ResearchConfig) -> None:
         raise ValueError("wind_down_unwind_fraction 必须在 (0, 1] 内。")
     if config.max_unpaired_lots_per_side < 0:
         raise ValueError("max_unpaired_lots_per_side 不能为负。")
+    if config.unpaired_lot_cap_enforcement not in {"INTRABAR", "BAR_BOUNDARY"}:
+        raise ValueError(
+            "unpaired_lot_cap_enforcement 必须为 INTRABAR 或 BAR_BOUNDARY。"
+        )
     if not (
         0 < config.inventory_caution_utilization
         < config.inventory_critical_utilization

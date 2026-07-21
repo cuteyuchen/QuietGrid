@@ -608,6 +608,7 @@ def _diagnose_joint_seeds(args: argparse.Namespace) -> None:
         maker_fill_probability=args.fill_probability,
         min_windows_per_split=args.min_windows_per_split,
         wind_down_bars=args.wind_down_bars,
+        unpaired_lot_cap_enforcement=args.unpaired_lot_cap_enforcement,
     )
     windows = []
     manifests = []
@@ -752,6 +753,9 @@ def _finalize_joint_oos(args: argparse.Namespace) -> None:
         reduce_target_step_fraction=float(
             backtest_policy.get("reduce_target_step_fraction", 1.0)
         ),
+        unpaired_lot_cap_enforcement=str(
+            backtest_policy.get("unpaired_lot_cap_enforcement", "INTRABAR")
+        ).upper(),
     )
     policy_payload = lock_report["policy"]
     maker_policy = generate_wind_down_maker_policies(
@@ -1120,6 +1124,11 @@ def _parser() -> argparse.ArgumentParser:
     joint_seed.add_argument("--eth-capital", type=float, default=300.0)
     joint_seed.add_argument("--fill-probability", type=float, default=0.65)
     joint_seed.add_argument("--wind-down-bars", type=int, default=1440)
+    joint_seed.add_argument(
+        "--unpaired-lot-cap-enforcement",
+        choices=("INTRABAR", "BAR_BOUNDARY"),
+        default="INTRABAR",
+    )
     joint_seed.add_argument("--reprice-interval", type=int, default=5)
     joint_seed.add_argument("--initial-offset-steps", type=float, default=1.1)
     joint_seed.add_argument("--unwind-fraction", type=float, default=1.0)

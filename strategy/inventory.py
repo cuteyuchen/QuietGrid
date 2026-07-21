@@ -30,6 +30,10 @@ class InventoryConfig:
     critical_utilization: float = 0.80
     suppress_same_side_orders: bool = True
     passive_reduce_first: bool = True
+    # 库存方向与趋势相反时提前处理，不再等到普通 utilization 阈值。
+    wrong_way_reduce_utilization: float = 0.20
+    wrong_way_reduce_risk_score: float = 35.0
+    wrong_way_close_risk_score: float = 65.0
 
 
 @dataclass(frozen=True)
@@ -85,10 +89,51 @@ class InventoryManager:
             trend_direction=trend_direction,
             minutes_to_close=minutes_to_close,
         )
+        wrong_way_inventory = (
+            snapshot.net_qty > 1e-12 and trend_direction < 0
+        ) or (
+            snapshot.net_qty < -1e-12 and trend_direction > 0
+        )
         if snapshot.level == InventoryLevel.CRITICAL:
             return InventoryDecision(InventoryAction.CLOSE, "库存利用率达到 CRITICAL。", snapshot)
+        if (
+            wrong_way_inventory
+            and snapshot.risk_score >= self.config.wrong_way_close_risk_score
+        ):
+            return InventoryDecision(
+                InventoryAction.CLOSE,
+                "库存方向与趋势相反，且综合库存风险达到提前平仓阈值 "
+                f"({snapshot.risk_score:.1f} >= "
+                f"{self.config.wrong_way_close_risk_score:.1f})。",
+                snapshot,
+            )
+        if (
+            wrong_way_inventory
+            and (
+                snapshot.utilization >= self.config.wrong_way_reduce_utilization
+                or snapshot.risk_score >= self.config.wrong_way_reduce_risk_score
+            )
+        ):
+            return InventoryDecision(
+                InventoryAction.REDUCE,
+                "库存方向与趋势相反，提前停止增加库存并只允许减仓 "
+                f"(utilization={snapshot.utilization:.2%}, "
+                f"risk_score={snapshot.risk_score:.1f})。",
+                snapshot,
+            )
         if snapshot.level == InventoryLevel.HIGH:
             return InventoryDecision(InventoryAction.REDUCE, "库存利用率达到 HIGH，只允许减仓。", snapshot)
+        if wrong_way_inventory and self.config.suppress_same_side_orders:
+            action = (
+                InventoryAction.SUPPRESS_LONG
+                if snapshot.net_qty > 0
+                else InventoryAction.SUPPRESS_SHORT
+            )
+            return InventoryDecision(
+                action,
+                "库存方向与趋势相反，立即抑制继续增加同向库存的订单。",
+                snapshot,
+            )
         if snapshot.level == InventoryLevel.CAUTION and self.config.suppress_same_side_orders:
             action = InventoryAction.SUPPRESS_LONG if snapshot.net_qty > 0 else InventoryAction.SUPPRESS_SHORT
             if abs(snapshot.net_qty) <= 1e-12:
@@ -242,6 +287,22 @@ def _validate_config(config: InventoryConfig) -> None:
     )
     if not 0 < values[0] < values[1] < values[2] <= 1:
         raise ValueError("库存风险阈值必须满足 0 < caution < high < critical <= 1。")
+    if not 0 <= config.wrong_way_reduce_utilization < config.critical_utilization:
+        raise ValueError(
+            "逆势库存提前减仓阈值必须满足 "
+            "0 <= wrong_way_reduce_utilization < critical_utilization。"
+        )
+    if not (
+        0
+        <= config.wrong_way_reduce_risk_score
+        <= config.wrong_way_close_risk_score
+        <= 100
+    ):
+        raise ValueError(
+            "逆势库存风险分阈值必须满足 "
+            "0 <= wrong_way_reduce_risk_score <= "
+            "wrong_way_close_risk_score <= 100。"
+        )
 
 
 def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:

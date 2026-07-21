@@ -8,6 +8,7 @@ from typing import Any
 
 from core.models import GridDirectionMode, GridParams, OrderIntent, OrderSide
 from data_sources.models import FundingEvent
+from strategy.order_plan import InitialGridOrderPlan, build_initial_grid_order_plan
 
 
 class LookAheadViolation(RuntimeError):
@@ -214,12 +215,13 @@ def run_grid_backtest(
     funding_schedule = _sorted_funding_events(funding_events)
     funding_cursor = 0
 
-    quantities = _backtest_order_quantities(
+    order_plan = build_initial_grid_order_plan(
         params,
         current_price,
         capital=config.capital,
         leverage=config.leverage,
-        step_size=config.quantity_step_size,
+        tick_size=config.min_tick_size,
+        quantity_step_size=config.quantity_step_size,
     )
     mode = (
         config.direction_mode
@@ -229,13 +231,7 @@ def run_grid_backtest(
     if mode == GridDirectionMode.NEUTRAL and params.direction_mode != GridDirectionMode.NEUTRAL:
         mode = params.direction_mode
     seed_entry_price = _seed_entry_price(current_price, mode, config.seed_slippage_bps)
-    open_orders = _initial_orders(
-        params,
-        current_price,
-        quantities,
-        mode,
-        seed_entry_price,
-    )
+    open_orders = _initial_orders_from_plan(order_plan, mode, seed_entry_price)
     if not open_orders:
         raise ValueError("回测初始网格没有可挂订单。")
 
@@ -793,29 +789,24 @@ def _validate_grid_params(params: GridParams) -> None:
     _positive_finite(params.stop_loss_price, "stop_loss_price")
 
 
-def _initial_orders(
-    params: GridParams,
-    current_price: float,
-    quantities: dict[int, float],
-    mode: GridDirectionMode = GridDirectionMode.NEUTRAL,
-    seed_entry_price: float | None = None,
+def _initial_orders_from_plan(
+    plan: tuple[InitialGridOrderPlan, ...],
+    mode: GridDirectionMode,
+    seed_entry_price: float | None,
 ) -> list[_BacktestOrder]:
     orders: list[_BacktestOrder] = []
-    for index, price in enumerate(params.grid_prices):
-        if price == current_price:
-            continue
-        side = OrderSide.BUY if price < current_price else OrderSide.SELL
+    for item in plan:
         position_side, intent, entry_price = _initial_order_metadata(
             mode,
-            side,
+            item.side,
             seed_entry_price,
         )
         orders.append(
             _BacktestOrder(
-                index,
-                side,
-                price,
-                quantities[index],
+                item.grid_index,
+                item.side,
+                item.price,
+                item.qty,
                 entry_price,
                 position_side,
                 intent,
@@ -987,44 +978,6 @@ def _round_post_only_buy(value: float, mark_price: float, tick_size: float) -> f
     if rounded >= mark_price:
         rounded = int(mark_price / tick - 1e-12) * tick
     return _positive_finite(rounded, "wind_down_buy_price")
-
-
-def _backtest_order_quantities(
-    params: GridParams,
-    current_price: float,
-    *,
-    capital: float,
-    leverage: float,
-    step_size: float,
-) -> dict[int, float]:
-    order_levels = [
-        (index, price)
-        for index, price in enumerate(params.grid_prices)
-        if price != current_price
-    ]
-    if not order_levels:
-        return {}
-    if not params.qty_weights:
-        qty = capital * leverage / current_price / params.grid_num
-        qty = _round_down_to_step(qty, step_size)
-        return {index: _positive_finite(qty, "qty") for index, _price in order_levels}
-    if len(params.qty_weights) != len(params.grid_prices):
-        raise ValueError("qty_weights长度必须等于grid_prices长度。")
-    selected_weight = sum(params.qty_weights[index] for index, _price in order_levels)
-    if selected_weight <= 0:
-        raise ValueError("qty_weights合计必须为正数。")
-    total_notional = capital * leverage
-    quantities = {
-        index: _round_down_to_step(
-            total_notional * (params.qty_weights[index] / selected_weight) / price,
-            step_size,
-        )
-        for index, price in order_levels
-    }
-    return {
-        index: _positive_finite(qty, "qty")
-        for index, qty in quantities.items()
-    }
 
 
 def _round_down_to_step(value: float, step_size: float) -> float:

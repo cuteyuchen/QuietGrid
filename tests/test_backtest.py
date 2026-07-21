@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from core.models import GridDirectionMode, GridParams
 from strategy.backtest import BacktestConfig, LookAheadViolation, run_grid_backtest
+from strategy.order_plan import build_initial_grid_order_plan
 
 
 def _params() -> GridParams:
@@ -145,6 +146,43 @@ def test_backtest_uses_adaptive_quantity_weights_and_step_size() -> None:
     )
 
     assert [fill.qty for fill in result.fills] == [0.5, 1.5]
+
+
+def test_backtest_initial_fill_uses_live_tick_rounded_plan() -> None:
+    params = replace(
+        _params(),
+        upper=100.26,
+        lower=99.94,
+        center=100.03,
+        grid_prices=[99.94, 100.03, 100.26],
+        qty_weights=(0.2, 0.5, 0.3),
+    )
+    plan = build_initial_grid_order_plan(
+        params,
+        100.03,
+        capital=200,
+        leverage=1,
+        tick_size=0.1,
+        quantity_step_size=0.01,
+    )
+
+    result = run_grid_backtest(
+        params,
+        [{"high": 100.0, "low": 99.9, "close": 100.0}],
+        current_price=100.03,
+        config=BacktestConfig(
+            capital=200,
+            leverage=1,
+            stop_on_stop_loss=False,
+            min_tick_size=0.1,
+            quantity_step_size=0.01,
+        ),
+    )
+
+    buy = next(item for item in plan if item.side.value == "BUY")
+    assert result.fills[0].grid_index == buy.grid_index
+    assert result.fills[0].price == buy.price == 99.9
+    assert result.fills[0].qty == buy.qty
 
 
 def test_backtest_stops_on_range_break_before_same_bar_fills() -> None:

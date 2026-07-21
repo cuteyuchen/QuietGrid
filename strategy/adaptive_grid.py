@@ -9,6 +9,7 @@ from typing import Any
 
 from core.models import GridDirectionMode, GridParams
 from strategy.grid_calculator import GridCalculationError, calculate_atr
+from strategy.order_plan import weighted_order_quantity
 
 
 ADAPTIVE_GRID_VERSION = "adaptive-grid-v2.1.2"
@@ -400,8 +401,11 @@ def _candidate_order_sizing(
     sized_orders = [
         (
             price,
-            _round_to_step(
-                total_notional * (qty_weights[index] / selected_weight) / price,
+            weighted_order_quantity(
+                total_notional,
+                qty_weights[index],
+                selected_weight,
+                price,
                 step_size,
             ),
         )

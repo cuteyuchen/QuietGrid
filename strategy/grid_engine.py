@@ -16,6 +16,7 @@ from core.models import (
     SymbolSession,
 )
 from exchange.base import ExchangeClient
+from strategy.order_plan import build_initial_grid_order_plan
 
 
 @dataclass(frozen=True)
@@ -82,20 +83,17 @@ class GridEngine:
         min_qty = _symbol_rule_non_negative_float(rules, "min_qty", default=0.0)
         min_notional = _symbol_rule_non_negative_float(rules, "min_notional", default=0.0)
 
-        order_specs: list[tuple[int, OrderSide, float]] = []
-        for index, raw_price in enumerate(session.params.grid_prices):
-            if raw_price == current_price:
-                continue
-            side = OrderSide.BUY if raw_price < current_price else OrderSide.SELL
-            price = self._round_to_step(raw_price, tick_size)
-            if price <= 0:
-                raise ValueError("网格价格按交易所精度取整后必须大于 0。")
-            order_specs.append((index, side, price))
-
-        quantities = self._order_quantities(session, order_specs, current_price, step_size)
+        order_plan = build_initial_grid_order_plan(
+            session.params,
+            current_price,
+            capital=session.capital,
+            leverage=session.leverage,
+            tick_size=tick_size,
+            quantity_step_size=step_size,
+        )
         sized_order_specs = [
-            (index, side, price, quantities[index])
-            for index, side, price in order_specs
+            (item.grid_index, item.side, item.price, item.qty)
+            for item in order_plan
         ]
         if any(qty <= 0 or qty < min_qty for _index, _side, _price, qty in sized_order_specs):
             raise ValueError("每格下单量小于交易所最小下单量。")
@@ -496,36 +494,6 @@ class GridEngine:
         for order in orders:
             await self.exchange.cancel_order(symbol, order.order_id)
             order.status = OrderStatus.CANCELLED
-
-    def _order_quantities(
-        self,
-        session: SymbolSession,
-        order_specs: list[tuple[int, OrderSide, float]],
-        current_price: float,
-        step_size: float,
-    ) -> dict[int, float]:
-        params = session.params
-        if params is None:
-            raise ValueError("计算网格仓位前必须存在 GridParams。")
-        if not params.qty_weights:
-            qty = self._round_to_step(
-                session.capital * session.leverage / current_price / params.grid_num,
-                step_size,
-            )
-            return {index: qty for index, _side, _price in order_specs}
-        if len(params.qty_weights) != len(params.grid_prices):
-            raise ValueError("qty_weights 长度必须等于 grid_prices 长度。")
-        selected_weight = sum(params.qty_weights[index] for index, _side, _price in order_specs)
-        if selected_weight <= 0:
-            raise ValueError("qty_weights 合计必须为正数。")
-        total_notional = session.capital * session.leverage
-        return {
-            index: self._round_to_step(
-                total_notional * (params.qty_weights[index] / selected_weight) / price,
-                step_size,
-            )
-            for index, _side, price in order_specs
-        }
 
     async def ensure_stop_protection_for_position(self, session: SymbolSession, position_qty: float) -> None:
         qty = _finite_float(position_qty, "position qty")

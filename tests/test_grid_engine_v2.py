@@ -9,6 +9,7 @@ from core.models import GridState, OrderSide, OrderStatus, SymbolSession
 from exchange.mock import MockExchangeClient
 from strategy.adaptive_grid import AdaptiveGridGenerator
 from strategy.grid_engine import GridEngine
+from strategy.order_plan import build_initial_grid_order_plan
 
 
 def _session() -> SymbolSession:
@@ -48,6 +49,29 @@ def test_adaptive_grid_engine_uses_non_uniform_level_quantities() -> None:
         assert len(quantities) > 1
         total_notional = sum(order.price * order.qty for order in orders)
         assert total_notional == pytest.approx(200, rel=0.01)
+
+    asyncio.run(run())
+
+
+def test_initial_order_plan_matches_live_tick_rounding_and_quantities() -> None:
+    async def run() -> None:
+        exchange = MockExchangeClient()
+        session = _session()
+        rules = await exchange.get_symbol_rules(session.symbol)
+        expected = build_initial_grid_order_plan(
+            session.params,
+            99.97,
+            capital=session.capital,
+            leverage=session.leverage,
+            tick_size=rules["tick_size"],
+            quantity_step_size=rules["step_size"],
+        )
+        actual = await GridEngine(exchange).start(session, current_price=99.97)
+
+        assert [(item.grid_index, item.side, item.price, item.qty) for item in actual] == [
+            (item.grid_index, item.side, item.price, item.qty)
+            for item in expected
+        ]
 
     asyncio.run(run())
 

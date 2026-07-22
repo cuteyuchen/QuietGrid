@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from core.models import GridState, RiskAction, SymbolSession
 from core.scheduler import Scheduler
 from strategy.grid_calculator import GridConfig, calculate_grid_params
@@ -44,6 +46,39 @@ def _session(realized_pnl: float = 0.0) -> SymbolSession:
     )
 
 
+def _inventory(
+    *,
+    unrealized_pnl: float = 0.0,
+    gross_notional: float = 0.0,
+    level: InventoryLevel = InventoryLevel.NORMAL,
+    utilization: float = 0.0,
+    risk_score: float = 0.0,
+) -> InventorySnapshot:
+    return InventorySnapshot(
+        net_qty=0,
+        net_notional=0,
+        gross_notional=gross_notional,
+        avg_entry_price=None,
+        unrealized_pnl=unrealized_pnl,
+        utilization=utilization,
+        risk_score=risk_score,
+        level=level,
+        unpaired_lots=(),
+    )
+
+
+def _manager(**kwargs) -> RiskManager:
+    return RiskManager(
+        scheduler=FakeScheduler(force_close=False),  # type: ignore[arg-type]
+        config=RiskConfig(
+            take_profit_usdt=kwargs.pop("take_profit_usdt", 4),
+            total_capital_limit=1000,
+            max_concurrent=3,
+            **kwargs,
+        ),
+    )
+
+
 def test_force_close_has_highest_priority() -> None:
     manager = RiskManager(
         scheduler=FakeScheduler(force_close=True),  # type: ignore[arg-type]
@@ -56,16 +91,91 @@ def test_force_close_has_highest_priority() -> None:
     assert decision.priority == 1
 
 
-def test_take_profit_closes_symbol() -> None:
-    manager = RiskManager(
-        scheduler=FakeScheduler(force_close=False),  # type: ignore[arg-type]
-        config=RiskConfig(take_profit_usdt=10, total_capital_limit=1000, max_concurrent=3),
+def test_profit_protection_uses_net_pnl_instead_of_realized_pnl_only() -> None:
+    manager = _manager(take_profit_usdt=4, profit_estimated_exit_cost_rate=0.001)
+
+    decision = manager.evaluate_symbol(
+        _session(realized_pnl=4),
+        100.0,
+        inventory=_inventory(unrealized_pnl=-1, gross_notional=100),
     )
 
-    decision = manager.evaluate_symbol(_session(realized_pnl=10), 100.0)
+    assert decision.action == RiskAction.NONE
+    assert manager.profit_protection.snapshot(1) == pytest.approx(2.9)
+
+
+def test_profit_protection_arms_without_immediate_close() -> None:
+    manager = _manager(take_profit_usdt=4)
+
+    decision = manager.evaluate_symbol(
+        _session(realized_pnl=4),
+        100.0,
+        inventory=_inventory(),
+    )
+
+    assert decision.action == RiskAction.NONE
+    assert manager.profit_protection.snapshot(1) == pytest.approx(4)
+
+
+def test_profit_protection_stages_suppress_reduce_and_close() -> None:
+    manager = _manager(take_profit_usdt=4, profit_estimated_exit_cost_rate=0)
+    session = _session(realized_pnl=4)
+    inventory = _inventory()
+
+    assert manager.evaluate_symbol(session, 100.0, inventory=inventory).action == RiskAction.NONE
+
+    session.realized_pnl = 3.0
+    suppress = manager.evaluate_symbol(session, 100.0, inventory=inventory)
+    assert suppress.action == RiskAction.DEFEND
+    assert "25.00%" in suppress.reason
+
+    session.realized_pnl = 2.6
+    reduce = manager.evaluate_symbol(session, 100.0, inventory=inventory)
+    assert reduce.action == RiskAction.REDUCE
+    assert "35.00%" in reduce.reason
+
+    session.realized_pnl = 2.0
+    close = manager.evaluate_symbol(session, 100.0, inventory=inventory)
+    assert close.action == RiskAction.CLOSE
+    assert "50.00%" in close.reason
+
+
+def test_profit_floor_closes_while_profit_is_still_positive() -> None:
+    manager = _manager(
+        take_profit_usdt=4,
+        profit_minimum_locked_ratio=0.50,
+        profit_suppress_drawdown_pct=0.70,
+        profit_reduce_drawdown_pct=0.80,
+        profit_close_drawdown_pct=0.90,
+        profit_estimated_exit_cost_rate=0,
+    )
+    session = _session(realized_pnl=4)
+    inventory = _inventory()
+    manager.evaluate_symbol(session, 100.0, inventory=inventory)
+
+    session.realized_pnl = 1.9
+    decision = manager.evaluate_symbol(session, 100.0, inventory=inventory)
 
     assert decision.action == RiskAction.CLOSE
-    assert "止盈" in decision.reason
+    assert "最低保留线" in decision.reason
+
+
+def test_missing_inventory_snapshot_never_arms_realized_only_take_profit() -> None:
+    manager = _manager(take_profit_usdt=4)
+
+    decision = manager.evaluate_symbol(_session(realized_pnl=20), 100.0)
+
+    assert decision.action == RiskAction.NONE
+    assert manager.profit_protection.snapshot(1) is None
+
+
+def test_invalid_profit_threshold_order_fails_fast() -> None:
+    with pytest.raises(ValueError, match="suppress < reduce < close"):
+        _manager(
+            profit_suppress_drawdown_pct=0.50,
+            profit_reduce_drawdown_pct=0.35,
+            profit_close_drawdown_pct=0.40,
+        )
 
 
 def test_upper_dynamic_stop_enters_hard_stop_cooldown() -> None:

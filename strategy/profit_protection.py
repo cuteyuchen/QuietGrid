@@ -124,16 +124,10 @@ class ProfitProtectionTracker:
                 "净利润尚未达到利润保护启动线。",
                 snapshot,
             )
-        if current_net_pnl <= 0:
-            return ProfitProtectionDecision(
-                ProfitProtectionAction.NONE,
-                "当前已无可锁定利润，交由止损与库存风控处理。",
-                snapshot,
-            )
         if current_net_pnl <= minimum_locked:
             return ProfitProtectionDecision(
                 ProfitProtectionAction.CLOSE,
-                "当前可锁定净利润已回落至最低保留线。",
+                "当前可锁定净利润已回落至或跌破最低保留线。",
                 snapshot,
             )
         if drawdown_pct >= self.config.close_drawdown_pct:

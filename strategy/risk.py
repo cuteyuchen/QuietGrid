@@ -38,16 +38,14 @@ class RiskManager:
         self.scheduler = scheduler
         self.config = config
         self.profit_protection = ProfitProtectionTracker(
-            ProfitProtectionConfig(
-                activation_profit_usdt=config.take_profit_usdt,
-                enabled=config.profit_protection_enabled,
-                minimum_locked_profit_ratio=config.profit_minimum_locked_ratio,
-                suppress_drawdown_pct=config.profit_suppress_drawdown_pct,
-                reduce_drawdown_pct=config.profit_reduce_drawdown_pct,
-                close_drawdown_pct=config.profit_close_drawdown_pct,
-                estimated_exit_cost_rate=config.profit_estimated_exit_cost_rate,
-            )
+            _profit_protection_config(config)
         )
+
+    def update_config(self, config: RiskConfig) -> None:
+        """Update runtime limits without discarding per-session profit peaks."""
+
+        self.config = config
+        self.profit_protection.config = _profit_protection_config(config)
 
     def evaluate_symbol(
         self,
@@ -186,6 +184,23 @@ def _stop_buffer_pct(lower: float, stop_loss_price: float) -> float:
     if lower <= 0:
         return 0.0
     return max(0.0, 1 - stop_loss_price / lower)
+
+
+def _profit_protection_config(config: RiskConfig) -> ProfitProtectionConfig:
+    activation = (
+        float(config.take_profit_usdt)
+        if _is_non_negative_finite(config.take_profit_usdt)
+        else 0.0
+    )
+    return ProfitProtectionConfig(
+        activation_profit_usdt=activation,
+        enabled=config.profit_protection_enabled,
+        minimum_locked_profit_ratio=config.profit_minimum_locked_ratio,
+        suppress_drawdown_pct=config.profit_suppress_drawdown_pct,
+        reduce_drawdown_pct=config.profit_reduce_drawdown_pct,
+        close_drawdown_pct=config.profit_close_drawdown_pct,
+        estimated_exit_cost_rate=config.profit_estimated_exit_cost_rate,
+    )
 
 
 def _is_finite(value: float) -> bool:

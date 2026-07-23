@@ -3791,7 +3791,9 @@ def test_controller_stop_order_duplicate_event_does_not_duplicate_trade(tmp_path
     asyncio.run(run())
 
 
-def test_controller_poll_closes_take_profit_session(tmp_path) -> None:
+def test_controller_poll_does_not_close_realized_only_profit_without_inventory_snapshot(
+    tmp_path,
+) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"
         init_db(db_path)
@@ -3820,14 +3822,14 @@ def test_controller_poll_closes_take_profit_session(tmp_path) -> None:
         session_row = repo.recent_rows("sessions", limit=1)[0]
         window_row = repo.recent_rows("windows", limit=1)[0]
 
-        assert actions == [("AAPLUSDT", "close")]
-        assert "AAPLUSDT" not in controller.active_sessions
-        assert exchange.orders["AAPLUSDT"] == []
-        assert session_row["state"] == "STOPPED"
-        assert session_row["close_reason"] == "单标的止盈达标。"
-        assert window_row["status"] == "closed"
-        assert window_row["window_end"] is not None
-        assert {row["status"] for row in repo.recent_rows("orders", limit=50)} == {"cancelled"}
+        assert actions == []
+        assert "AAPLUSDT" in controller.active_sessions
+        assert exchange.orders["AAPLUSDT"]
+        assert session_row["state"] == "RUNNING"
+        assert session_row["close_reason"] is None
+        assert window_row["status"] == "open"
+        assert window_row["window_end"] is None
+        assert controller.risk.profit_protection.snapshot(session_row["id"]) is None
 
     asyncio.run(run())
 
@@ -5337,7 +5339,9 @@ def test_stopped_symbol_is_not_restarted_and_next_candidate_fills_slot(tmp_path)
     asyncio.run(run())
 
 
-def test_controller_poll_applies_runtime_take_profit_draft(tmp_path) -> None:
+def test_controller_poll_applies_runtime_profit_activation_draft(
+    tmp_path,
+) -> None:
     async def run() -> None:
         db_path = tmp_path / "controller.db"
         init_db(db_path)
@@ -5384,9 +5388,11 @@ def test_controller_poll_applies_runtime_take_profit_draft(tmp_path) -> None:
 
         assert controller.config.take_profit_usdt == 4
         assert controller.risk.config.take_profit_usdt == 4
-        assert actions == [("AAPLUSDT", "close")]
+        assert controller.risk.profit_protection.config.activation_profit_usdt == 4
+        assert actions == []
         assert session_row is not None
-        assert session_row["close_reason"] == "单标的止盈达标。"
+        assert session_row["state"] == "RUNNING"
+        assert session_row["close_reason"] is None
         assert log["level"] == "INFO"
 
     asyncio.run(run())

@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timezone
 
+import pytest
+
 from core.models import GridDirectionMode, GridParams
+from strategy import backtest as backtest_module
 from strategy.backtest import BacktestConfig, LookAheadViolation, run_grid_backtest
 from strategy.order_plan import build_initial_grid_order_plan
 
@@ -452,6 +455,44 @@ def test_wind_down_reprices_reduce_orders_and_avoids_terminal_taker_exit() -> No
     assert repriced.total_pnl > baseline.total_pnl
 
 
+def test_quadratic_wind_down_urgency_moves_reduce_order_closer_to_mark() -> None:
+    from strategy.backtest import _PositionLot, _wind_down_reduce_orders
+
+    common = {
+        "long_lots": [_PositionLot(99.0, 1.0)],
+        "short_lots": [],
+        "mark_price": 100.0,
+        "remaining_bars": 50,
+        "wind_down_bars": 100,
+        "initial_offset_steps": 1.0,
+        "step_pct": 0.01,
+        "tick_size": 0.01,
+        "grid_prices": [99.0, 100.0, 101.0],
+        "quantity_step_size": 0.01,
+        "unwind_fraction": 1.0,
+    }
+
+    linear = _wind_down_reduce_orders(**common, urgency_exponent=1.0)
+    quadratic = _wind_down_reduce_orders(**common, urgency_exponent=2.0)
+
+    assert linear[0].price == pytest.approx(100.50)
+    assert quadratic[0].price == pytest.approx(100.25)
+    assert 100.0 < quadratic[0].price < linear[0].price
+
+
+@pytest.mark.parametrize("exponent", [0.0, -1.0, float("nan")])
+def test_wind_down_urgency_exponent_must_be_positive_and_finite(
+    exponent: float,
+) -> None:
+    with pytest.raises(ValueError, match="wind_down_urgency_exponent"):
+        run_grid_backtest(
+            _params(),
+            [{"high": 100.2, "low": 99.8, "close": 100.0}],
+            current_price=100.0,
+            config=BacktestConfig(wind_down_urgency_exponent=exponent),
+        )
+
+
 def test_wind_down_reprice_is_not_eligible_on_creation_bar() -> None:
     result = run_grid_backtest(
         _params(),
@@ -479,6 +520,185 @@ def test_wind_down_reprice_is_not_eligible_on_creation_bar() -> None:
     assert result.wind_down_maker_fill_count == 0
     assert result.stop_exit_cost == 0  # 默认 taker 费为 0，但库存由终场退出处理。
     assert result.stop_exit_pnl == 0
+
+
+def test_inventory_conditioned_wind_down_starts_after_threshold_bar() -> None:
+    params = replace(
+        _params(),
+        lower=98.0,
+        upper=102.0,
+        grid_num=4,
+        grid_prices=[98.0, 99.0, 100.0, 101.0, 102.0],
+        stop_loss_price=90.0,
+        upper_stop_loss_price=110.0,
+    )
+    result = run_grid_backtest(
+        params,
+        [
+            {"high": 99.1, "low": 98.9, "close": 99.0},
+            {"high": 98.1, "low": 97.9, "close": 98.0},
+            {"high": 100.1, "low": 99.9, "close": 100.0},
+        ],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=400,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            stop_on_stop_loss=False,
+            wind_down_bars=1,
+            inventory_wind_down_bars=3,
+            inventory_wind_down_utilization=0.20,
+            max_inventory_notional=400,
+            inventory_caution_utilization=0.70,
+            inventory_critical_utilization=0.90,
+        ),
+    )
+
+    assert [fill.price for fill in result.fills] == [99.0, 100.0]
+    assert result.pair_completion_count == 1
+    assert result.wind_down_entry_count == 1
+
+
+def test_inventory_conditioned_wind_down_does_not_cancel_same_bar_fills() -> None:
+    params = replace(
+        _params(),
+        lower=98.0,
+        upper=102.0,
+        grid_num=4,
+        grid_prices=[98.0, 99.0, 100.0, 101.0, 102.0],
+        stop_loss_price=90.0,
+        upper_stop_loss_price=110.0,
+    )
+    result = run_grid_backtest(
+        params,
+        [
+            {"high": 99.1, "low": 97.9, "close": 98.0},
+            {"high": 98.1, "low": 97.9, "close": 98.0},
+            {"high": 98.1, "low": 97.9, "close": 98.0},
+        ],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=400,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            stop_on_stop_loss=False,
+            wind_down_bars=1,
+            inventory_wind_down_bars=3,
+            inventory_wind_down_utilization=0.20,
+            max_inventory_notional=400,
+            inventory_caution_utilization=0.70,
+            inventory_critical_utilization=0.90,
+            unpaired_lot_cap_enforcement="BAR_BOUNDARY",
+        ),
+    )
+
+    assert [fill.price for fill in result.fills] == [99.0, 98.0]
+    assert result.wind_down_entry_count == 1
+
+
+def test_inventory_conditioned_wind_down_requires_fixed_fallback() -> None:
+    with pytest.raises(ValueError, match="固定 wind_down_bars"):
+        run_grid_backtest(
+            _params(),
+            [{"high": 100.2, "low": 99.8, "close": 100.0}],
+            current_price=100.0,
+            config=BacktestConfig(
+                inventory_wind_down_bars=3,
+                inventory_wind_down_utilization=0.20,
+                max_inventory_notional=400,
+            ),
+        )
+
+
+def test_loss_conditioned_wind_down_waits_until_inventory_is_losing() -> None:
+    params = replace(
+        _params(),
+        lower=98.0,
+        upper=102.0,
+        grid_num=4,
+        grid_prices=[98.0, 99.0, 100.0, 101.0, 102.0],
+        stop_loss_price=90.0,
+        upper_stop_loss_price=110.0,
+    )
+    result = run_grid_backtest(
+        params,
+        [
+            {"high": 99.1, "low": 98.9, "close": 99.0},
+            {"high": 99.0, "low": 98.4, "close": 98.5},
+            {"high": 98.1, "low": 97.9, "close": 98.0},
+            {"high": 100.1, "low": 99.9, "close": 100.0},
+        ],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=400,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            stop_on_stop_loss=False,
+            wind_down_bars=1,
+            inventory_wind_down_bars=4,
+            inventory_wind_down_utilization=0.20,
+            inventory_wind_down_only_when_losing=True,
+            max_inventory_notional=400,
+            inventory_caution_utilization=0.70,
+            inventory_critical_utilization=0.90,
+        ),
+    )
+
+    assert [fill.price for fill in result.fills] == [99.0, 100.0]
+    assert result.wind_down_entry_count == 1
+
+
+def test_loss_conditioned_wind_down_keeps_trading_profitable_inventory() -> None:
+    params = replace(
+        _params(),
+        lower=98.0,
+        upper=102.0,
+        grid_num=4,
+        grid_prices=[98.0, 99.0, 100.0, 101.0, 102.0],
+        stop_loss_price=90.0,
+        upper_stop_loss_price=110.0,
+    )
+    result = run_grid_backtest(
+        params,
+        [
+            {"high": 99.1, "low": 98.9, "close": 99.0},
+            {"high": 99.8, "low": 99.2, "close": 99.5},
+            {"high": 99.0, "low": 97.9, "close": 98.0},
+            {"high": 100.1, "low": 99.9, "close": 100.0},
+        ],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=400,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            min_tick_size=0.01,
+            stop_on_stop_loss=False,
+            wind_down_bars=1,
+            inventory_wind_down_bars=4,
+            inventory_wind_down_utilization=0.20,
+            inventory_wind_down_only_when_losing=True,
+            max_inventory_notional=400,
+            inventory_caution_utilization=0.70,
+            inventory_critical_utilization=0.90,
+            unpaired_lot_cap_enforcement="BAR_BOUNDARY",
+        ),
+    )
+
+    assert 98.0 in [fill.price for fill in result.fills]
+    assert result.wind_down_entry_count == 1
+
+
+def test_loss_condition_requires_inventory_condition() -> None:
+    with pytest.raises(ValueError, match="先启用库存条件"):
+        run_grid_backtest(
+            _params(),
+            [{"high": 100.2, "low": 99.8, "close": 100.0}],
+            current_price=100.0,
+            config=BacktestConfig(inventory_wind_down_only_when_losing=True),
+        )
 
 
 def test_layered_unwind_allocates_exchange_step_across_multiple_lots() -> None:
@@ -946,3 +1166,522 @@ def test_backtest_enters_defensive_after_three_unique_bars_without_force_close()
     assert result.stopped_reason is None
     assert result.net_position_qty == 0
     assert result.open_order_count == 2
+
+
+def _profit_protection_config(**overrides) -> BacktestConfig:
+    return replace(
+        BacktestConfig(
+            capital=202,
+            leverage=1,
+            stop_on_stop_loss=False,
+            profit_protection_enabled=True,
+            profit_activation_usdt=1.0,
+        ),
+        **overrides,
+    )
+
+
+def test_profit_protection_activation_does_not_immediately_close() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 101.2, "low": 100.8, "close": 101.0},
+        ],
+        current_price=101.0,
+        config=_profit_protection_config(),
+    )
+
+    assert result.profit_protection_activation_count == 1
+    assert result.profit_close_count == 0
+    assert result.stopped_reason is None
+    assert result.total_pnl == pytest.approx(1.0)
+
+
+def test_profit_suppress_cancels_opening_orders() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 101.2, "low": 100.8, "close": 101.0},
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 100.0, "low": 99.7, "close": 99.8},
+            {"high": 99.7, "low": 98.8, "close": 99.0},
+        ],
+        current_price=101.0,
+        config=_profit_protection_config(),
+    )
+
+    assert [fill.side for fill in result.fills] == ["BUY", "SELL", "BUY"]
+    assert result.profit_suppress_count == 1
+    assert result.profit_reduce_count == 0
+    assert result.profit_suppress_inventory_growth_usdt == pytest.approx(0.0)
+
+
+def test_profit_reduce_keeps_inventory_reducing_orders() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 101.2, "low": 100.8, "close": 101.0},
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 100.0, "low": 99.5, "close": 99.6},
+            {"high": 101.2, "low": 100.8, "close": 101.0},
+        ],
+        current_price=101.0,
+        config=_profit_protection_config(),
+    )
+
+    assert [fill.side for fill in result.fills] == ["BUY", "SELL", "BUY", "SELL"]
+    assert result.profit_reduce_count == 1
+    assert result.profit_close_count == 0
+    assert result.net_position_qty == pytest.approx(0.0)
+
+
+def test_profit_active_reduce_closes_configured_inventory_fraction() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 101.2, "low": 100.8, "close": 101.0},
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 99.6, "low": 99.6, "close": 99.6},
+            {"high": 99.6, "low": 99.6, "close": 99.6},
+            {"high": 99.6, "low": 99.6, "close": 99.6},
+        ],
+        current_price=101.0,
+        config=_profit_protection_config(
+            profit_close_drawdown_pct=0.80,
+            profit_passive_reduce_after_bars=1,
+            profit_active_reduce_after_bars=2,
+            profit_passive_reduce_fraction=0.50,
+            profit_active_reduce_fraction=0.50,
+            taker_fee_rate=0.001,
+            stop_slippage_bps=10.0,
+        ),
+    )
+
+    assert result.profit_reduce_count == 1
+    assert result.profit_passive_reduce_reprice_count >= 1
+    assert result.profit_active_reduce_count == 1
+    assert result.profit_active_reduce_inventory_reduction_pct == pytest.approx(0.50)
+    assert result.net_position_qty == pytest.approx(0.50)
+    assert result.profit_active_reduce_cost > 0
+    assert any(
+        fill.grid_index == -2_000 and fill.order_intent == "REDUCE"
+        for fill in result.fills
+    )
+
+
+def test_profit_active_reduce_must_follow_passive_reduce() -> None:
+    with pytest.raises(ValueError, match="主动利润减仓必须晚于"):
+        run_grid_backtest(
+            _params(),
+            [{"high": 100.2, "low": 99.8, "close": 100.0}],
+            current_price=100.0,
+            config=_profit_protection_config(
+                profit_passive_reduce_after_bars=2,
+                profit_active_reduce_after_bars=1,
+            ),
+        )
+
+
+def test_volatility_defense_reduces_inventory_once_after_confirmed_breaches() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {
+                "open": 100.0,
+                "high": 100.2,
+                "low": 99.8,
+                "close": 100.0,
+                "regime_score": 70.0,
+                "volatility_expansion": 1.0,
+            },
+            *[
+                {
+                    "open": 99.6,
+                    "high": 99.6,
+                    "low": 99.6,
+                    "close": 99.6,
+                    "regime_score": 0.0,
+                    "volatility_expansion": 1.6,
+                }
+                for _ in range(4)
+            ],
+        ],
+        current_price=101.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            stop_on_stop_loss=False,
+            volatility_reduce_expansion_ratio=1.50,
+            volatility_reduce_after_breaches=3,
+            volatility_reduce_fraction=0.50,
+            taker_fee_rate=0.001,
+            stop_slippage_bps=10.0,
+        ),
+    )
+
+    assert result.volatility_breach_count == 4
+    assert result.volatility_max_consecutive_breaches == 4
+    assert result.volatility_reduce_count == 1
+    assert result.volatility_reduce_inventory_reduction_pct == pytest.approx(0.50)
+    assert result.volatility_reduce_cost > 0
+    assert result.net_position_qty == pytest.approx(0.50)
+    assert any(
+        fill.grid_index == -3_000 and fill.order_intent == "REDUCE"
+        for fill in result.fills
+    )
+
+
+def test_volatility_defense_requires_consecutive_breaches() -> None:
+    rows = [
+        {
+            "open": 100.0,
+            "high": 100.2,
+            "low": 99.8,
+            "close": 100.0,
+            "regime_score": 70.0,
+            "volatility_expansion": 1.0,
+        }
+    ]
+    for blocked in (True, False, True, False):
+        rows.append({
+            "open": 99.6,
+            "high": 99.6,
+            "low": 99.6,
+            "close": 99.6,
+            "regime_score": 0.0 if blocked else 70.0,
+            "volatility_expansion": 1.6 if blocked else 1.0,
+        })
+
+    result = run_grid_backtest(
+        _params(),
+        rows,
+        current_price=101.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            stop_on_stop_loss=False,
+            volatility_reduce_expansion_ratio=1.50,
+            volatility_reduce_after_breaches=2,
+            volatility_reduce_fraction=0.50,
+        ),
+    )
+
+    assert result.volatility_breach_count == 2
+    assert result.volatility_max_consecutive_breaches == 1
+    assert result.volatility_reduce_count == 0
+    assert result.net_position_qty == pytest.approx(1.0)
+
+
+def test_volatility_wind_down_blocks_new_inventory_after_reduce() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {
+                "open": 99.6,
+                "high": 100.0,
+                "low": 99.6,
+                "close": 99.6,
+                "regime_score": 70.0,
+                "volatility_expansion": 1.6,
+            },
+            *[
+                {
+                    "open": 99.6,
+                    "high": 99.6,
+                    "low": 99.6,
+                    "close": 99.6,
+                    "regime_score": 70.0,
+                    "volatility_expansion": 1.6,
+                }
+                for _ in range(2)
+            ],
+            {
+                "open": 99.0,
+                "high": 99.0,
+                "low": 99.0,
+                "close": 99.0,
+                "regime_score": 70.0,
+                "volatility_expansion": 1.0,
+            },
+        ],
+        current_price=101.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            stop_on_stop_loss=False,
+            volatility_reduce_expansion_ratio=1.50,
+            volatility_reduce_after_breaches=3,
+            volatility_reduce_fraction=0.50,
+            volatility_wind_down_after_reduce=True,
+        ),
+    )
+
+    assert result.volatility_reduce_count == 1
+    assert result.net_position_qty == pytest.approx(0.50)
+    reduce_bar = next(
+        fill.bar_index for fill in result.fills if fill.grid_index == -3_000
+    )
+    assert not any(
+        fill.order_intent == "OPEN" and fill.bar_index > reduce_bar
+        for fill in result.fills
+    )
+
+
+def test_volatility_wind_down_resumes_after_normal_bars() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {
+                "open": 99.6,
+                "high": 100.0,
+                "low": 99.6,
+                "close": 99.6,
+                "regime_score": 70.0,
+                "volatility_expansion": 1.6,
+            },
+            *[
+                {
+                    "open": 99.6,
+                    "high": 99.6,
+                    "low": 99.6,
+                    "close": 99.6,
+                    "regime_score": 70.0,
+                    "volatility_expansion": 1.6,
+                }
+                for _ in range(2)
+            ],
+            *[
+                {
+                    "open": 99.6,
+                    "high": 99.6,
+                    "low": 99.6,
+                    "close": 99.6,
+                    "regime_score": 70.0,
+                    "volatility_expansion": 1.0,
+                }
+                for _ in range(2)
+            ],
+            {
+                "open": 99.0,
+                "high": 99.0,
+                "low": 99.0,
+                "close": 99.0,
+                "regime_score": 70.0,
+                "volatility_expansion": 1.0,
+            },
+        ],
+        current_price=101.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            stop_on_stop_loss=False,
+            volatility_reduce_expansion_ratio=1.50,
+            volatility_reduce_after_breaches=3,
+            volatility_reduce_fraction=0.50,
+            volatility_wind_down_after_reduce=True,
+            volatility_resume_after_normal_bars=2,
+        ),
+    )
+
+    assert result.volatility_reduce_count == 1
+    assert result.net_position_qty == pytest.approx(1.50)
+    reduce_bar = next(
+        fill.bar_index for fill in result.fills if fill.grid_index == -3_000
+    )
+    assert any(
+        fill.order_intent == "OPEN" and fill.bar_index > reduce_bar
+        for fill in result.fills
+    )
+
+
+def test_volatility_resume_requires_wind_down() -> None:
+    with pytest.raises(ValueError, match="波动恢复需要"):
+        run_grid_backtest(
+            _params(),
+            [{"high": 100.2, "low": 99.8, "close": 100.0}],
+            current_price=100.0,
+            config=BacktestConfig(volatility_resume_after_normal_bars=2),
+        )
+
+
+def test_volatility_worst_side_reduces_only_larger_unrealized_loss() -> None:
+    long_lots = [backtest_module._PositionLot(110.0, 1.0)]
+    short_lots = [backtest_module._PositionLot(99.0, 1.0)]
+
+    exits = backtest_module._close_lot_fraction_at_market(
+        long_lots,
+        short_lots,
+        100.0,
+        fraction=0.25,
+        quantity_step_size=0.0,
+        taker_fee_rate=0.001,
+        slippage_bps=10.0,
+        mode="WORST_SIDE",
+    )
+
+    assert len(exits) == 1
+    assert exits[0][1] == "LONG"
+    assert exits[0][2] == pytest.approx(0.50)
+    assert long_lots[0].qty == pytest.approx(0.50)
+    assert short_lots[0].qty == pytest.approx(1.0)
+
+
+def test_volatility_reduce_mode_is_validated() -> None:
+    with pytest.raises(ValueError, match="volatility_reduce_mode"):
+        run_grid_backtest(
+            _params(),
+            [{"high": 100.2, "low": 99.8, "close": 100.0}],
+            current_price=100.0,
+            config=BacktestConfig(volatility_reduce_mode="UNKNOWN"),
+        )
+
+
+def test_volatility_losing_guard_preserves_profitable_inventory() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {
+                "open": 100.0,
+                "high": 100.2,
+                "low": 99.8,
+                "close": 100.0,
+                "regime_score": 70.0,
+                "volatility_expansion": 1.0,
+            },
+            *[
+                {
+                    "open": 100.5,
+                    "high": 100.5,
+                    "low": 100.5,
+                    "close": 100.5,
+                    "regime_score": 0.0,
+                    "volatility_expansion": 1.6,
+                }
+                for _ in range(4)
+            ],
+        ],
+        current_price=101.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            stop_on_stop_loss=False,
+            volatility_reduce_expansion_ratio=1.50,
+            volatility_reduce_after_breaches=3,
+            volatility_reduce_fraction=0.50,
+            volatility_reduce_only_when_losing=True,
+        ),
+    )
+
+    assert result.volatility_breach_count == 4
+    assert result.volatility_reduce_count == 0
+    assert result.net_position_qty == pytest.approx(1.0)
+
+
+def test_profit_close_uses_taker_fee_and_stop_slippage() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 101.2, "low": 100.8, "close": 101.0},
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 99.7, "low": 99.3, "close": 99.4},
+        ],
+        current_price=101.0,
+        config=_profit_protection_config(
+            taker_fee_rate=0.001,
+            stop_slippage_bps=10.0,
+            profit_estimated_exit_cost_rate=0.001,
+        ),
+    )
+
+    expected_exit_price = 99.4 * (1 - 10 / 10_000)
+    expected_taker_fee = expected_exit_price * 0.001
+    expected_slippage_cost = 99.4 - expected_exit_price
+    assert result.stopped_reason == "profit_protection_close"
+    assert result.profit_close_count == 1
+    assert result.net_position_qty == pytest.approx(0.0)
+    assert result.fees_paid == pytest.approx(expected_taker_fee)
+    assert result.profit_exit_cost == pytest.approx(
+        expected_taker_fee + expected_slippage_cost
+    )
+    assert result.exit_slippage_cost == pytest.approx(expected_slippage_cost)
+    assert result.locked_profit_usdt > 0
+    assert result.profit_close_actual_net_pnl == pytest.approx(result.total_pnl)
+
+
+def test_fixed_net_profit_close_is_diagnostic_mode() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [{"high": 100.6, "low": 99.8, "close": 100.5}],
+        current_price=101.0,
+        config=_profit_protection_config(
+            profit_protection_mode="FIXED_CLOSE",
+            profit_activation_usdt=0.4,
+            taker_fee_rate=0.001,
+            stop_slippage_bps=10.0,
+        ),
+    )
+
+    assert result.stopped_reason == "profit_fixed_close"
+    assert result.profit_protection_activation_count == 1
+    assert result.profit_close_count == 1
+    assert result.open_order_count == 0
+
+
+def test_profit_protection_does_not_activate_below_threshold() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [{"high": 100.2, "low": 99.8, "close": 100.0}],
+        current_price=101.0,
+        config=_profit_protection_config(profit_activation_usdt=2.0),
+    )
+
+    assert result.profit_protection_activation_count == 0
+    assert result.profit_suppress_count == 0
+    assert result.profit_reduce_count == 0
+    assert result.profit_close_count == 0
+
+
+def test_profit_giveback_uses_estimated_exit_cost_for_open_inventory() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 101.2, "low": 100.8, "close": 101.0},
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+        ],
+        current_price=101.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            profit_estimated_exit_cost_rate=0.001,
+        ),
+    )
+
+    assert result.total_pnl == pytest.approx(1.0)
+    assert result.profit_peak_net_pnl == pytest.approx(1.0)
+    assert result.peak_profit_giveback_usdt == pytest.approx(0.1)
+    assert result.peak_profit_giveback_pct == pytest.approx(0.1)
+
+
+def test_profit_protection_is_reproducible_for_fixed_seed() -> None:
+    rows = [
+        {"high": 101.2, "low": 98.8, "close": 100.0}
+        for _ in range(12)
+    ]
+    config = _profit_protection_config(
+        fill_model="L0_CONSERVATIVE",
+        min_tick_size=0.01,
+        max_fills_per_bar=1,
+        maker_fill_probability=0.5,
+        fill_probability_seed=31,
+    )
+
+    first = run_grid_backtest(_params(), rows, 100.0, config)
+    second = run_grid_backtest(_params(), rows, 100.0, config)
+
+    assert first == second

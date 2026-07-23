@@ -1,0 +1,29 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 203, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "E:\project\QuietGrid\scripts\robust_backtest.py", line 1244, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "E:\project\QuietGrid\scripts\robust_backtest.py", line 49, in main
+    asyncio.run(_download(args))
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py", line 196, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py", line 119, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "E:\project\QuietGrid\scripts\robust_backtest.py", line 106, in _download
+    data_path, manifest_path = await freeze_binance_archives(
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+    )
+    ^
+  File "E:\project\QuietGrid\scripts\robustness.py", line 520, in freeze_binance_archives
+    raise ValueError(
+    ...<2 lines>...
+    )
+ValueError: 历史数据缺口比例 0.3680% 超过上限 0.1000%。

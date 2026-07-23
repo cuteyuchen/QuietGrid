@@ -1,0 +1,2 @@
+﻿candidate_id,expansion_ratio,breaches,fraction,mode,mean_seed_total_pnl,worst_seed_total_pnl,worst_5pct_window_mean_pnl,max_drawdown_pct,worst_best_window_concentration,volatility_expansion_pnl,range_pnl,volatility_reduce_count,volatility_reduce_pnl,volatility_reduce_cost,all_gates_passed
+P6_LOSS_GUARD,1.5,10,0.2,BOTH,17.85079342972453,17.85079342972453,-3.0099888128865278,0.016491198750633606,0.47379689574752065,-13.566803635460218,16.999371955108117,59,-23.94493554771566,4.60580356226,False

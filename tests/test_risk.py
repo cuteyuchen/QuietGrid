@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -140,6 +141,18 @@ def test_profit_protection_stages_suppress_reduce_and_close() -> None:
     assert "50.00%" in close.reason
 
 
+def test_profit_protection_runtime_config_update_preserves_peak() -> None:
+    manager = _manager(take_profit_usdt=4, profit_estimated_exit_cost_rate=0)
+    session = _session(realized_pnl=5)
+    inventory = _inventory()
+    manager.evaluate_symbol(session, 100.0, inventory=inventory)
+
+    manager.update_config(replace(manager.config, take_profit_usdt=6))
+
+    assert manager.profit_protection.config.activation_profit_usdt == 6
+    assert manager.profit_protection.snapshot(session.session_id) == pytest.approx(5)
+
+
 def test_profit_floor_closes_while_profit_is_still_positive() -> None:
     manager = _manager(
         take_profit_usdt=4,
@@ -154,6 +167,23 @@ def test_profit_floor_closes_while_profit_is_still_positive() -> None:
     manager.evaluate_symbol(session, 100.0, inventory=inventory)
 
     session.realized_pnl = 1.9
+    decision = manager.evaluate_symbol(session, 100.0, inventory=inventory)
+
+    assert decision.action == RiskAction.CLOSE
+    assert "最低保留线" in decision.reason
+
+
+def test_profit_floor_closes_after_gap_below_zero() -> None:
+    manager = _manager(
+        take_profit_usdt=4,
+        profit_minimum_locked_ratio=0.50,
+        profit_estimated_exit_cost_rate=0,
+    )
+    session = _session(realized_pnl=4)
+    inventory = _inventory()
+    manager.evaluate_symbol(session, 100.0, inventory=inventory)
+
+    session.realized_pnl = -0.1
     decision = manager.evaluate_symbol(session, 100.0, inventory=inventory)
 
     assert decision.action == RiskAction.CLOSE

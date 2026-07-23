@@ -1,0 +1,30 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 203, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "E:\project\QuietGrid\scripts\freeze_round26_quarterly_calendar_spread.py", line 649, in <module>
+    main()
+    ~~~~^^
+  File "E:\project\QuietGrid\scripts\freeze_round26_quarterly_calendar_spread.py", line 644, in main
+    results = asyncio.run(_run(Path(args.output_dir), args.concurrency))
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py", line 196, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py", line 119, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "E:\project\QuietGrid\scripts\freeze_round26_quarterly_calendar_spread.py", line 615, in _run
+    await asyncio.gather(
+    ...<4 lines>...
+    )
+  File "E:\project\QuietGrid\scripts\freeze_round26_quarterly_calendar_spread.py", line 362, in _download_archive
+    parsed = _parse_archive(
+        symbol,
+    ...<3 lines>...
+        required_times=required_times,
+    )
+  File "E:\project\QuietGrid\scripts\freeze_round26_quarterly_calendar_spread.py", line 287, in _parse_archive
+    raise ValueError(f"{symbol} {month} OHLC 关系无效。")
+ValueError: BTCUSDT_210326 2021-02 OHLC 关系无效。

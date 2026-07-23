@@ -9,6 +9,11 @@ from typing import Any
 from core.models import GridDirectionMode, GridParams, OrderIntent, OrderSide
 from data_sources.models import FundingEvent
 from strategy.order_plan import InitialGridOrderPlan, build_initial_grid_order_plan
+from strategy.profit_protection import (
+    ProfitProtectionAction,
+    ProfitProtectionConfig,
+    ProfitProtectionTracker,
+)
 
 
 class LookAheadViolation(RuntimeError):
@@ -37,15 +42,38 @@ class BacktestConfig:
     retention_soft_breach_limit: int = 3
     quantity_step_size: float = 0.0
     wind_down_bars: int = 0
+    inventory_wind_down_bars: int = 0
+    inventory_wind_down_utilization: float = 0.0
+    inventory_wind_down_only_when_losing: bool = False
     max_inventory_notional: float = 0.0
     inventory_caution_utilization: float = 0.40
     inventory_critical_utilization: float = 0.80
     wind_down_reprice_interval_bars: int = 0
     wind_down_initial_offset_steps: float = 0.0
+    wind_down_urgency_exponent: float = 1.0
     wind_down_unwind_fraction: float = 1.0
     max_unpaired_lots_per_side: int = 0
     reduce_target_step_fraction: float = 1.0
     unpaired_lot_cap_enforcement: str = "INTRABAR"
+    profit_protection_enabled: bool = False
+    profit_protection_mode: str = "PEAK_DRAWDOWN"
+    profit_activation_usdt: float = 10.0
+    profit_minimum_locked_ratio: float = 0.25
+    profit_suppress_drawdown_pct: float = 0.25
+    profit_reduce_drawdown_pct: float = 0.35
+    profit_close_drawdown_pct: float = 0.50
+    profit_estimated_exit_cost_rate: float = 0.0007
+    profit_passive_reduce_after_bars: int = 0
+    profit_active_reduce_after_bars: int = 0
+    profit_passive_reduce_fraction: float = 0.25
+    profit_active_reduce_fraction: float = 0.25
+    volatility_reduce_expansion_ratio: float = 0.0
+    volatility_reduce_after_breaches: int = 0
+    volatility_reduce_fraction: float = 0.20
+    volatility_reduce_mode: str = "BOTH"
+    volatility_reduce_only_when_losing: bool = False
+    volatility_wind_down_after_reduce: bool = False
+    volatility_resume_after_normal_bars: int = 0
 
 
 @dataclass(frozen=True)
@@ -98,6 +126,7 @@ class BacktestResult:
     funding_paid: float = 0.0
     stop_exit_cost: float = 0.0
     stop_exit_pnl: float = 0.0
+    exit_slippage_cost: float = 0.0
     attempted_fill_count: int = 0
     rejected_fill_count: int = 0
     pair_completion_count: int = 0
@@ -118,6 +147,37 @@ class BacktestResult:
     exit_long_qty: float = 0.0
     exit_short_qty: float = 0.0
     exit_hedged_fraction: float = 0.0
+    profit_protection_activation_count: int = 0
+    profit_suppress_count: int = 0
+    profit_reduce_count: int = 0
+    profit_close_count: int = 0
+    profitable_to_losing_count: int = 0
+    profit_peak_net_pnl: float = 0.0
+    peak_profit_giveback_usdt: float = 0.0
+    peak_profit_giveback_pct: float = 0.0
+    locked_profit_usdt: float = 0.0
+    profit_exit_cost: float = 0.0
+    bars_from_activation_to_close: int | None = None
+    profit_reduce_to_close_bars: int | None = None
+    profit_close_estimated_net_pnl: float | None = None
+    profit_close_actual_net_pnl: float | None = None
+    profit_close_net_pnl_error: float | None = None
+    profit_suppress_inventory_growth_usdt: float = 0.0
+    profit_reduce_inventory_reduction_30_pct: float | None = None
+    profit_reduce_inventory_reduction_60_pct: float | None = None
+    profit_reduce_inventory_reduction_120_pct: float | None = None
+    profit_passive_reduce_reprice_count: int = 0
+    profit_passive_reduce_fill_count: int = 0
+    profit_active_reduce_count: int = 0
+    profit_active_reduce_pnl: float = 0.0
+    profit_active_reduce_cost: float = 0.0
+    profit_active_reduce_inventory_reduction_pct: float | None = None
+    volatility_breach_count: int = 0
+    volatility_max_consecutive_breaches: int = 0
+    volatility_reduce_count: int = 0
+    volatility_reduce_pnl: float = 0.0
+    volatility_reduce_cost: float = 0.0
+    volatility_reduce_inventory_reduction_pct: float | None = None
 
 
 @dataclass
@@ -130,6 +190,7 @@ class _BacktestOrder:
     position_side: str = ""
     order_intent: OrderIntent = OrderIntent.OPEN
     wind_down_reduce: bool = False
+    profit_reduce: bool = False
 
 
 @dataclass
@@ -165,6 +226,15 @@ def backtest_config_from_mapping(raw: dict[str, Any]) -> BacktestConfig:
         retention_soft_breach_limit=int(backtest.get("retention_soft_breach_limit", 3)),
         quantity_step_size=float(backtest.get("quantity_step_size", 0.0)),
         wind_down_bars=int(backtest.get("wind_down_bars", 0)),
+        inventory_wind_down_bars=int(
+            backtest.get("inventory_wind_down_bars", 0)
+        ),
+        inventory_wind_down_utilization=float(
+            backtest.get("inventory_wind_down_utilization", 0.0)
+        ),
+        inventory_wind_down_only_when_losing=bool(
+            backtest.get("inventory_wind_down_only_when_losing", False)
+        ),
         max_inventory_notional=float(backtest.get("max_inventory_notional", 0.0)),
         inventory_caution_utilization=float(
             backtest.get("inventory_caution_utilization", 0.40)
@@ -178,6 +248,9 @@ def backtest_config_from_mapping(raw: dict[str, Any]) -> BacktestConfig:
         wind_down_initial_offset_steps=float(
             backtest.get("wind_down_initial_offset_steps", 0.0)
         ),
+        wind_down_urgency_exponent=float(
+            backtest.get("wind_down_urgency_exponent", 1.0)
+        ),
         wind_down_unwind_fraction=float(
             backtest.get("wind_down_unwind_fraction", 1.0)
         ),
@@ -190,6 +263,66 @@ def backtest_config_from_mapping(raw: dict[str, Any]) -> BacktestConfig:
         unpaired_lot_cap_enforcement=str(
             backtest.get("unpaired_lot_cap_enforcement", "INTRABAR")
         ).upper(),
+        profit_protection_enabled=bool(
+            backtest.get("profit_protection_enabled", False)
+        ),
+        profit_protection_mode=str(
+            backtest.get("profit_protection_mode", "PEAK_DRAWDOWN")
+        ).upper(),
+        profit_activation_usdt=float(
+            backtest.get(
+                "profit_activation_usdt",
+                trading.get("take_profit_usdt", 10.0),
+            )
+        ),
+        profit_minimum_locked_ratio=float(
+            backtest.get("profit_minimum_locked_ratio", 0.25)
+        ),
+        profit_suppress_drawdown_pct=float(
+            backtest.get("profit_suppress_drawdown_pct", 0.25)
+        ),
+        profit_reduce_drawdown_pct=float(
+            backtest.get("profit_reduce_drawdown_pct", 0.35)
+        ),
+        profit_close_drawdown_pct=float(
+            backtest.get("profit_close_drawdown_pct", 0.50)
+        ),
+        profit_estimated_exit_cost_rate=float(
+            backtest.get("profit_estimated_exit_cost_rate", 0.0007)
+        ),
+        profit_passive_reduce_after_bars=int(
+            backtest.get("profit_passive_reduce_after_bars", 0)
+        ),
+        profit_active_reduce_after_bars=int(
+            backtest.get("profit_active_reduce_after_bars", 0)
+        ),
+        profit_passive_reduce_fraction=float(
+            backtest.get("profit_passive_reduce_fraction", 0.25)
+        ),
+        profit_active_reduce_fraction=float(
+            backtest.get("profit_active_reduce_fraction", 0.25)
+        ),
+        volatility_reduce_expansion_ratio=float(
+            backtest.get("volatility_reduce_expansion_ratio", 0.0)
+        ),
+        volatility_reduce_after_breaches=int(
+            backtest.get("volatility_reduce_after_breaches", 0)
+        ),
+        volatility_reduce_fraction=float(
+            backtest.get("volatility_reduce_fraction", 0.20)
+        ),
+        volatility_reduce_mode=str(
+            backtest.get("volatility_reduce_mode", "BOTH")
+        ),
+        volatility_reduce_only_when_losing=bool(
+            backtest.get("volatility_reduce_only_when_losing", False)
+        ),
+        volatility_wind_down_after_reduce=bool(
+            backtest.get("volatility_wind_down_after_reduce", False)
+        ),
+        volatility_resume_after_normal_bars=int(
+            backtest.get("volatility_resume_after_normal_bars", 0)
+        ),
     )
 
 
@@ -272,6 +405,7 @@ def run_grid_backtest(
     funding_paid = 0.0
     stop_exit_cost = 0.0
     stop_exit_pnl = 0.0
+    exit_slippage_cost = 0.0
     attempted_fill_count = 0
     pair_completion_count = 0
     stopped_reason: str | None = None
@@ -282,8 +416,10 @@ def run_grid_backtest(
     soft_breach_count = 0
     defensive = False
     defensive_cancelled: list[_BacktestOrder] = []
+    profit_cancelled: list[_BacktestOrder] = []
     defensive_entry_count = 0
     wind_down_active = False
+    wind_down_started_remaining_bars: int | None = None
     wind_down_entry_count = 0
     inventory_suppression_count = 0
     inventory_critical_exit_count = 0
@@ -301,6 +437,63 @@ def run_grid_backtest(
         if config.min_tick_size > 0
         else max(min(params.grid_prices) * 1e-8, 1e-12)
     )
+    profit_mode = config.profit_protection_mode.strip().upper()
+    profit_tracker = ProfitProtectionTracker(
+        ProfitProtectionConfig(
+            activation_profit_usdt=config.profit_activation_usdt,
+            enabled=(
+                config.profit_protection_enabled
+                and profit_mode != "OFF"
+            ),
+            minimum_locked_profit_ratio=config.profit_minimum_locked_ratio,
+            suppress_drawdown_pct=config.profit_suppress_drawdown_pct,
+            reduce_drawdown_pct=config.profit_reduce_drawdown_pct,
+            close_drawdown_pct=config.profit_close_drawdown_pct,
+            estimated_exit_cost_rate=config.profit_estimated_exit_cost_rate,
+        )
+    )
+    profit_session_id = 1
+    profit_activated = False
+    profit_activation_bar: int | None = None
+    profit_last_action = ProfitProtectionAction.NONE
+    profit_protection_activation_count = 0
+    profit_suppress_count = 0
+    profit_reduce_count = 0
+    profit_close_count = 0
+    profit_reduce_bar: int | None = None
+    profit_reduce_inventory_notional: float | None = None
+    profit_reduce_inventory_reductions: dict[int, float | None] = {
+        30: None,
+        60: None,
+        120: None,
+    }
+    profit_suppress_inventory_notional: float | None = None
+    profit_suppress_inventory_growth_usdt = 0.0
+    bars_from_activation_to_close: int | None = None
+    profit_reduce_to_close_bars: int | None = None
+    profit_close_estimated_net_pnl: float | None = None
+    profit_close_actual_net_pnl: float | None = None
+    profit_close_net_pnl_error: float | None = None
+    profit_exit_cost = 0.0
+    profit_passive_reduce_placed = False
+    profit_passive_reduce_reprice_count = 0
+    profit_passive_reduce_fill_count = 0
+    profit_active_reduce_executed = False
+    profit_active_reduce_count = 0
+    profit_active_reduce_pnl = 0.0
+    profit_active_reduce_cost = 0.0
+    profit_active_reduce_inventory_reduction_pct: float | None = None
+    volatility_consecutive_breaches = 0
+    volatility_breach_count = 0
+    volatility_max_consecutive_breaches = 0
+    volatility_reduce_executed = False
+    volatility_reduce_count = 0
+    volatility_reduce_pnl = 0.0
+    volatility_reduce_cost = 0.0
+    volatility_reduce_inventory_reduction_pct: float | None = None
+    volatility_wind_down_active = False
+    volatility_normal_bars = 0
+    volatility_cancelled: list[_BacktestOrder] = []
 
     for bar_index, row in enumerate(klines):
         previous_event_time = _validate_bar_time(row, previous_event_time)
@@ -320,6 +513,7 @@ def run_grid_backtest(
             and remaining_bars <= config.wind_down_bars
         ):
             wind_down_active = True
+            wind_down_started_remaining_bars = remaining_bars
             wind_down_entry_count += 1
             open_orders = [
                 order
@@ -349,13 +543,159 @@ def run_grid_backtest(
             else:
                 soft_breach_count = 0
                 if defensive and not wind_down_active:
-                    open_orders.extend(
-                        order
-                        for order in defensive_cancelled
-                        if not _has_equivalent_order(open_orders, order)
-                    )
+                    if not volatility_wind_down_active:
+                        open_orders.extend(
+                            order
+                            for order in defensive_cancelled
+                            if not _has_equivalent_order(open_orders, order)
+                        )
                     defensive_cancelled.clear()
                     defensive = False
+
+        volatility_expansion = row.get("volatility_expansion")
+        volatility_breach = (
+            config.volatility_reduce_expansion_ratio > 0
+            and volatility_expansion is not None
+            and float(volatility_expansion)
+            >= config.volatility_reduce_expansion_ratio
+        )
+        if volatility_breach:
+            volatility_breach_count += 1
+            volatility_consecutive_breaches += 1
+            volatility_max_consecutive_breaches = max(
+                volatility_max_consecutive_breaches,
+                volatility_consecutive_breaches,
+            )
+        else:
+            volatility_consecutive_breaches = 0
+        if volatility_wind_down_active:
+            volatility_normal_bars = (
+                0 if volatility_breach else volatility_normal_bars + 1
+            )
+            if (
+                config.volatility_resume_after_normal_bars > 0
+                and volatility_normal_bars
+                >= config.volatility_resume_after_normal_bars
+            ):
+                volatility_wind_down_active = False
+                volatility_normal_bars = 0
+                if wind_down_active:
+                    volatility_cancelled.clear()
+                elif defensive:
+                    defensive_cancelled.extend(
+                        order
+                        for order in volatility_cancelled
+                        if not _has_equivalent_order(defensive_cancelled, order)
+                    )
+                    volatility_cancelled.clear()
+                else:
+                    open_orders.extend(
+                        order
+                        for order in volatility_cancelled
+                        if not _has_equivalent_order(open_orders, order)
+                    )
+                    volatility_cancelled.clear()
+        if (
+            config.volatility_reduce_after_breaches > 0
+            and not volatility_reduce_executed
+            and volatility_consecutive_breaches
+            >= config.volatility_reduce_after_breaches
+            and (long_lots or short_lots)
+        ):
+            execution_price = _positive_finite(
+                row.get("open", close),
+                "open",
+            )
+            current_net_pnl = (
+                gross_grid_pnl
+                - fees_paid
+                - funding_paid
+                + _unrealized_pnl(long_lots, short_lots, execution_price)
+            )
+            if (
+                config.volatility_reduce_only_when_losing
+                and current_net_pnl >= 0
+            ):
+                continue_volatility_reduce = False
+            else:
+                continue_volatility_reduce = True
+        else:
+            continue_volatility_reduce = False
+        if continue_volatility_reduce:
+            before_notional = _gross_inventory_notional(
+                long_lots,
+                short_lots,
+                execution_price,
+            )
+            partial_exits = _close_lot_fraction_at_market(
+                long_lots,
+                short_lots,
+                execution_price,
+                fraction=config.volatility_reduce_fraction,
+                quantity_step_size=config.quantity_step_size,
+                taker_fee_rate=config.taker_fee_rate,
+                slippage_bps=config.stop_slippage_bps,
+                mode=config.volatility_reduce_mode,
+            )
+            for side, position_side, qty, exit_price, pnl, fee, slippage_cost in partial_exits:
+                gross_grid_pnl += pnl
+                fees_paid += fee
+                exit_slippage_cost += slippage_cost
+                volatility_reduce_pnl += pnl
+                volatility_reduce_cost += fee + slippage_cost
+                fills.append(BacktestFill(
+                    symbol=params.symbol,
+                    side=side.value,
+                    grid_index=-3_000,
+                    price=exit_price,
+                    qty=qty,
+                    fee=fee,
+                    grid_pnl=pnl,
+                    realized_pnl_after=(gross_grid_pnl - fees_paid - funding_paid),
+                    bar_index=bar_index,
+                    timestamp=_bar_timestamp(row),
+                    position_side=position_side,
+                    order_intent=OrderIntent.REDUCE.value,
+                ))
+            if partial_exits:
+                volatility_reduce_count += 1
+                volatility_reduce_executed = True
+                if config.volatility_wind_down_after_reduce:
+                    volatility_wind_down_active = True
+                    volatility_normal_bars = 0
+                    for pending in (
+                        open_orders + defensive_cancelled + profit_cancelled
+                    ):
+                        if (
+                            pending.order_intent == OrderIntent.OPEN
+                            and not _has_equivalent_order(
+                                volatility_cancelled,
+                                pending,
+                            )
+                        ):
+                            volatility_cancelled.append(pending)
+                    open_orders = [
+                        order
+                        for order in open_orders
+                        if order.order_intent == OrderIntent.REDUCE
+                    ]
+                    defensive_cancelled.clear()
+                    profit_cancelled.clear()
+                after_notional = _gross_inventory_notional(
+                    long_lots,
+                    short_lots,
+                    execution_price,
+                )
+                volatility_reduce_inventory_reduction_pct = (
+                    (before_notional - after_notional) / before_notional
+                    if before_notional > 0
+                    else None
+                )
+                open_orders = _trim_reduce_orders_to_inventory(
+                    open_orders,
+                    long_lots,
+                    short_lots,
+                )
 
         risk_reason, risk_price = _risk_stop(params, high, low, config)
         if risk_reason is not None:
@@ -365,7 +705,8 @@ def run_grid_backtest(
                 exit_short_qty,
                 exit_hedged_fraction,
             ) = _exit_inventory_snapshot(long_lots, short_lots, bar_index)
-            exit_price = float(risk_price)
+            mark_exit_price = float(risk_price)
+            exit_price = mark_exit_price
             if conservative and config.stop_slippage_bps > 0:
                 slippage = config.stop_slippage_bps / 10_000
                 exit_price *= (
@@ -374,6 +715,9 @@ def run_grid_backtest(
                     else 1 + slippage
                 )
             if conservative:
+                closed_qty = sum(lot.qty for lot in long_lots) + sum(
+                    lot.qty for lot in short_lots
+                )
                 stop_exit_pnl, stop_exit_cost = _close_all_lots(
                     long_lots,
                     short_lots,
@@ -382,6 +726,9 @@ def run_grid_backtest(
                 )
                 gross_grid_pnl += stop_exit_pnl
                 fees_paid += stop_exit_cost
+                exit_slippage_cost += (
+                    abs(mark_exit_price - exit_price) * closed_qty
+                )
             stopped_reason = risk_reason
             stopped_at_index = bar_index
             stopped_at_price = exit_price
@@ -459,6 +806,8 @@ def run_grid_backtest(
                 if order.wind_down_reduce:
                     wind_down_maker_fill_count += 1
                     wind_down_maker_pnl += grid_pnl
+                if order.profit_reduce:
+                    profit_passive_reduce_fill_count += 1
             _apply_position_fill(order, long_lots, short_lots, bar_index)
             realized_pnl = gross_grid_pnl - fees_paid
             fills.append(
@@ -485,10 +834,16 @@ def run_grid_backtest(
             )
             if next_order is not None:
                 if (
-                    (defensive or wind_down_active)
+                    (defensive or wind_down_active or volatility_wind_down_active)
                     and next_order.order_intent == OrderIntent.OPEN
                 ):
-                    defensive_cancelled.append(next_order)
+                    if not volatility_wind_down_active:
+                        defensive_cancelled.append(next_order)
+                    elif not _has_equivalent_order(
+                        volatility_cancelled,
+                        next_order,
+                    ):
+                        volatility_cancelled.append(next_order)
                 else:
                     open_orders.append(next_order)
 
@@ -515,6 +870,13 @@ def run_grid_backtest(
                     exit_short_qty,
                     exit_hedged_fraction,
                 ) = _exit_inventory_snapshot(long_lots, short_lots, bar_index)
+                market_exit_cost = _market_exit_cost(
+                    long_lots,
+                    short_lots,
+                    close,
+                    config.taker_fee_rate,
+                    config.stop_slippage_bps,
+                )
                 stop_exit_pnl, stop_exit_cost = _close_all_lots_at_market(
                     long_lots,
                     short_lots,
@@ -524,6 +886,10 @@ def run_grid_backtest(
                 )
                 gross_grid_pnl += stop_exit_pnl
                 fees_paid += stop_exit_cost
+                exit_slippage_cost += max(
+                    0.0,
+                    market_exit_cost - stop_exit_cost,
+                )
                 stopped_reason = "inventory_critical"
                 stopped_at_index = bar_index
                 stopped_at_price = close
@@ -548,6 +914,27 @@ def run_grid_backtest(
                     max_inventory_utilization,
                 )
                 break
+            if (
+                not wind_down_active
+                and config.inventory_wind_down_bars > 0
+                and config.wind_down_bars < remaining_bars
+                <= config.inventory_wind_down_bars
+                and inventory_utilization
+                >= config.inventory_wind_down_utilization
+                and (
+                    not config.inventory_wind_down_only_when_losing
+                    or _unrealized_pnl(long_lots, short_lots, close) < 0
+                )
+            ):
+                wind_down_active = True
+                wind_down_started_remaining_bars = remaining_bars
+                wind_down_entry_count += 1
+                open_orders = [
+                    order
+                    for order in open_orders
+                    if order.order_intent == OrderIntent.REDUCE
+                ]
+                defensive_cancelled.clear()
             if inventory_utilization >= config.inventory_caution_utilization:
                 net_qty = sum(lot.qty for lot in long_lots) - sum(
                     lot.qty for lot in short_lots
@@ -574,12 +961,15 @@ def run_grid_backtest(
                     else:
                         retained_orders.append(pending)
                 open_orders = retained_orders
+        active_wind_down_bars = (
+            wind_down_started_remaining_bars or config.wind_down_bars
+        )
         if (
             wind_down_active
             and config.wind_down_reprice_interval_bars > 0
             and remaining_bars > 1
             and (
-                config.wind_down_bars - remaining_bars
+                active_wind_down_bars - remaining_bars
             ) % config.wind_down_reprice_interval_bars == 0
             and (long_lots or short_lots)
         ):
@@ -588,8 +978,9 @@ def run_grid_backtest(
                 short_lots,
                 close,
                 remaining_bars=max(0, remaining_bars - 1),
-                wind_down_bars=config.wind_down_bars,
+                wind_down_bars=active_wind_down_bars,
                 initial_offset_steps=config.wind_down_initial_offset_steps,
+                urgency_exponent=config.wind_down_urgency_exponent,
                 step_pct=params.step_pct,
                 tick_size=min_tick_size,
                 grid_prices=params.grid_prices,
@@ -618,6 +1009,286 @@ def run_grid_backtest(
                 close,
                 config.funding_rate_per_bar,
             )
+
+        realized_before_profit_exit = gross_grid_pnl - fees_paid - funding_paid
+        gross_inventory_notional = _gross_inventory_notional(
+            long_lots,
+            short_lots,
+            close,
+        )
+        profit_decision = profit_tracker.evaluate(
+            profit_session_id,
+            realized_pnl=realized_before_profit_exit,
+            unrealized_pnl=_unrealized_pnl(long_lots, short_lots, close),
+            gross_inventory_notional=gross_inventory_notional,
+        )
+        if profit_decision.snapshot.activated and not profit_activated:
+            profit_activated = True
+            profit_protection_activation_count += 1
+            profit_activation_bar = bar_index
+
+        profit_action = (
+            ProfitProtectionAction.CLOSE
+            if (
+                profit_mode == "FIXED_CLOSE"
+                and profit_decision.snapshot.activated
+                and profit_decision.snapshot.current_net_pnl
+                >= config.profit_activation_usdt
+            )
+            else (
+                profit_decision.action
+                if profit_mode == "PEAK_DRAWDOWN"
+                else ProfitProtectionAction.NONE
+            )
+        )
+        if (
+            profit_action != ProfitProtectionAction.NONE
+            and profit_action != profit_last_action
+        ):
+            if profit_action == ProfitProtectionAction.SUPPRESS:
+                profit_suppress_count += 1
+            elif profit_action == ProfitProtectionAction.REDUCE:
+                profit_reduce_count += 1
+            elif profit_action == ProfitProtectionAction.CLOSE:
+                profit_close_count += 1
+
+        if profit_action == ProfitProtectionAction.SUPPRESS:
+            retained_orders: list[_BacktestOrder] = []
+            for pending in open_orders:
+                if pending.order_intent == OrderIntent.OPEN:
+                    profit_cancelled.append(pending)
+                else:
+                    retained_orders.append(pending)
+            open_orders = retained_orders
+            if profit_suppress_inventory_notional is None:
+                profit_suppress_inventory_notional = gross_inventory_notional
+        elif profit_action == ProfitProtectionAction.REDUCE:
+            open_orders, cancelled = _suppress_inventory_increasing_orders(
+                open_orders,
+                net_qty=(
+                    sum(lot.qty for lot in long_lots)
+                    - sum(lot.qty for lot in short_lots)
+                ),
+                direction_mode=mode,
+            )
+            profit_cancelled.extend(cancelled)
+            if profit_reduce_bar is None:
+                profit_reduce_bar = bar_index
+                profit_reduce_inventory_notional = gross_inventory_notional
+        elif profit_action == ProfitProtectionAction.NONE:
+            if (
+                not defensive
+                and not wind_down_active
+                and not volatility_wind_down_active
+            ):
+                open_orders.extend(
+                    pending
+                    for pending in profit_cancelled
+                    if not _has_equivalent_order(open_orders, pending)
+                )
+                profit_cancelled.clear()
+
+        if profit_suppress_inventory_notional is not None:
+            profit_suppress_inventory_growth_usdt = max(
+                profit_suppress_inventory_growth_usdt,
+                gross_inventory_notional - profit_suppress_inventory_notional,
+            )
+        if (
+            profit_reduce_bar is not None
+            and profit_reduce_inventory_notional is not None
+            and profit_reduce_inventory_notional > 0
+        ):
+            elapsed = bar_index - profit_reduce_bar
+            if (
+                config.profit_passive_reduce_after_bars > 0
+                and not profit_passive_reduce_placed
+                and elapsed >= config.profit_passive_reduce_after_bars
+                and (long_lots or short_lots)
+                and profit_action != ProfitProtectionAction.CLOSE
+            ):
+                open_orders = [
+                    order
+                    for order in open_orders
+                    if order.order_intent != OrderIntent.REDUCE
+                ]
+                open_orders.extend(_profit_passive_reduce_orders(
+                    long_lots,
+                    short_lots,
+                    close,
+                    step_pct=params.step_pct,
+                    tick_size=min_tick_size,
+                    grid_prices=params.grid_prices,
+                    quantity_step_size=config.quantity_step_size,
+                    fraction=config.profit_passive_reduce_fraction,
+                ))
+                profit_passive_reduce_placed = True
+                profit_passive_reduce_reprice_count += 1
+
+            if (
+                config.profit_active_reduce_after_bars > 0
+                and not profit_active_reduce_executed
+                and elapsed >= config.profit_active_reduce_after_bars
+                and profit_action in {
+                    ProfitProtectionAction.SUPPRESS,
+                    ProfitProtectionAction.REDUCE,
+                }
+                and (long_lots or short_lots)
+            ):
+                before_notional = _gross_inventory_notional(
+                    long_lots,
+                    short_lots,
+                    close,
+                )
+                partial_exits = _close_lot_fraction_at_market(
+                    long_lots,
+                    short_lots,
+                    close,
+                    fraction=config.profit_active_reduce_fraction,
+                    quantity_step_size=config.quantity_step_size,
+                    taker_fee_rate=config.taker_fee_rate,
+                    slippage_bps=config.stop_slippage_bps,
+                )
+                for side, position_side, qty, exit_price, pnl, fee, slippage_cost in partial_exits:
+                    gross_grid_pnl += pnl
+                    fees_paid += fee
+                    exit_slippage_cost += slippage_cost
+                    profit_active_reduce_pnl += pnl
+                    profit_active_reduce_cost += fee + slippage_cost
+                    fills.append(BacktestFill(
+                        symbol=params.symbol,
+                        side=side.value,
+                        grid_index=-2_000,
+                        price=exit_price,
+                        qty=qty,
+                        fee=fee,
+                        grid_pnl=pnl,
+                        realized_pnl_after=(
+                            gross_grid_pnl - fees_paid - funding_paid
+                        ),
+                        bar_index=bar_index,
+                        timestamp=_bar_timestamp(row),
+                        position_side=position_side,
+                        order_intent=OrderIntent.REDUCE.value,
+                    ))
+                if partial_exits:
+                    profit_active_reduce_count += 1
+                    profit_active_reduce_executed = True
+                    after_notional = _gross_inventory_notional(
+                        long_lots,
+                        short_lots,
+                        close,
+                    )
+                    profit_active_reduce_inventory_reduction_pct = (
+                        (before_notional - after_notional) / before_notional
+                        if before_notional > 0
+                        else None
+                    )
+                    open_orders = [
+                        order
+                        for order in open_orders
+                        if order.order_intent != OrderIntent.REDUCE
+                    ]
+                    open_orders.extend(_profit_passive_reduce_orders(
+                        long_lots,
+                        short_lots,
+                        close,
+                        step_pct=params.step_pct,
+                        tick_size=min_tick_size,
+                        grid_prices=params.grid_prices,
+                        quantity_step_size=config.quantity_step_size,
+                        fraction=config.profit_passive_reduce_fraction,
+                    ))
+                    profit_passive_reduce_reprice_count += 1
+                    gross_inventory_notional = after_notional
+            for horizon in profit_reduce_inventory_reductions:
+                if (
+                    profit_reduce_inventory_reductions[horizon] is None
+                    and elapsed >= horizon
+                ):
+                    profit_reduce_inventory_reductions[horizon] = (
+                        profit_reduce_inventory_notional
+                        - gross_inventory_notional
+                    ) / profit_reduce_inventory_notional
+
+        if profit_action == ProfitProtectionAction.CLOSE:
+            (
+                exit_oldest_lot_age_bars,
+                exit_long_qty,
+                exit_short_qty,
+                exit_hedged_fraction,
+            ) = _exit_inventory_snapshot(long_lots, short_lots, bar_index)
+            profit_close_estimated_net_pnl = (
+                profit_decision.snapshot.current_net_pnl
+            )
+            profit_exit_cost = _market_exit_cost(
+                long_lots,
+                short_lots,
+                close,
+                config.taker_fee_rate,
+                config.stop_slippage_bps,
+            )
+            stop_exit_pnl, stop_exit_cost = _close_all_lots_at_market(
+                long_lots,
+                short_lots,
+                close,
+                config.taker_fee_rate,
+                config.stop_slippage_bps,
+            )
+            gross_grid_pnl += stop_exit_pnl
+            fees_paid += stop_exit_cost
+            exit_slippage_cost += max(
+                0.0,
+                profit_exit_cost - stop_exit_cost,
+            )
+            profit_close_actual_net_pnl = (
+                gross_grid_pnl - fees_paid - funding_paid
+            )
+            profit_close_net_pnl_error = (
+                profit_close_actual_net_pnl
+                - profit_close_estimated_net_pnl
+            )
+            stopped_reason = (
+                "profit_fixed_close"
+                if profit_mode == "FIXED_CLOSE"
+                else "profit_protection_close"
+            )
+            stopped_at_index = bar_index
+            stopped_at_price = close
+            open_orders.clear()
+            profit_cancelled.clear()
+            defensive_cancelled.clear()
+            bars_from_activation_to_close = (
+                bar_index - profit_activation_bar
+                if profit_activation_bar is not None
+                else None
+            )
+            profit_reduce_to_close_bars = (
+                bar_index - profit_reduce_bar
+                if profit_reduce_bar is not None
+                else None
+            )
+            (
+                _equity,
+                max_equity,
+                max_drawdown,
+                max_inventory_utilization,
+            ) = _append_equity_point(
+                equity_curve,
+                bar_index,
+                _bar_timestamp(row),
+                close,
+                gross_grid_pnl - fees_paid - funding_paid,
+                long_lots,
+                short_lots,
+                max_equity,
+                max_drawdown,
+                config.capital * config.leverage,
+                max_inventory_utilization,
+            )
+            profit_last_action = profit_action
+            break
+
+        profit_last_action = profit_action
         (
             _equity,
             max_equity,
@@ -644,6 +1315,13 @@ def run_grid_backtest(
             exit_short_qty,
             exit_hedged_fraction,
         ) = _exit_inventory_snapshot(long_lots, short_lots, len(klines))
+        market_exit_cost = _market_exit_cost(
+            long_lots,
+            short_lots,
+            last_price,
+            config.taker_fee_rate,
+            config.stop_slippage_bps,
+        )
         stop_exit_pnl, stop_exit_cost = _close_all_lots_at_market(
             long_lots,
             short_lots,
@@ -653,6 +1331,7 @@ def run_grid_backtest(
         )
         gross_grid_pnl += stop_exit_pnl
         fees_paid += stop_exit_cost
+        exit_slippage_cost += max(0.0, market_exit_cost - stop_exit_cost)
         stopped_reason = "window_force_close"
         stopped_at_index = len(klines)
         stopped_at_price = last_price
@@ -678,6 +1357,31 @@ def run_grid_backtest(
 
     unrealized_pnl = _unrealized_pnl(long_lots, short_lots, last_price)
     realized_pnl = gross_grid_pnl - fees_paid - funding_paid
+    final_profit_snapshot = profit_tracker.evaluate(
+        profit_session_id,
+        realized_pnl=realized_pnl,
+        unrealized_pnl=unrealized_pnl,
+        gross_inventory_notional=_gross_inventory_notional(
+            long_lots,
+            short_lots,
+            last_price,
+        ),
+    ).snapshot
+    # 未强平的通用回测也必须按与实时状态机相同的预计退出成本口径统计
+    # 最终净利润；研究窗口强平后库存为零，此处自然等于实际退出后的净利润。
+    final_net_pnl = final_profit_snapshot.current_net_pnl
+    profit_peak_net_pnl = max(0.0, final_profit_snapshot.peak_net_pnl)
+    peak_profit_giveback_usdt = max(0.0, profit_peak_net_pnl - final_net_pnl)
+    peak_profit_giveback_pct = (
+        peak_profit_giveback_usdt / profit_peak_net_pnl
+        if profit_peak_net_pnl > 0
+        else 0.0
+    )
+    locked_profit_usdt = (
+        max(0.0, final_net_pnl)
+        if profit_protection_activation_count > 0
+        else 0.0
+    )
     return BacktestResult(
         symbol=params.symbol,
         fills=fills,
@@ -698,6 +1402,7 @@ def run_grid_backtest(
         funding_paid=funding_paid,
         stop_exit_cost=stop_exit_cost,
         stop_exit_pnl=stop_exit_pnl,
+        exit_slippage_cost=exit_slippage_cost,
         attempted_fill_count=attempted_fill_count,
         rejected_fill_count=max(0, attempted_fill_count - len(fills)),
         pair_completion_count=pair_completion_count,
@@ -718,6 +1423,58 @@ def run_grid_backtest(
         exit_long_qty=exit_long_qty,
         exit_short_qty=exit_short_qty,
         exit_hedged_fraction=exit_hedged_fraction,
+        profit_protection_activation_count=(
+            profit_protection_activation_count
+        ),
+        profit_suppress_count=profit_suppress_count,
+        profit_reduce_count=profit_reduce_count,
+        profit_close_count=profit_close_count,
+        profitable_to_losing_count=int(
+            profit_peak_net_pnl > 0 and final_net_pnl <= 0
+        ),
+        profit_peak_net_pnl=profit_peak_net_pnl,
+        peak_profit_giveback_usdt=peak_profit_giveback_usdt,
+        peak_profit_giveback_pct=peak_profit_giveback_pct,
+        locked_profit_usdt=locked_profit_usdt,
+        profit_exit_cost=profit_exit_cost,
+        bars_from_activation_to_close=bars_from_activation_to_close,
+        profit_reduce_to_close_bars=profit_reduce_to_close_bars,
+        profit_close_estimated_net_pnl=profit_close_estimated_net_pnl,
+        profit_close_actual_net_pnl=profit_close_actual_net_pnl,
+        profit_close_net_pnl_error=profit_close_net_pnl_error,
+        profit_suppress_inventory_growth_usdt=max(
+            0.0,
+            profit_suppress_inventory_growth_usdt,
+        ),
+        profit_reduce_inventory_reduction_30_pct=(
+            profit_reduce_inventory_reductions[30]
+        ),
+        profit_reduce_inventory_reduction_60_pct=(
+            profit_reduce_inventory_reductions[60]
+        ),
+        profit_reduce_inventory_reduction_120_pct=(
+            profit_reduce_inventory_reductions[120]
+        ),
+        profit_passive_reduce_reprice_count=(
+            profit_passive_reduce_reprice_count
+        ),
+        profit_passive_reduce_fill_count=profit_passive_reduce_fill_count,
+        profit_active_reduce_count=profit_active_reduce_count,
+        profit_active_reduce_pnl=profit_active_reduce_pnl,
+        profit_active_reduce_cost=profit_active_reduce_cost,
+        profit_active_reduce_inventory_reduction_pct=(
+            profit_active_reduce_inventory_reduction_pct
+        ),
+        volatility_breach_count=volatility_breach_count,
+        volatility_max_consecutive_breaches=(
+            volatility_max_consecutive_breaches
+        ),
+        volatility_reduce_count=volatility_reduce_count,
+        volatility_reduce_pnl=volatility_reduce_pnl,
+        volatility_reduce_cost=volatility_reduce_cost,
+        volatility_reduce_inventory_reduction_pct=(
+            volatility_reduce_inventory_reduction_pct
+        ),
     )
 
 
@@ -750,10 +1507,39 @@ def _validate_backtest_config(config: BacktestConfig) -> None:
         raise ValueError("quantity_step_size不能为负。")
     if config.wind_down_bars < 0:
         raise ValueError("wind_down_bars不能为负。")
+    if config.inventory_wind_down_bars < 0:
+        raise ValueError("inventory_wind_down_bars不能为负。")
+    inventory_wind_down_utilization = _finite_float(
+        config.inventory_wind_down_utilization,
+        "inventory_wind_down_utilization",
+    )
+    if config.inventory_wind_down_bars == 0:
+        if inventory_wind_down_utilization != 0:
+            raise ValueError("未启用库存条件 wind-down 时利用率阈值必须为0。")
+        if config.inventory_wind_down_only_when_losing:
+            raise ValueError("仅亏损触发需要先启用库存条件 wind-down。")
+    else:
+        if config.wind_down_bars <= 0:
+            raise ValueError("库存条件 wind-down 需要固定 wind_down_bars 兜底。")
+        if config.inventory_wind_down_bars <= config.wind_down_bars:
+            raise ValueError("库存条件 wind-down 必须早于固定 wind-down。")
+        if not (
+            0
+            < inventory_wind_down_utilization
+            < config.inventory_critical_utilization
+        ):
+            raise ValueError("库存条件 wind-down 利用率阈值无效。")
+        if config.max_inventory_notional <= 0:
+            raise ValueError("库存条件 wind-down 需要正的库存上限。")
     if config.wind_down_reprice_interval_bars < 0:
         raise ValueError("wind_down_reprice_interval_bars不能为负。")
     if config.wind_down_initial_offset_steps < 0:
         raise ValueError("wind_down_initial_offset_steps不能为负。")
+    if (
+        not isfinite(config.wind_down_urgency_exponent)
+        or config.wind_down_urgency_exponent <= 0
+    ):
+        raise ValueError("wind_down_urgency_exponent必须为正的有限数。")
     if not 0 < config.wind_down_unwind_fraction <= 1:
         raise ValueError("wind_down_unwind_fraction必须在(0, 1]内。")
     if config.max_unpaired_lots_per_side < 0:
@@ -773,6 +1559,64 @@ def _validate_backtest_config(config: BacktestConfig) -> None:
     ):
         raise ValueError("库存 CAUTION/CRITICAL 阈值无效。")
     _finite_float(config.funding_rate_per_bar, "funding_rate_per_bar")
+    profit_mode = str(config.profit_protection_mode).strip().upper()
+    if profit_mode not in {"OFF", "FIXED_CLOSE", "PEAK_DRAWDOWN"}:
+        raise ValueError(
+            "profit_protection_mode必须为OFF、FIXED_CLOSE或PEAK_DRAWDOWN。"
+        )
+    if config.profit_protection_enabled and profit_mode == "OFF":
+        raise ValueError("利润保护启用时不能使用OFF模式。")
+    if config.profit_protection_enabled and config.profit_activation_usdt <= 0:
+        raise ValueError("profit_activation_usdt必须大于0。")
+    ProfitProtectionConfig(
+        activation_profit_usdt=config.profit_activation_usdt,
+        enabled=(config.profit_protection_enabled and profit_mode != "OFF"),
+        minimum_locked_profit_ratio=config.profit_minimum_locked_ratio,
+        suppress_drawdown_pct=config.profit_suppress_drawdown_pct,
+        reduce_drawdown_pct=config.profit_reduce_drawdown_pct,
+        close_drawdown_pct=config.profit_close_drawdown_pct,
+        estimated_exit_cost_rate=config.profit_estimated_exit_cost_rate,
+    )
+    if config.profit_passive_reduce_after_bars < 0:
+        raise ValueError("profit_passive_reduce_after_bars不能为负。")
+    if config.profit_active_reduce_after_bars < 0:
+        raise ValueError("profit_active_reduce_after_bars不能为负。")
+    if (
+        config.profit_active_reduce_after_bars > 0
+        and (
+            config.profit_passive_reduce_after_bars <= 0
+            or config.profit_active_reduce_after_bars
+            <= config.profit_passive_reduce_after_bars
+        )
+    ):
+        raise ValueError("主动利润减仓必须晚于已启用的被动减仓。")
+    if not 0 < config.profit_passive_reduce_fraction <= 1:
+        raise ValueError("profit_passive_reduce_fraction必须在(0, 1]内。")
+    if not 0 < config.profit_active_reduce_fraction <= 1:
+        raise ValueError("profit_active_reduce_fraction必须在(0, 1]内。")
+    if config.volatility_reduce_expansion_ratio < 0:
+        raise ValueError("volatility_reduce_expansion_ratio不能为负。")
+    if config.volatility_reduce_after_breaches < 0:
+        raise ValueError("volatility_reduce_after_breaches不能为负。")
+    if (
+        config.volatility_reduce_after_breaches > 0
+        and config.volatility_reduce_expansion_ratio <= 1.0
+    ):
+        raise ValueError("启用波动减仓时扩张比阈值必须大于1。")
+    if not 0 < config.volatility_reduce_fraction <= 1:
+        raise ValueError("volatility_reduce_fraction必须在(0, 1]内。")
+    if str(config.volatility_reduce_mode).strip().upper() not in {
+        "BOTH",
+        "WORST_SIDE",
+    }:
+        raise ValueError("volatility_reduce_mode必须为BOTH或WORST_SIDE。")
+    if config.volatility_resume_after_normal_bars < 0:
+        raise ValueError("volatility_resume_after_normal_bars不能为负。")
+    if (
+        config.volatility_resume_after_normal_bars > 0
+        and not config.volatility_wind_down_after_reduce
+    ):
+        raise ValueError("波动恢复需要先启用减仓后只减不增。")
 
 
 def _validate_grid_params(params: GridParams) -> None:
@@ -823,6 +1667,7 @@ def _wind_down_reduce_orders(
     remaining_bars: int,
     wind_down_bars: int,
     initial_offset_steps: float,
+    urgency_exponent: float,
     step_pct: float,
     tick_size: float,
     grid_prices: list[float],
@@ -832,7 +1677,8 @@ def _wind_down_reduce_orders(
     """Create next-bar POST_ONLY reductions with urgency increasing toward close."""
 
     remaining_ratio = max(0.0, min(1.0, remaining_bars / max(1, wind_down_bars)))
-    offset_pct = max(0.0, initial_offset_steps * step_pct * remaining_ratio)
+    urgency_ratio = remaining_ratio ** urgency_exponent
+    offset_pct = max(0.0, initial_offset_steps * step_pct * urgency_ratio)
     raw_sell = mark_price * (1.0 + offset_pct)
     raw_buy = mark_price * (1.0 - offset_pct)
     sell_price = _round_post_only_sell(raw_sell, mark_price, tick_size)
@@ -943,6 +1789,182 @@ def _layered_reduce_orders(
             True,
         ))
     return orders
+
+
+def _profit_passive_reduce_orders(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    mark_price: float,
+    *,
+    step_pct: float,
+    tick_size: float,
+    grid_prices: list[float],
+    quantity_step_size: float,
+    fraction: float,
+) -> list[_BacktestOrder]:
+    orders = _wind_down_reduce_orders(
+        long_lots,
+        short_lots,
+        mark_price,
+        remaining_bars=0,
+        wind_down_bars=1,
+        initial_offset_steps=0.0,
+        urgency_exponent=1.0,
+        step_pct=step_pct,
+        tick_size=tick_size,
+        grid_prices=grid_prices,
+        quantity_step_size=quantity_step_size,
+        unwind_fraction=fraction,
+    )
+    for order in orders:
+        order.wind_down_reduce = False
+        order.profit_reduce = True
+    return orders
+
+
+def _close_lot_fraction_at_market(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    mark_price: float,
+    *,
+    fraction: float,
+    quantity_step_size: float,
+    taker_fee_rate: float,
+    slippage_bps: float,
+    mode: str = "BOTH",
+) -> list[tuple[OrderSide, str, float, float, float, float, float]]:
+    slippage = max(0.0, slippage_bps) / 10_000
+    exits: list[tuple[OrderSide, str, float, float, float, float, float]] = []
+    positions = [
+        (
+            long_lots,
+            OrderSide.SELL,
+            "LONG",
+            mark_price * (1 - slippage),
+        ),
+        (
+            short_lots,
+            OrderSide.BUY,
+            "SHORT",
+            mark_price * (1 + slippage),
+        ),
+    ]
+    normalized_mode = str(mode).strip().upper()
+    if normalized_mode == "WORST_SIDE":
+        available = [item for item in positions if item[0]]
+        if not available:
+            return exits
+        selected = min(
+            available,
+            key=lambda item: (
+                sum(
+                    (
+                        mark_price - lot.entry_price
+                        if item[2] == "LONG"
+                        else lot.entry_price - mark_price
+                    )
+                    * lot.qty
+                    for lot in item[0]
+                ),
+                item[2],
+            ),
+        )
+        total_qty = sum(
+            lot.qty
+            for lots, _side, _position_side, _exit_price in positions
+            for lot in lots
+        )
+        targets = [(*selected, total_qty * fraction)]
+    else:
+        targets = [
+            (*item, sum(lot.qty for lot in item[0]) * fraction)
+            for item in positions
+        ]
+    for lots, side, position_side, exit_price, raw_target_qty in targets:
+        total_qty = sum(lot.qty for lot in lots)
+        target_qty = _round_down_to_step(
+            raw_target_qty,
+            quantity_step_size,
+        )
+        if (
+            target_qty <= 1e-12
+            and quantity_step_size > 0
+            and total_qty + 1e-12 >= quantity_step_size
+        ):
+            target_qty = quantity_step_size
+        target_qty = min(total_qty, target_qty)
+        if target_qty <= 1e-12:
+            continue
+        remaining = target_qty
+        pnl = 0.0
+        for lot in list(lots):
+            consumed = min(lot.qty, remaining)
+            if position_side == "LONG":
+                pnl += (exit_price - lot.entry_price) * consumed
+            else:
+                pnl += (lot.entry_price - exit_price) * consumed
+            lot.qty -= consumed
+            remaining -= consumed
+            if lot.qty <= 1e-12:
+                lots.remove(lot)
+            if remaining <= 1e-12:
+                break
+        closed_qty = target_qty - max(0.0, remaining)
+        if closed_qty <= 1e-12:
+            continue
+        fee = exit_price * closed_qty * taker_fee_rate
+        slippage_cost = mark_price * slippage * closed_qty
+        exits.append((
+            side,
+            position_side,
+            closed_qty,
+            exit_price,
+            pnl,
+            fee,
+            slippage_cost,
+        ))
+    return exits
+
+
+def _trim_reduce_orders_to_inventory(
+    orders: list[_BacktestOrder],
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+) -> list[_BacktestOrder]:
+    """Cap resting reduce quantities after an out-of-band partial market exit."""
+
+    budgets = {
+        "LONG": [[lot.entry_price, lot.qty] for lot in long_lots],
+        "SHORT": [[lot.entry_price, lot.qty] for lot in short_lots],
+    }
+    retained: list[_BacktestOrder] = []
+    for order in orders:
+        if order.order_intent != OrderIntent.REDUCE:
+            retained.append(order)
+            continue
+        position_side = str(order.position_side or "").upper()
+        if position_side not in budgets:
+            position_side = "SHORT" if order.side == OrderSide.BUY else "LONG"
+        available = budgets[position_side]
+        match = next(
+            (
+                item
+                for item in available
+                if order.entry_price is not None
+                and abs(float(item[0]) - order.entry_price) <= 1e-12
+                and float(item[1]) > 1e-12
+            ),
+            None,
+        )
+        if match is None:
+            continue
+        quantity = min(order.qty, float(match[1]))
+        if quantity <= 1e-12:
+            continue
+        order.qty = quantity
+        match[1] = max(0.0, float(match[1]) - quantity)
+        retained.append(order)
+    return retained
 
 
 def _grid_exit_target(
@@ -1064,7 +2086,13 @@ def _fill_identity(order: _BacktestOrder) -> str:
         entry,
         order.position_side,
         order.order_intent.value,
-        "WIND_DOWN" if order.wind_down_reduce else "GRID",
+        (
+            "WIND_DOWN"
+            if order.wind_down_reduce
+            else "PROFIT_REDUCE"
+            if order.profit_reduce
+            else "GRID"
+        ),
     ))
 
 
@@ -1244,6 +2272,59 @@ def _unrealized_pnl(
     long_pnl = sum((last_price - lot.entry_price) * lot.qty for lot in long_lots)
     short_pnl = sum((lot.entry_price - last_price) * lot.qty for lot in short_lots)
     return long_pnl + short_pnl
+
+
+def _gross_inventory_notional(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    mark_price: float,
+) -> float:
+    return (
+        sum(lot.qty for lot in long_lots)
+        + sum(lot.qty for lot in short_lots)
+    ) * mark_price
+
+
+def _market_exit_cost(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    mark_price: float,
+    taker_fee_rate: float,
+    slippage_bps: float,
+) -> float:
+    slippage = max(0.0, slippage_bps) / 10_000
+    long_qty = sum(lot.qty for lot in long_lots)
+    short_qty = sum(lot.qty for lot in short_lots)
+    fee = (
+        mark_price * (1 - slippage) * long_qty
+        + mark_price * (1 + slippage) * short_qty
+    ) * taker_fee_rate
+    slippage_cost = mark_price * slippage * (long_qty + short_qty)
+    return fee + slippage_cost
+
+
+def _suppress_inventory_increasing_orders(
+    open_orders: list[_BacktestOrder],
+    *,
+    net_qty: float,
+    direction_mode: GridDirectionMode,
+) -> tuple[list[_BacktestOrder], list[_BacktestOrder]]:
+    if abs(net_qty) <= 1e-12:
+        return open_orders, []
+    increasing_side = OrderSide.BUY if net_qty > 0 else OrderSide.SELL
+    retained: list[_BacktestOrder] = []
+    cancelled: list[_BacktestOrder] = []
+    for order in open_orders:
+        suppress = (
+            order.order_intent == OrderIntent.OPEN
+            and order.entry_price is None
+            and (
+                order.side == increasing_side
+                or direction_mode != GridDirectionMode.NEUTRAL
+            )
+        )
+        (cancelled if suppress else retained).append(order)
+    return retained, cancelled
 
 
 def _oldest_lot_age_bars(

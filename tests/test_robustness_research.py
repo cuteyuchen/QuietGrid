@@ -6,6 +6,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,6 +24,7 @@ from scripts.robustness import (
     SymbolResearchPolicy,
     SymbolRules,
     WeekendWindow,
+    WindDownMakerPolicy,
     aggregate_results,
     aggregate_joint_results,
     classify_dynamic_mode,
@@ -48,6 +50,141 @@ UTC = timezone.utc
 
 class _ConfigCaptured(RuntimeError):
     pass
+
+
+def test_symbol_wind_down_duration_schedule_uses_frozen_anchor_and_bounds() -> None:
+    policy = SymbolResearchPolicy(
+        ParameterSet(1.0, 0.0018, 0.02, GridDirectionMode.NEUTRAL),
+        100.0,
+        wind_down_bars=2160,
+        wind_down_reference_tradable_rows=3300,
+        wind_down_min_bars=1440,
+        wind_down_max_bars=2880,
+    )
+
+    assert robustness_module._resolve_symbol_wind_down_bars(
+        policy,
+        tradable_rows=3300,
+        default_wind_down_bars=1440,
+    ) == 2160
+    assert robustness_module._resolve_symbol_wind_down_bars(
+        policy,
+        tradable_rows=4740,
+        default_wind_down_bars=1440,
+    ) == 2880
+    assert robustness_module._resolve_symbol_wind_down_bars(
+        policy,
+        tradable_rows=1860,
+        default_wind_down_bars=1440,
+    ) == 1440
+
+
+def test_symbol_wind_down_duration_schedule_preserves_fixed_default_path() -> None:
+    parameter = ParameterSet(1.0, 0.0018, 0.02, GridDirectionMode.NEUTRAL)
+
+    assert robustness_module._resolve_symbol_wind_down_bars(
+        SymbolResearchPolicy(parameter, 100.0),
+        tradable_rows=3300,
+        default_wind_down_bars=1440,
+    ) is None
+    assert robustness_module._resolve_symbol_wind_down_bars(
+        SymbolResearchPolicy(parameter, 100.0, wind_down_bars=2160),
+        tradable_rows=3300,
+        default_wind_down_bars=1440,
+    ) == 2160
+
+    with pytest.raises(ValueError, match="参考可交易行数"):
+        robustness_module._resolve_symbol_wind_down_bars(
+            SymbolResearchPolicy(parameter, 100.0, wind_down_min_bars=1440),
+            tradable_rows=3300,
+            default_wind_down_bars=1440,
+        )
+
+
+def test_rolling_volatility_signal_excludes_current_trade_bar() -> None:
+    start = datetime(2026, 1, 2, 20, 0, tzinfo=UTC)
+    observation = [
+        _row(
+            start + timedelta(minutes=index),
+            100.0 + (0.2 if index % 2 else -0.2),
+        )
+        for index in range(61)
+    ]
+    parameter = ParameterSet(1.0, 0.003, 0.01, GridDirectionMode.NEUTRAL)
+
+    def first_signal(current_close: float) -> float:
+        window = WeekendWindow(
+            symbol="BTCUSDT",
+            window_id=f"signal_{current_close}",
+            market_close=start,
+            force_close_at=start + timedelta(minutes=62),
+            rows=tuple([
+                *observation,
+                _row(start + timedelta(minutes=61), current_close),
+            ]),
+            observation_rows=61,
+            status="READY",
+        )
+        research = RobustnessResearch(
+            [window],
+            [parameter],
+            ResearchConfig(observation_rows=61, minimum_tradable_rows=1),
+        )
+        return float(
+            research._rolling_components(research.contexts[0])[0][
+                "volatility_expansion"
+            ]
+        )
+
+    assert first_signal(90.0) == pytest.approx(first_signal(110.0))
+
+
+def test_entry_filter_clears_deferred_defense_metrics() -> None:
+    start = datetime(2026, 1, 2, 20, 0, tzinfo=UTC)
+    window = WeekendWindow(
+        symbol="BTCUSDT",
+        window_id="blocked",
+        market_close=start,
+        force_close_at=start + timedelta(minutes=1),
+        rows=(),
+        observation_rows=0,
+        status="READY",
+    )
+    context = robustness_module._WindowContext(window)
+    context.entry_decision = SimpleNamespace(features=SimpleNamespace(
+        directional_efficiency=0.9,
+        volatility_expansion=2.0,
+        reversal_ratio=0.0,
+    ))
+    baseline = robustness_module.WindowResult(
+        parameter_id="p",
+        symbol="BTCUSDT",
+        window_id="blocked",
+        market_close=start.isoformat(),
+        status="TRADED",
+        reason="completed",
+        pnl=1.0,
+        exit_slippage_cost=2.0,
+        profit_active_reduce_count=3,
+        profit_active_reduce_cost=4.0,
+        volatility_breach_count=5,
+        volatility_reduce_count=2,
+        volatility_reduce_cost=6.0,
+    )
+
+    filtered = RobustnessResearch._apply_entry_filter(
+        baseline,
+        context,
+        EntryFilter(0.5, 1.5, 0.25),
+    )
+
+    assert filtered.status == "BLOCKED"
+    assert filtered.exit_slippage_cost == 0
+    assert filtered.profit_active_reduce_count == 0
+    assert filtered.profit_active_reduce_cost == 0
+    assert filtered.volatility_breach_count == 0
+    assert filtered.volatility_reduce_count == 0
+    assert filtered.volatility_reduce_cost == 0
 
 
 def test_robust_backtest_cli_does_not_require_parameter_diagnostic_cost_args(
@@ -592,6 +729,11 @@ def test_wind_down_maker_policy_grid_validates_inputs() -> None:
     )
 
     assert len(policies) == 8
+    assert WindDownMakerPolicy(5, 1.1).policy_id == "maker_unwind_i5_o1.10_f1.00"
+    assert (
+        WindDownMakerPolicy(5, 1.1, urgency_exponent=2.0).policy_id
+        == "maker_unwind_i5_o1.10_f1.00_e2.00"
+    )
     with pytest.raises(ValueError, match="正整数"):
         generate_wind_down_maker_policies(
             reprice_intervals=[0],
@@ -824,12 +966,14 @@ def test_joint_seed_diagnostic_keeps_final_oos_sealed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured_symbol_policies: set[tuple[int, float]] = set()
+    captured_symbol_policies: set[tuple[int, float, int, float]] = set()
     original_run_grid_backtest = robustness_module.run_grid_backtest
 
     def capture_backtest_policy(*args, **kwargs):
         config = args[3]
         captured_symbol_policies.add((
+            config.wind_down_bars,
+            config.wind_down_initial_offset_steps,
             config.max_unpaired_lots_per_side,
             config.reduce_target_step_fraction,
         ))
@@ -886,6 +1030,8 @@ def test_joint_seed_diagnostic_keeps_final_oos_sealed(
                 100.0,
                 max_unpaired_lots_per_side=1,
                 reduce_target_step_fraction=0.5,
+                wind_down_bars=20,
+                wind_down_initial_offset_steps=0.75,
             ),
             "ETHUSDT": SymbolResearchPolicy(
                 eth,
@@ -909,7 +1055,10 @@ def test_joint_seed_diagnostic_keeps_final_oos_sealed(
     assert report["symbol_policies"]["BTCUSDT"]["reduce_target_step_fraction"] == pytest.approx(0.5)
     assert report["symbol_policies"]["ETHUSDT"]["max_unpaired_lots_per_side"] == 0
     assert report["symbol_policies"]["ETHUSDT"]["reduce_target_step_fraction"] == pytest.approx(1.0)
-    assert captured_symbol_policies >= {(1, 0.5), (0, 1.0)}
+    assert captured_symbol_policies >= {
+        (20, 0.75, 1, 0.5),
+        (30, 0.5, 0, 1.0),
+    }
     checks = report["seeds"][0]["scenarios"]["BASE"]["checks"]
     assert isinstance(checks["development_each_symbol_positive"], bool)
     assert isinstance(checks["validation_each_symbol_profit_factor"], bool)

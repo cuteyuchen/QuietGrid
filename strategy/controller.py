@@ -2044,12 +2044,12 @@ class TradingController:
             "max_maker_fee_rate": max_maker_fee_rate,
         }
         self.config = next_config
-        self.risk.config = replace(
+        self.risk.update_config(replace(
             self.risk.config,
             max_concurrent=max_concurrent,
             take_profit_usdt=take_profit_usdt,
             total_capital_limit=total_capital_limit,
-        )
+        ))
         self._runtime_config_signature = next_signature
         self._runtime_config_error_signature = None
         self.repository.log_system(

@@ -1,0 +1,2 @@
+﻿candidate_id,expansion_ratio,breaches,fraction,mode,mean_seed_total_pnl,worst_seed_total_pnl,worst_5pct_window_mean_pnl,max_drawdown_pct,worst_best_window_concentration,volatility_expansion_pnl,range_pnl,volatility_reduce_count,volatility_reduce_pnl,volatility_reduce_cost,all_gates_passed
+P9_SEVERE_EVENT_FREEZE,1.75,3,0.2,BOTH,26.59670335140491,21.920769260460503,-3.1448155455493496,0.017514905892246902,0.36057685985157134,-91.68246788164956,160.21323197748927,301,-72.76476972877953,23.52907140984,False

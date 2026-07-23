@@ -24,6 +24,7 @@ from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import pandas_market_calendars as mcal
 
 from core.models import GridDirectionMode, GridParams
@@ -36,6 +37,7 @@ from strategy.adaptive_grid import (
 )
 from strategy.backtest import BacktestConfig, run_grid_backtest
 from strategy.grid_calculator import GridCalculationError
+from strategy.profit_protection import ProfitProtectionConfig
 from strategy.regime import RegimeConfig, RegimeDecision, RegimeEngine
 
 
@@ -142,6 +144,51 @@ class SymbolResearchPolicy:
     entry_filter: EntryFilter | None = None
     max_unpaired_lots_per_side: int | None = None
     reduce_target_step_fraction: float | None = None
+    wind_down_bars: int | None = None
+    wind_down_initial_offset_steps: float | None = None
+    wind_down_reference_tradable_rows: int | None = None
+    wind_down_min_bars: int | None = None
+    wind_down_max_bars: int | None = None
+
+
+def _resolve_symbol_wind_down_bars(
+    policy: SymbolResearchPolicy,
+    *,
+    tradable_rows: int,
+    default_wind_down_bars: int,
+) -> int | None:
+    reference_rows = policy.wind_down_reference_tradable_rows
+    lower = policy.wind_down_min_bars
+    upper = policy.wind_down_max_bars
+    if reference_rows is None:
+        if lower is not None or upper is not None:
+            raise ValueError("wind-down 上下界要求提供参考可交易行数。")
+        return policy.wind_down_bars
+    if reference_rows <= 0:
+        raise ValueError("wind-down 参考可交易行数必须大于 0。")
+    if tradable_rows < 0:
+        raise ValueError("可交易行数不能为负。")
+    anchor = (
+        default_wind_down_bars
+        if policy.wind_down_bars is None
+        else int(policy.wind_down_bars)
+    )
+    if anchor <= 0:
+        raise ValueError("自适应 wind-down 的基准 bar 数必须大于 0。")
+    if lower is not None and lower <= 0:
+        raise ValueError("wind-down 下界必须大于 0。")
+    if upper is not None and upper <= 0:
+        raise ValueError("wind-down 上界必须大于 0。")
+    if lower is not None and upper is not None and lower > upper:
+        raise ValueError("wind-down 下界不能大于上界。")
+
+    quotient, remainder = divmod(tradable_rows * anchor, reference_rows)
+    resolved = quotient + int(remainder * 2 >= reference_rows)
+    if lower is not None:
+        resolved = max(int(lower), resolved)
+    if upper is not None:
+        resolved = min(int(upper), resolved)
+    return resolved
 
 
 @dataclass(frozen=True)
@@ -180,14 +227,18 @@ class WindDownMakerPolicy:
     reprice_interval_bars: int
     initial_offset_steps: float
     unwind_fraction: float = 1.0
+    urgency_exponent: float = 1.0
 
     @property
     def policy_id(self) -> str:
-        return (
+        base = (
             f"maker_unwind_i{self.reprice_interval_bars}_"
             f"o{self.initial_offset_steps:.2f}_"
             f"f{self.unwind_fraction:.2f}"
         )
+        if abs(self.urgency_exponent - 1.0) <= 1e-12:
+            return base
+        return f"{base}_e{self.urgency_exponent:.2f}"
 
 
 @dataclass(frozen=True)
@@ -219,6 +270,9 @@ class ResearchConfig:
     walk_forward_step_windows: int = 8
     min_windows_per_split: int = 8
     wind_down_bars: int = 0
+    inventory_wind_down_bars: int = 0
+    inventory_wind_down_utilization: float = 0.0
+    inventory_wind_down_only_when_losing: bool = False
     max_inventory_notional: float = 0.0
     inventory_caution_utilization: float = 0.40
     inventory_critical_utilization: float = 0.80
@@ -228,6 +282,25 @@ class ResearchConfig:
     max_unpaired_lots_per_side: int = 0
     reduce_target_step_fraction: float = 1.0
     unpaired_lot_cap_enforcement: str = "INTRABAR"
+    profit_protection_enabled: bool = False
+    profit_protection_mode: str = "PEAK_DRAWDOWN"
+    profit_activation_usdt: float = 10.0
+    profit_minimum_locked_ratio: float = 0.25
+    profit_suppress_drawdown_pct: float = 0.25
+    profit_reduce_drawdown_pct: float = 0.35
+    profit_close_drawdown_pct: float = 0.50
+    profit_estimated_exit_cost_rate: float = 0.0007
+    profit_passive_reduce_after_bars: int = 0
+    profit_active_reduce_after_bars: int = 0
+    profit_passive_reduce_fraction: float = 0.25
+    profit_active_reduce_fraction: float = 0.25
+    volatility_reduce_expansion_ratio: float = 0.0
+    volatility_reduce_after_breaches: int = 0
+    volatility_reduce_fraction: float = 0.20
+    volatility_reduce_mode: str = "BOTH"
+    volatility_reduce_only_when_losing: bool = False
+    volatility_wind_down_after_reduce: bool = False
+    volatility_resume_after_normal_bars: int = 0
 
 
 @dataclass(frozen=True)
@@ -252,6 +325,7 @@ class WindowResult:
     paired_grid_pnl: float = 0.0
     stop_exit_pnl: float = 0.0
     stop_exit_cost: float = 0.0
+    exit_slippage_cost: float = 0.0
     max_inventory_utilization: float = 0.0
     stopped_at_index: int | None = None
     wind_down_reprice_count: int = 0
@@ -262,6 +336,35 @@ class WindowResult:
     exit_long_qty: float = 0.0
     exit_short_qty: float = 0.0
     exit_hedged_fraction: float = 0.0
+    profit_protection_activation_count: int = 0
+    profit_suppress_count: int = 0
+    profit_reduce_count: int = 0
+    profit_close_count: int = 0
+    profitable_to_losing_count: int = 0
+    profit_peak_net_pnl: float = 0.0
+    peak_profit_giveback_usdt: float = 0.0
+    peak_profit_giveback_pct: float = 0.0
+    locked_profit_usdt: float = 0.0
+    profit_exit_cost: float = 0.0
+    bars_from_activation_to_close: int | None = None
+    profit_reduce_to_close_bars: int | None = None
+    profit_close_net_pnl_error: float | None = None
+    profit_suppress_inventory_growth_usdt: float = 0.0
+    profit_reduce_inventory_reduction_30_pct: float | None = None
+    profit_reduce_inventory_reduction_60_pct: float | None = None
+    profit_reduce_inventory_reduction_120_pct: float | None = None
+    profit_passive_reduce_reprice_count: int = 0
+    profit_passive_reduce_fill_count: int = 0
+    profit_active_reduce_count: int = 0
+    profit_active_reduce_pnl: float = 0.0
+    profit_active_reduce_cost: float = 0.0
+    profit_active_reduce_inventory_reduction_pct: float | None = None
+    volatility_breach_count: int = 0
+    volatility_max_consecutive_breaches: int = 0
+    volatility_reduce_count: int = 0
+    volatility_reduce_pnl: float = 0.0
+    volatility_reduce_cost: float = 0.0
+    volatility_reduce_inventory_reduction_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -283,8 +386,36 @@ class AggregateMetrics:
     fill_count: int
     fees_paid: float
     funding_paid: float
+    exit_slippage_cost: float
     best_window_concentration: float
     objective: float
+    profit_protection_activation_count: int = 0
+    profit_suppress_count: int = 0
+    profit_reduce_count: int = 0
+    profit_close_count: int = 0
+    profitable_to_losing_ratio: float = 0.0
+    activated_positive_lock_ratio: float = 0.0
+    median_peak_profit_giveback_pct: float = 0.0
+    p90_peak_profit_giveback_pct: float = 0.0
+    locked_profit_usdt: float = 0.0
+    profit_exit_cost: float = 0.0
+    profit_suppress_inventory_growth_usdt: float = 0.0
+    profit_reduce_inventory_reduction_30_pct: float | None = None
+    profit_reduce_inventory_reduction_60_pct: float | None = None
+    profit_reduce_inventory_reduction_120_pct: float | None = None
+    median_profit_close_net_pnl_error: float | None = None
+    profit_passive_reduce_reprice_count: int = 0
+    profit_passive_reduce_fill_count: int = 0
+    profit_active_reduce_count: int = 0
+    profit_active_reduce_pnl: float = 0.0
+    profit_active_reduce_cost: float = 0.0
+    median_profit_active_reduce_inventory_reduction_pct: float | None = None
+    volatility_breach_count: int = 0
+    volatility_max_consecutive_breaches: int = 0
+    volatility_reduce_count: int = 0
+    volatility_reduce_pnl: float = 0.0
+    volatility_reduce_cost: float = 0.0
+    median_volatility_reduce_inventory_reduction_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -484,16 +615,43 @@ def load_weekend_windows(
     force_close_minutes: int = 120,
     minimum_tradable_rows: int = 30,
     history_rows: int = 0,
+    end_time: datetime | None = None,
+    verified_manifest: dict[str, Any] | None = None,
 ) -> list[WeekendWindow]:
     if history_rows < 0:
         raise ValueError("history_rows 不能为负。")
-    manifest = verify_frozen_dataset(manifest_path)
+    manifest = (
+        verify_frozen_dataset(manifest_path)
+        if verified_manifest is None
+        else verified_manifest
+    )
     data_path = Path(manifest_path).resolve().parent / manifest["file_name"]
     start = datetime.fromisoformat(manifest["actual_start"]).astimezone(UTC)
     end = datetime.fromisoformat(manifest["actual_end"]).astimezone(UTC)
+    if end_time is not None:
+        selected_end = end_time
+        if selected_end.tzinfo is None:
+            raise ValueError("end_time 必须包含时区。")
+        end = min(end, selected_end.astimezone(UTC))
+    if end <= start:
+        return []
     boundaries = _weekend_boundaries(start, end, force_close_minutes)
     if not boundaries:
         return []
+
+    if history_rows == 0:
+        buckets = _read_weekend_buckets_fast(data_path, boundaries)
+        return [
+            _finalize_window(
+                manifest["symbol"],
+                boundary,
+                bucket,
+                observation_rows,
+                minimum_tradable_rows,
+                (),
+            )
+            for boundary, bucket in zip(boundaries, buckets)
+        ]
 
     windows: list[WeekendWindow] = []
     boundary_index = 0
@@ -501,12 +659,21 @@ def load_weekend_windows(
     boundary_history: tuple[NormalizedKline, ...] = ()
     rolling_history: deque[NormalizedKline] = deque(maxlen=history_rows or None)
     with data_path.open("r", newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
+        reader = csv.reader(handle)
+        header = next(reader)
+        indexes = {name: header.index(name) for name in CSV_FIELDS}
+        boundary_millis = [
+            (
+                int(market_close.timestamp() * 1000),
+                int(force_close_at.timestamp() * 1000),
+            )
+            for market_close, force_close_at in boundaries
+        ]
         for raw in reader:
-            row = _csv_to_row(raw)
+            open_time = int(raw[indexes["open_time"]])
             while (
                 boundary_index < len(boundaries)
-                and row.open_datetime >= boundaries[boundary_index][1]
+                and open_time >= boundary_millis[boundary_index][1]
             ):
                 windows.append(
                     _finalize_window(
@@ -523,17 +690,22 @@ def load_weekend_windows(
                 boundary_history = ()
             if boundary_index >= len(boundaries):
                 break
-            market_close, force_close_at = boundaries[boundary_index]
-            if market_close <= row.open_datetime < force_close_at:
-                if not bucket:
-                    boundary_history = (
-                        tuple(rolling_history)
-                        if history_rows > 0
-                        else ()
-                    )
-                bucket.append(row)
-            if history_rows > 0:
-                rolling_history.append(row)
+            market_close_ms, force_close_ms = boundary_millis[boundary_index]
+            selected = market_close_ms <= open_time < force_close_ms
+            # Most rows are weekdays.  Avoid constructing nine numeric fields,
+            # a dataclass and a datetime for rows that no research window uses.
+            if selected or history_rows > 0:
+                row = _csv_values_to_row(raw, indexes)
+                if selected:
+                    if not bucket:
+                        boundary_history = (
+                            tuple(rolling_history)
+                            if history_rows > 0
+                            else ()
+                        )
+                    bucket.append(row)
+                if history_rows > 0:
+                    rolling_history.append(row)
     while boundary_index < len(boundaries):
         windows.append(
             _finalize_window(
@@ -549,6 +721,59 @@ def load_weekend_windows(
         bucket = []
         boundary_history = ()
     return windows
+
+
+def _read_weekend_buckets_fast(
+    data_path: Path,
+    boundaries: Sequence[tuple[datetime, datetime]],
+) -> list[list[NormalizedKline]]:
+    """Use pandas' C parser, while materializing only weekend-window rows."""
+
+    boundary_millis = [
+        (
+            int(market_close.timestamp() * 1000),
+            int(force_close_at.timestamp() * 1000),
+        )
+        for market_close, force_close_at in boundaries
+    ]
+    buckets: list[list[NormalizedKline]] = [[] for _ in boundaries]
+    columns = list(CSV_FIELDS)
+    indexes = {name: index for index, name in enumerate(columns)}
+    dtypes = {
+        "open_time": "int64",
+        "open": "float64",
+        "high": "float64",
+        "low": "float64",
+        "close": "float64",
+        "volume": "float64",
+        "close_time": "int64",
+        "quote_volume": "float64",
+        "trade_count": "int64",
+    }
+    for chunk in pd.read_csv(
+        data_path,
+        usecols=columns,
+        dtype=dtypes,
+        chunksize=250_000,
+    ):
+        if chunk.empty:
+            continue
+        chunk = chunk.loc[:, columns]
+        open_times = chunk["open_time"]
+        first_time = int(open_times.iloc[0])
+        last_time = int(open_times.iloc[-1])
+        for index, (market_close_ms, force_close_ms) in enumerate(boundary_millis):
+            if force_close_ms <= first_time or market_close_ms > last_time:
+                continue
+            selected = chunk.loc[
+                (open_times >= market_close_ms) & (open_times < force_close_ms),
+                columns,
+            ]
+            buckets[index].extend(
+                _csv_values_to_row(values, indexes)
+                for values in selected.itertuples(index=False, name=None)
+            )
+    return buckets
 
 
 def generate_parameter_sets(
@@ -1046,6 +1271,65 @@ class RobustnessResearch:
             capital_per_symbol=self.config.capital_per_symbol,
             symbol_count=len({item.window.symbol for item in contexts}),
         )
+
+    def evaluate_joint_policy_windows(
+        self,
+        symbol_policies: dict[str, SymbolResearchPolicy],
+        policy: WindDownMakerPolicy,
+        window_ids: Sequence[str],
+        *,
+        maker_fee_rate: float,
+        taker_fee_rate: float,
+        stop_slippage_bps: float,
+        fill_seed_salt: int,
+    ) -> tuple[AggregateMetrics, list[WindowResult]]:
+        """Evaluate one fixed joint policy on an explicit, caller-owned split.
+
+        This entry point intentionally accepts window ids instead of exposing
+        internal contexts.  Research drivers can therefore evaluate
+        development and validation splits without ever receiving Final OOS
+        rows by accident.
+        """
+
+        normalized_policies = {
+            str(symbol).strip().upper(): item
+            for symbol, item in symbol_policies.items()
+        }
+        requested_ids = list(dict.fromkeys(str(value) for value in window_ids))
+        if not requested_ids:
+            raise ValueError("联合策略评估至少需要一个窗口。")
+        contexts = self._contexts(requested_ids)
+        found_ids = {item.window.window_id for item in contexts}
+        missing_ids = [value for value in requested_ids if value not in found_ids]
+        if missing_ids:
+            raise ValueError(
+                "联合策略评估包含未知窗口: " + ", ".join(missing_ids)
+            )
+        symbols = {item.window.symbol for item in contexts}
+        if set(normalized_policies) != symbols:
+            raise ValueError("联合策略评估必须为所选窗口的全部标的提供策略。")
+        if any(
+            item.parameter not in self.parameters
+            for item in normalized_policies.values()
+        ):
+            raise ValueError("联合策略评估包含研究参数集之外的参数。")
+        results = self._joint_symbol_policy_window_results(
+            contexts,
+            normalized_policies,
+            policy,
+            maker_fee_rate=maker_fee_rate,
+            taker_fee_rate=taker_fee_rate,
+            stop_slippage_bps=stop_slippage_bps,
+            fill_seed_salt=fill_seed_salt,
+        )
+        metrics = aggregate_joint_results(
+            results,
+            capital_by_symbol={
+                symbol: self._capital_for_symbol(symbol)
+                for symbol in normalized_policies
+            },
+        )
+        return metrics, results
 
     def diagnose_entry_filters(
         self,
@@ -2569,6 +2853,9 @@ class RobustnessResearch:
                 wind_down_unwind_fraction=(
                     1.0 if policy is None else policy.unwind_fraction
                 ),
+                wind_down_urgency_exponent=(
+                    1.0 if policy is None else policy.urgency_exponent
+                ),
                 maker_fee_rate=maker_fee_rate,
                 taker_fee_rate=taker_fee_rate,
                 stop_slippage_bps=stop_slippage_bps,
@@ -2616,36 +2903,15 @@ class RobustnessResearch:
         stop_slippage_bps: float,
         fill_seed_salt: int,
     ) -> tuple[AggregateMetrics, dict[str, Any]]:
-        results: list[WindowResult] = []
-        for context in contexts:
-            symbol_policy = symbol_policies[context.window.symbol]
-            result = self._window_result(
-                symbol_policy.parameter,
-                context,
-                self.config.maker_fill_probability,
-                max_inventory_notional=symbol_policy.max_inventory_notional,
-                max_unpaired_lots_per_side=(
-                    symbol_policy.max_unpaired_lots_per_side
-                ),
-                reduce_target_step_fraction=(
-                    symbol_policy.reduce_target_step_fraction
-                ),
-                wind_down_reprice_interval_bars=policy.reprice_interval_bars,
-                wind_down_initial_offset_steps=policy.initial_offset_steps,
-                wind_down_unwind_fraction=policy.unwind_fraction,
-                maker_fee_rate=maker_fee_rate,
-                taker_fee_rate=taker_fee_rate,
-                stop_slippage_bps=stop_slippage_bps,
-                fill_seed_salt=fill_seed_salt,
-            )
-            if symbol_policy.entry_filter is not None:
-                result = self._apply_entry_filter(
-                    result,
-                    context,
-                    symbol_policy.entry_filter,
-                )
-            results.append(result)
-
+        results = self._joint_symbol_policy_window_results(
+            contexts,
+            symbol_policies,
+            policy,
+            maker_fee_rate=maker_fee_rate,
+            taker_fee_rate=taker_fee_rate,
+            stop_slippage_bps=stop_slippage_bps,
+            fill_seed_salt=fill_seed_salt,
+        )
         capital_by_symbol = {
             symbol: self._capital_for_symbol(symbol)
             for symbol in symbol_policies
@@ -2672,6 +2938,59 @@ class RobustnessResearch:
                 for symbol in sorted(symbol_policies)
             },
         }
+
+    def _joint_symbol_policy_window_results(
+        self,
+        contexts: Sequence[_WindowContext],
+        symbol_policies: dict[str, SymbolResearchPolicy],
+        policy: WindDownMakerPolicy,
+        *,
+        maker_fee_rate: float,
+        taker_fee_rate: float,
+        stop_slippage_bps: float,
+        fill_seed_salt: int,
+    ) -> list[WindowResult]:
+        results: list[WindowResult] = []
+        for context in contexts:
+            symbol_policy = symbol_policies[context.window.symbol]
+            resolved_wind_down_bars = _resolve_symbol_wind_down_bars(
+                symbol_policy,
+                tradable_rows=context.window.tradable_rows,
+                default_wind_down_bars=self.config.wind_down_bars,
+            )
+            result = self._window_result(
+                symbol_policy.parameter,
+                context,
+                self.config.maker_fill_probability,
+                wind_down_bars=resolved_wind_down_bars,
+                max_inventory_notional=symbol_policy.max_inventory_notional,
+                max_unpaired_lots_per_side=(
+                    symbol_policy.max_unpaired_lots_per_side
+                ),
+                reduce_target_step_fraction=(
+                    symbol_policy.reduce_target_step_fraction
+                ),
+                wind_down_reprice_interval_bars=policy.reprice_interval_bars,
+                wind_down_initial_offset_steps=(
+                    policy.initial_offset_steps
+                    if symbol_policy.wind_down_initial_offset_steps is None
+                    else symbol_policy.wind_down_initial_offset_steps
+                ),
+                wind_down_unwind_fraction=policy.unwind_fraction,
+                wind_down_urgency_exponent=policy.urgency_exponent,
+                maker_fee_rate=maker_fee_rate,
+                taker_fee_rate=taker_fee_rate,
+                stop_slippage_bps=stop_slippage_bps,
+                fill_seed_salt=fill_seed_salt,
+            )
+            if symbol_policy.entry_filter is not None:
+                result = self._apply_entry_filter(
+                    result,
+                    context,
+                    symbol_policy.entry_filter,
+                )
+            results.append(result)
+        return results
 
     def _evaluate_inventory_policy(
         self,
@@ -2810,17 +3129,57 @@ class RobustnessResearch:
             )
         if not reasons:
             return baseline
+        return RobustnessResearch._blocked_entry_result(
+            baseline,
+            "ENTRY_FILTER: " + "；".join(reasons),
+        )
+
+    @staticmethod
+    def _blocked_entry_result(
+        baseline: WindowResult,
+        reason: str,
+    ) -> WindowResult:
         return replace(
             baseline,
             status="BLOCKED",
-            reason="ENTRY_FILTER: " + "；".join(reasons),
+            reason=reason,
             pnl=0.0,
             max_drawdown=0.0,
             fees_paid=0.0,
             funding_paid=0.0,
+            exit_slippage_cost=0.0,
             fill_count=0,
             pair_count=0,
             defensive_count=0,
+            profit_protection_activation_count=0,
+            profit_suppress_count=0,
+            profit_reduce_count=0,
+            profit_close_count=0,
+            profitable_to_losing_count=0,
+            profit_peak_net_pnl=0.0,
+            peak_profit_giveback_usdt=0.0,
+            peak_profit_giveback_pct=0.0,
+            locked_profit_usdt=0.0,
+            profit_exit_cost=0.0,
+            bars_from_activation_to_close=None,
+            profit_reduce_to_close_bars=None,
+            profit_close_net_pnl_error=None,
+            profit_suppress_inventory_growth_usdt=0.0,
+            profit_reduce_inventory_reduction_30_pct=None,
+            profit_reduce_inventory_reduction_60_pct=None,
+            profit_reduce_inventory_reduction_120_pct=None,
+            profit_passive_reduce_reprice_count=0,
+            profit_passive_reduce_fill_count=0,
+            profit_active_reduce_count=0,
+            profit_active_reduce_pnl=0.0,
+            profit_active_reduce_cost=0.0,
+            profit_active_reduce_inventory_reduction_pct=None,
+            volatility_breach_count=0,
+            volatility_max_consecutive_breaches=0,
+            volatility_reduce_count=0,
+            volatility_reduce_pnl=0.0,
+            volatility_reduce_cost=0.0,
+            volatility_reduce_inventory_reduction_pct=None,
         )
 
     def _window_result(
@@ -2834,6 +3193,7 @@ class RobustnessResearch:
         wind_down_reprice_interval_bars: int | None = None,
         wind_down_initial_offset_steps: float | None = None,
         wind_down_unwind_fraction: float | None = None,
+        wind_down_urgency_exponent: float | None = None,
         max_unpaired_lots_per_side: int | None = None,
         reduce_target_step_fraction: float | None = None,
         maker_fee_rate: float | None = None,
@@ -2866,6 +3226,11 @@ class RobustnessResearch:
             self.config.wind_down_unwind_fraction
             if wind_down_unwind_fraction is None
             else float(wind_down_unwind_fraction)
+        )
+        selected_urgency_exponent = (
+            1.0
+            if wind_down_urgency_exponent is None
+            else float(wind_down_urgency_exponent)
         )
         selected_unpaired_lots = (
             self.config.max_unpaired_lots_per_side
@@ -2907,6 +3272,7 @@ class RobustnessResearch:
             selected_maker_fee,
             selected_taker_fee,
             selected_stop_slippage,
+            selected_urgency_exponent,
             fill_seed_salt,
         )
         cached = self._cache.get(cache_key)
@@ -2926,6 +3292,7 @@ class RobustnessResearch:
             selected_maker_fee,
             selected_taker_fee,
             selected_stop_slippage,
+            selected_urgency_exponent,
             fill_seed_salt,
         )
         self._cache[cache_key] = result
@@ -2946,6 +3313,7 @@ class RobustnessResearch:
         maker_fee_rate: float,
         taker_fee_rate: float,
         stop_slippage_bps: float,
+        wind_down_urgency_exponent: float,
         fill_seed_salt: int | None,
     ) -> WindowResult:
         window = context.window
@@ -3056,6 +3424,9 @@ class RobustnessResearch:
         trade_rows: list[dict[str, Any]] = []
         for row, components in zip(tradable, rolling):
             payload = row.to_mapping()
+            payload["volatility_expansion"] = components[
+                "volatility_expansion"
+            ]
             payload["regime_score"] = (
                 0.0
                 if components["hard_blocks"]
@@ -3108,6 +3479,15 @@ class RobustnessResearch:
                 ),
                 quantity_step_size=rules.step_size,
                 wind_down_bars=wind_down_bars,
+                inventory_wind_down_bars=(
+                    self.config.inventory_wind_down_bars
+                ),
+                inventory_wind_down_utilization=(
+                    self.config.inventory_wind_down_utilization
+                ),
+                inventory_wind_down_only_when_losing=(
+                    self.config.inventory_wind_down_only_when_losing
+                ),
                 max_inventory_notional=max_inventory_notional,
                 inventory_caution_utilization=(
                     self.config.inventory_caution_utilization
@@ -3122,9 +3502,61 @@ class RobustnessResearch:
                     wind_down_initial_offset_steps
                 ),
                 wind_down_unwind_fraction=wind_down_unwind_fraction,
+                wind_down_urgency_exponent=wind_down_urgency_exponent,
                 max_unpaired_lots_per_side=max_unpaired_lots_per_side,
                 reduce_target_step_fraction=reduce_target_step_fraction,
                 unpaired_lot_cap_enforcement=self.config.unpaired_lot_cap_enforcement,
+                profit_protection_enabled=(
+                    self.config.profit_protection_enabled
+                ),
+                profit_protection_mode=self.config.profit_protection_mode,
+                profit_activation_usdt=self.config.profit_activation_usdt,
+                profit_minimum_locked_ratio=(
+                    self.config.profit_minimum_locked_ratio
+                ),
+                profit_suppress_drawdown_pct=(
+                    self.config.profit_suppress_drawdown_pct
+                ),
+                profit_reduce_drawdown_pct=(
+                    self.config.profit_reduce_drawdown_pct
+                ),
+                profit_close_drawdown_pct=(
+                    self.config.profit_close_drawdown_pct
+                ),
+                profit_estimated_exit_cost_rate=(
+                    self.config.profit_estimated_exit_cost_rate
+                ),
+                profit_passive_reduce_after_bars=(
+                    self.config.profit_passive_reduce_after_bars
+                ),
+                profit_active_reduce_after_bars=(
+                    self.config.profit_active_reduce_after_bars
+                ),
+                profit_passive_reduce_fraction=(
+                    self.config.profit_passive_reduce_fraction
+                ),
+                profit_active_reduce_fraction=(
+                    self.config.profit_active_reduce_fraction
+                ),
+                volatility_reduce_expansion_ratio=(
+                    self.config.volatility_reduce_expansion_ratio
+                ),
+                volatility_reduce_after_breaches=(
+                    self.config.volatility_reduce_after_breaches
+                ),
+                volatility_reduce_fraction=(
+                    self.config.volatility_reduce_fraction
+                ),
+                volatility_reduce_mode=self.config.volatility_reduce_mode,
+                volatility_reduce_only_when_losing=(
+                    self.config.volatility_reduce_only_when_losing
+                ),
+                volatility_wind_down_after_reduce=(
+                    self.config.volatility_wind_down_after_reduce
+                ),
+                volatility_resume_after_normal_bars=(
+                    self.config.volatility_resume_after_normal_bars
+                ),
             ),
         )
         return WindowResult(
@@ -3147,6 +3579,7 @@ class RobustnessResearch:
             ),
             stop_exit_pnl=backtest.stop_exit_pnl,
             stop_exit_cost=backtest.stop_exit_cost,
+            exit_slippage_cost=backtest.exit_slippage_cost,
             max_inventory_utilization=backtest.max_inventory_utilization,
             stopped_at_index=backtest.stopped_at_index,
             wind_down_reprice_count=backtest.wind_down_reprice_count,
@@ -3157,6 +3590,61 @@ class RobustnessResearch:
             exit_long_qty=backtest.exit_long_qty,
             exit_short_qty=backtest.exit_short_qty,
             exit_hedged_fraction=backtest.exit_hedged_fraction,
+            profit_protection_activation_count=(
+                backtest.profit_protection_activation_count
+            ),
+            profit_suppress_count=backtest.profit_suppress_count,
+            profit_reduce_count=backtest.profit_reduce_count,
+            profit_close_count=backtest.profit_close_count,
+            profitable_to_losing_count=backtest.profitable_to_losing_count,
+            profit_peak_net_pnl=backtest.profit_peak_net_pnl,
+            peak_profit_giveback_usdt=backtest.peak_profit_giveback_usdt,
+            peak_profit_giveback_pct=backtest.peak_profit_giveback_pct,
+            locked_profit_usdt=backtest.locked_profit_usdt,
+            profit_exit_cost=backtest.profit_exit_cost,
+            bars_from_activation_to_close=(
+                backtest.bars_from_activation_to_close
+            ),
+            profit_reduce_to_close_bars=backtest.profit_reduce_to_close_bars,
+            profit_close_net_pnl_error=(
+                backtest.profit_close_net_pnl_error
+            ),
+            profit_suppress_inventory_growth_usdt=(
+                backtest.profit_suppress_inventory_growth_usdt
+            ),
+            profit_reduce_inventory_reduction_30_pct=(
+                backtest.profit_reduce_inventory_reduction_30_pct
+            ),
+            profit_reduce_inventory_reduction_60_pct=(
+                backtest.profit_reduce_inventory_reduction_60_pct
+            ),
+            profit_reduce_inventory_reduction_120_pct=(
+                backtest.profit_reduce_inventory_reduction_120_pct
+            ),
+            profit_passive_reduce_reprice_count=(
+                backtest.profit_passive_reduce_reprice_count
+            ),
+            profit_passive_reduce_fill_count=(
+                backtest.profit_passive_reduce_fill_count
+            ),
+            profit_active_reduce_count=backtest.profit_active_reduce_count,
+            profit_active_reduce_pnl=backtest.profit_active_reduce_pnl,
+            profit_active_reduce_cost=backtest.profit_active_reduce_cost,
+            profit_active_reduce_inventory_reduction_pct=(
+                backtest.profit_active_reduce_inventory_reduction_pct
+            ),
+            volatility_breach_count=(
+                backtest.volatility_breach_count
+            ),
+            volatility_max_consecutive_breaches=(
+                backtest.volatility_max_consecutive_breaches
+            ),
+            volatility_reduce_count=backtest.volatility_reduce_count,
+            volatility_reduce_pnl=backtest.volatility_reduce_pnl,
+            volatility_reduce_cost=backtest.volatility_reduce_cost,
+            volatility_reduce_inventory_reduction_pct=(
+                backtest.volatility_reduce_inventory_reduction_pct
+            ),
         )
 
     def _rolling_components(
@@ -3185,6 +3673,7 @@ class RobustnessResearch:
             output.append({
                 "component_scores": decision.component_scores,
                 "hard_blocks": decision.hard_blocks,
+                "volatility_expansion": decision.features.volatility_expansion,
             })
         context.rolling_components = output
         return output
@@ -3342,8 +3831,26 @@ def aggregate_results(
 ) -> AggregateMetrics:
     if not results:
         return AggregateMetrics(
-            0, 0, 0, 0, 0.0, 0.0, None, 0.0, 0.0, 0.0, None, None,
-            0.0, 0, 0, 0.0, 0.0, 0.0, -1_000_000.0,
+            window_count=0,
+            symbol_window_count=0,
+            traded_symbol_windows=0,
+            blocked_symbol_windows=0,
+            total_pnl=0.0,
+            total_return_pct=0.0,
+            annualized_return_pct=None,
+            max_drawdown=0.0,
+            max_drawdown_pct=0.0,
+            positive_window_ratio=0.0,
+            profit_factor=None,
+            sharpe_per_week=None,
+            trade_coverage=0.0,
+            pair_count=0,
+            fill_count=0,
+            fees_paid=0.0,
+            funding_paid=0.0,
+            exit_slippage_cost=0.0,
+            best_window_concentration=0.0,
+            objective=-1_000_000.0,
         )
     grouped: dict[str, float] = defaultdict(float)
     market_closes: dict[str, datetime] = {}
@@ -3391,6 +3898,48 @@ def aggregate_results(
     # Deliberately simple and auditable: return minus drawdown, with a small
     # penalty for a strategy that almost never qualifies.
     objective = total_return - max_drawdown_pct - 0.01 * (1.0 - coverage)
+    traded_results = [item for item in results if item.status == "TRADED"]
+    profitable_windows = [
+        item for item in traded_results if item.profit_peak_net_pnl > 0
+    ]
+    activated_windows = [
+        item
+        for item in traded_results
+        if item.profit_protection_activation_count > 0
+    ]
+    giveback_pcts = [
+        item.peak_profit_giveback_pct for item in profitable_windows
+    ]
+    reduce_30 = [
+        item.profit_reduce_inventory_reduction_30_pct
+        for item in traded_results
+        if item.profit_reduce_inventory_reduction_30_pct is not None
+    ]
+    reduce_60 = [
+        item.profit_reduce_inventory_reduction_60_pct
+        for item in traded_results
+        if item.profit_reduce_inventory_reduction_60_pct is not None
+    ]
+    reduce_120 = [
+        item.profit_reduce_inventory_reduction_120_pct
+        for item in traded_results
+        if item.profit_reduce_inventory_reduction_120_pct is not None
+    ]
+    close_errors = [
+        item.profit_close_net_pnl_error
+        for item in traded_results
+        if item.profit_close_net_pnl_error is not None
+    ]
+    active_reductions = [
+        item.profit_active_reduce_inventory_reduction_pct
+        for item in traded_results
+        if item.profit_active_reduce_inventory_reduction_pct is not None
+    ]
+    volatility_reductions = [
+        item.volatility_reduce_inventory_reduction_pct
+        for item in traded_results
+        if item.volatility_reduce_inventory_reduction_pct is not None
+    ]
     return AggregateMetrics(
         window_count=len(ordered),
         symbol_window_count=len(results),
@@ -3409,9 +3958,102 @@ def aggregate_results(
         fill_count=sum(item.fill_count for item in results),
         fees_paid=sum(item.fees_paid for item in results),
         funding_paid=sum(item.funding_paid for item in results),
+        exit_slippage_cost=sum(item.exit_slippage_cost for item in results),
         best_window_concentration=concentration,
         objective=objective,
+        profit_protection_activation_count=sum(
+            item.profit_protection_activation_count for item in results
+        ),
+        profit_suppress_count=sum(item.profit_suppress_count for item in results),
+        profit_reduce_count=sum(item.profit_reduce_count for item in results),
+        profit_close_count=sum(item.profit_close_count for item in results),
+        profitable_to_losing_ratio=(
+            sum(item.profitable_to_losing_count for item in profitable_windows)
+            / len(profitable_windows)
+            if profitable_windows
+            else 0.0
+        ),
+        activated_positive_lock_ratio=(
+            sum(item.pnl > 0 for item in activated_windows)
+            / len(activated_windows)
+            if activated_windows
+            else 0.0
+        ),
+        median_peak_profit_giveback_pct=(
+            statistics.median(giveback_pcts) if giveback_pcts else 0.0
+        ),
+        p90_peak_profit_giveback_pct=(
+            _empirical_quantile(giveback_pcts, 0.90)
+            if giveback_pcts
+            else 0.0
+        ),
+        locked_profit_usdt=sum(item.locked_profit_usdt for item in results),
+        profit_exit_cost=sum(item.profit_exit_cost for item in results),
+        profit_suppress_inventory_growth_usdt=sum(
+            item.profit_suppress_inventory_growth_usdt for item in results
+        ),
+        profit_reduce_inventory_reduction_30_pct=(
+            statistics.median(reduce_30) if reduce_30 else None
+        ),
+        profit_reduce_inventory_reduction_60_pct=(
+            statistics.median(reduce_60) if reduce_60 else None
+        ),
+        profit_reduce_inventory_reduction_120_pct=(
+            statistics.median(reduce_120) if reduce_120 else None
+        ),
+        median_profit_close_net_pnl_error=(
+            statistics.median(close_errors) if close_errors else None
+        ),
+        profit_passive_reduce_reprice_count=sum(
+            item.profit_passive_reduce_reprice_count for item in results
+        ),
+        profit_passive_reduce_fill_count=sum(
+            item.profit_passive_reduce_fill_count for item in results
+        ),
+        profit_active_reduce_count=sum(
+            item.profit_active_reduce_count for item in results
+        ),
+        profit_active_reduce_pnl=sum(
+            item.profit_active_reduce_pnl for item in results
+        ),
+        profit_active_reduce_cost=sum(
+            item.profit_active_reduce_cost for item in results
+        ),
+        median_profit_active_reduce_inventory_reduction_pct=(
+            statistics.median(active_reductions)
+            if active_reductions
+            else None
+        ),
+        volatility_breach_count=sum(
+            item.volatility_breach_count for item in results
+        ),
+        volatility_max_consecutive_breaches=max(
+            (item.volatility_max_consecutive_breaches for item in results),
+            default=0,
+        ),
+        volatility_reduce_count=sum(
+            item.volatility_reduce_count for item in results
+        ),
+        volatility_reduce_pnl=sum(
+            item.volatility_reduce_pnl for item in results
+        ),
+        volatility_reduce_cost=sum(
+            item.volatility_reduce_cost for item in results
+        ),
+        median_volatility_reduce_inventory_reduction_pct=(
+            statistics.median(volatility_reductions)
+            if volatility_reductions
+            else None
+        ),
     )
+
+
+def _empirical_quantile(values: Sequence[float], probability: float) -> float:
+    if not values:
+        raise ValueError("分位数输入不能为空。")
+    ordered = sorted(float(value) for value in values)
+    index = max(0, min(len(ordered) - 1, math.ceil(probability * len(ordered)) - 1))
+    return ordered[index]
 
 
 def aggregate_joint_results(
@@ -3942,6 +4584,24 @@ def _validate_research_config(config: ResearchConfig) -> None:
         raise ValueError("risk_budget_pct 必须在 (0, 1) 内。")
     if config.wind_down_bars < 0:
         raise ValueError("wind_down_bars 不能为负。")
+    if config.inventory_wind_down_bars < 0:
+        raise ValueError("inventory_wind_down_bars 不能为负。")
+    if config.inventory_wind_down_bars == 0:
+        if config.inventory_wind_down_utilization != 0:
+            raise ValueError("未启用库存条件 wind-down 时利用率阈值必须为 0。")
+        if config.inventory_wind_down_only_when_losing:
+            raise ValueError("仅亏损触发需要先启用库存条件 wind-down。")
+    else:
+        if config.wind_down_bars <= 0:
+            raise ValueError("库存条件 wind-down 需要固定 wind_down_bars 兜底。")
+        if config.inventory_wind_down_bars <= config.wind_down_bars:
+            raise ValueError("库存条件 wind-down 必须早于固定 wind-down。")
+        if not (
+            0
+            < config.inventory_wind_down_utilization
+            < config.inventory_critical_utilization
+        ):
+            raise ValueError("库存条件 wind-down 利用率阈值无效。")
     if config.max_inventory_notional < 0:
         raise ValueError("max_inventory_notional 不能为负。")
     if config.wind_down_reprice_interval_bars < 0:
@@ -3962,6 +4622,62 @@ def _validate_research_config(config: ResearchConfig) -> None:
         <= 1
     ):
         raise ValueError("库存 CAUTION/CRITICAL 阈值无效。")
+    profit_mode = str(config.profit_protection_mode).strip().upper()
+    if profit_mode not in {"OFF", "FIXED_CLOSE", "PEAK_DRAWDOWN"}:
+        raise ValueError("利润保护模式无效。")
+    if config.profit_protection_enabled and profit_mode == "OFF":
+        raise ValueError("利润保护启用时不能使用 OFF 模式。")
+    if config.profit_protection_enabled and config.profit_activation_usdt <= 0:
+        raise ValueError("利润保护启动线必须大于 0。")
+    ProfitProtectionConfig(
+        activation_profit_usdt=config.profit_activation_usdt,
+        enabled=(config.profit_protection_enabled and profit_mode != "OFF"),
+        minimum_locked_profit_ratio=config.profit_minimum_locked_ratio,
+        suppress_drawdown_pct=config.profit_suppress_drawdown_pct,
+        reduce_drawdown_pct=config.profit_reduce_drawdown_pct,
+        close_drawdown_pct=config.profit_close_drawdown_pct,
+        estimated_exit_cost_rate=config.profit_estimated_exit_cost_rate,
+    )
+    if config.profit_passive_reduce_after_bars < 0:
+        raise ValueError("利润被动减仓等待时间不能为负。")
+    if config.profit_active_reduce_after_bars < 0:
+        raise ValueError("利润主动减仓等待时间不能为负。")
+    if (
+        config.profit_active_reduce_after_bars > 0
+        and (
+            config.profit_passive_reduce_after_bars <= 0
+            or config.profit_active_reduce_after_bars
+            <= config.profit_passive_reduce_after_bars
+        )
+    ):
+        raise ValueError("利润主动减仓必须晚于被动减仓。")
+    if not 0 < config.profit_passive_reduce_fraction <= 1:
+        raise ValueError("利润被动减仓比例必须在 (0, 1] 内。")
+    if not 0 < config.profit_active_reduce_fraction <= 1:
+        raise ValueError("利润主动减仓比例必须在 (0, 1] 内。")
+    if config.volatility_reduce_expansion_ratio < 0:
+        raise ValueError("波动扩张减仓阈值不能为负。")
+    if config.volatility_reduce_after_breaches < 0:
+        raise ValueError("波动扩张减仓确认次数不能为负。")
+    if (
+        config.volatility_reduce_after_breaches > 0
+        and config.volatility_reduce_expansion_ratio <= 1.0
+    ):
+        raise ValueError("启用波动扩张减仓时阈值必须大于 1。")
+    if not 0 < config.volatility_reduce_fraction <= 1:
+        raise ValueError("波动扩张减仓比例必须在 (0, 1] 内。")
+    if str(config.volatility_reduce_mode).strip().upper() not in {
+        "BOTH",
+        "WORST_SIDE",
+    }:
+        raise ValueError("波动扩张减仓模式必须为 BOTH 或 WORST_SIDE。")
+    if config.volatility_resume_after_normal_bars < 0:
+        raise ValueError("波动恢复正常 Bar 数不能为负。")
+    if (
+        config.volatility_resume_after_normal_bars > 0
+        and not config.volatility_wind_down_after_reduce
+    ):
+        raise ValueError("波动恢复需要先启用减仓后只减不增。")
 
 
 def _report_markdown(report: dict[str, Any]) -> str:
@@ -4669,6 +5385,23 @@ def _csv_to_row(raw: dict[str, str]) -> NormalizedKline:
         volume=float(raw.get("volume") or 0.0),
         quote_volume=float(raw.get("quote_volume") or 0.0),
         trade_count=int(raw.get("trade_count") or 0),
+    )
+
+
+def _csv_values_to_row(
+    raw: Sequence[str],
+    indexes: dict[str, int],
+) -> NormalizedKline:
+    return NormalizedKline(
+        open_time=int(raw[indexes["open_time"]]),
+        close_time=int(raw[indexes["close_time"]]),
+        open=float(raw[indexes["open"]]),
+        high=float(raw[indexes["high"]]),
+        low=float(raw[indexes["low"]]),
+        close=float(raw[indexes["close"]]),
+        volume=float(raw[indexes["volume"]] or 0.0),
+        quote_volume=float(raw[indexes["quote_volume"]] or 0.0),
+        trade_count=int(raw[indexes["trade_count"]] or 0),
     )
 
 

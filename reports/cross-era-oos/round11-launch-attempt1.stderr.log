@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "E:\project\QuietGrid\scripts\cross_era_quadratic_maker_urgency.py", line 12, in <module>
+    import scripts.profit_protection_optimize as profit_opt
+ModuleNotFoundError: No module named 'scripts'

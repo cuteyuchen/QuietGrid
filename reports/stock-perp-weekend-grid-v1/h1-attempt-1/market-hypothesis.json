@@ -1,0 +1,133 @@
+{
+  "asset_manifest_sha256": "a0daee17bde18784a603524c597d1ceee8df9a93ac0abd7a4ae57f4f8159ae45",
+  "conclusion": "STOCK_PERP_WEEKEND_LOW_VOLATILITY_HYPOTHESIS_NOT_SUPPORTED",
+  "data_audit_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\asset-data-audit.json",
+  "direction_mode": "NEUTRAL",
+  "discovery_sha256": "02aad5001519db2648f8140788204677335dcff478dab56f89416445b715b6b6",
+  "feature_count": 1274,
+  "generated_at": "2026-07-24T19:20:13.695583+00:00",
+  "h1": {
+    "advantage_not_one_symbol": false,
+    "best_window_concentration": 0.025432835820895523,
+    "best_window_contribution_le_35pct": true,
+    "block_bootstrap": {
+      "cycle_capacity": {
+        "observed_delta": -0.24722500000000003,
+        "p_value": 1.0,
+        "sample_control": 148,
+        "sample_w": 17,
+        "support_probability": 0.4335
+      },
+      "volatility": {
+        "observed_delta": -0.033001388879519616,
+        "p_value": 1.0,
+        "sample_control": 148,
+        "sample_w": 17,
+        "support_probability": 0.4395
+      }
+    },
+    "bootstrap_supports_non_noise": false,
+    "cycle_capacity_not_lower": false,
+    "cycle_capacity_strictly_positive": true,
+    "development_window_counts": {
+      "O": 8,
+      "R": 570,
+      "W": 103
+    },
+    "directional_efficiency_not_higher": false,
+    "execution_quality": {
+      "not_significantly_worse": true,
+      "zero_trade_ratio": {
+        "O": 0.07976190476190476,
+        "R": 0.009696969696969697,
+        "W": 0.09363636363636364
+      }
+    },
+    "failed_checks": [
+      "volatility_not_higher_than_90pct",
+      "directional_efficiency_not_higher",
+      "cycle_capacity_not_lower",
+      "sixty_percent_month_advantage",
+      "advantage_not_one_symbol",
+      "bootstrap_supports_non_noise",
+      "mature_stage_direction",
+      "development_sample_sufficiency"
+    ],
+    "mature_stage_direction": {
+      "O": 0.02585,
+      "R": 0.3135,
+      "W": 0.07590000000000001,
+      "same_direction": false
+    },
+    "medians": {
+      "directional_efficiency": {
+        "O": 0.06116755362038282,
+        "R": 0.016956445035515223,
+        "W": 0.02077562326869809
+      },
+      "fee_adjusted_cycle_capacity": {
+        "O": 0.0264,
+        "R": 0.31185,
+        "W": 0.07590000000000001
+      },
+      "realized_volatility": {
+        "O": 0.014361402817617396,
+        "R": 0.05359663140682248,
+        "W": 0.02347646026978146
+      }
+    },
+    "month_advantage": {
+      "2026-02": false,
+      "2026-03": false,
+      "2026-04": false,
+      "2026-05": false
+    },
+    "months_same_direction_ratio": 0.0,
+    "passed": false,
+    "sample_sufficiency": {
+      "o": false,
+      "r": true,
+      "three_core_symbols": true,
+      "w": true
+    },
+    "sixty_percent_month_advantage": false,
+    "symbol_advantage": {
+      "AMZNUSDT": false,
+      "COINUSDT": false,
+      "CRCLUSDT": false,
+      "HOODUSDT": false,
+      "INTCUSDT": false,
+      "MSTRUSDT": false,
+      "PLTRUSDT": false,
+      "TSLAUSDT": false
+    },
+    "tier_a_core_count": 8,
+    "volatility_not_higher_than_90pct": false
+  },
+  "leverage": 1,
+  "maker_fee_rate": 0.0002,
+  "master_modified": false,
+  "notes": [
+    "统计抽样单位按 calendar_key 聚合，避免同一周末的多个股票被当作完全独立样本。",
+    "R 的不同固定种子是重复匹配样本；W/O 不共享实际时间区间。",
+    "H1 失败时不得继续运行任何策略回测或参数优化。"
+  ],
+  "parameter_search_opened": false,
+  "production_defaults_changed": false,
+  "protocol": "docs/codex-stock-perp-weekend-grid-backtest-v2.5.md",
+  "random_seeds": [
+    3,
+    10,
+    17,
+    31,
+    59,
+    97
+  ],
+  "real_money_authorized": false,
+  "schema_version": 1,
+  "short_oos_opened": false,
+  "stable_profit_claimed": false,
+  "step_pct": 0.0015,
+  "validation_opened": false,
+  "window_manifest_sha256": "949455c1c756d47d2ef2d33cf644efbad981b32d9e64d174dff8233eb442a5a6"
+}

@@ -1,0 +1,2581 @@
+{
+  "agg_trades_downloaded": false,
+  "as_of_utc": "2026-07-24T18:00:16.019000+00:00",
+  "assets": {
+    "AMZNUSDT": {
+      "asof_utc": "2026-07-24T18:00:16.019000+00:00",
+      "base_asset": "AMZN",
+      "data_previously_viewed": true,
+      "end_time_exclusive": "2026-07-24T00:00:00+00:00",
+      "files": {
+        "agg_trades": {
+          "reason": "explicitly_disabled_before_H1",
+          "status": "NOT_DOWNLOADED"
+        },
+        "funding": {
+          "first_funding_time": 1770652800001,
+          "last_funding_time": 1784822400001,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-smoke\\AMZNUSDT-funding.json",
+          "row_count": 493,
+          "sha256": "0c1d8bacc8a443776119657aaec0ba00437881200d5ddd0210e02ce81b19a555",
+          "size_bytes": 51501
+        },
+        "klines": {
+          "first_open_time": 1770648000000,
+          "last_open_time": 1784851140000,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-smoke\\AMZNUSDT-1m.csv",
+          "row_count": 236720,
+          "sha256": "8c8c85f057ee36aaeb6ba19d0fb962f4a56e0e175a0958af06a84fbf7fe0e7b4",
+          "size_bytes": 17066269
+        },
+        "mark_price": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-smoke\\AMZNUSDT-mark-price.csv",
+          "row_count": 235280,
+          "sha256": "e488eef2086c30ed8b8e31519b2da7c586c2cba6aecf24d2a9293eb5223ef379",
+          "size_bytes": 17280631
+        },
+        "premium_index": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-smoke\\AMZNUSDT-premium-index.csv",
+          "row_count": 228080,
+          "sha256": "6ffb722974458f130574d1d2b2bc98700440b0b4bac423e550cbb7e332b2c3d8",
+          "size_bytes": 15517312
+        }
+      },
+      "funding_interval_hours": 8.0,
+      "listing": {
+        "ETF": "N",
+        "Financial Status": "N",
+        "Market Category": "Q",
+        "NextShares": "N",
+        "Round Lot Size": "100",
+        "Security Name": "Amazon.com, Inc. - Common Stock",
+        "Symbol": "AMZN",
+        "Test Issue": "N"
+      },
+      "missing_segments": [],
+      "rest_requests": [
+        {
+          "params": {
+            "endTime": 1784851199999,
+            "limit": 1000,
+            "startTime": 1782835200002,
+            "symbol": "AMZNUSDT"
+          },
+          "response_sha256": "c2a77094c31991db5c6253b2627eaa7e8592b92000a05792eb51af23e6c56b0c",
+          "retrieved_at": "2026-07-24T18:14:22.110271+00:00",
+          "row_count": 69,
+          "url": "https://fapi.binance.com/fapi/v1/fundingRate"
+        }
+      ],
+      "rules": {
+        "base_asset_precision": 8,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "20000",
+            "minPrice": "0.01000",
+            "tickSize": "0.01000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "20000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "2000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.9700",
+            "multiplierUp": "1.0300"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "max_move_order_limit": 10000,
+        "min_notional": 5.0,
+        "min_qty": 0.01,
+        "order_types": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "price_precision": 5,
+        "quantity_precision": 2,
+        "quote_precision": 8,
+        "step_size": 0.01,
+        "tick_size": 0.01,
+        "time_in_force": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ]
+      },
+      "source_segments": {
+        "funding": [
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/AMZNUSDT/AMZNUSDT-fundingRate-2026-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:14:16.855783+00:00",
+            "kind": "funding_rate",
+            "local_sha256": "b980d00c08f625ee79f2ba50fbfa40c1b496d9bd2f86eda5153db54a6f2a9c38",
+            "official_checksum": "b980d00c08f625ee79f2ba50fbfa40c1b496d9bd2f86eda5153db54a6f2a9c38",
+            "rows": 58,
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/AMZNUSDT/AMZNUSDT-fundingRate-2026-02.zip",
+            "zip_size_bytes": 634
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/AMZNUSDT/AMZNUSDT-fundingRate-2026-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:14:17.251912+00:00",
+            "kind": "funding_rate",
+            "local_sha256": "d389997a94567d109212fce173d4e7bbd5bf1ac06de92806df229037d7370c87",
+            "official_checksum": "d389997a94567d109212fce173d4e7bbd5bf1ac06de92806df229037d7370c87",
+            "rows": 93,
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/AMZNUSDT/AMZNUSDT-fundingRate-2026-03.zip",
+            "zip_size_bytes": 747
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/AMZNUSDT/AMZNUSDT-fundingRate-2026-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:14:17.632992+00:00",
+            "kind": "funding_rate",
+            "local_sha256": "2f222bc3f868f5924a946aade2e31b632be6de9a13284a90490743a9886f642b",
+            "official_checksum": "2f222bc3f868f5924a946aade2e31b632be6de9a13284a90490743a9886f642b",
+            "rows": 90,
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/AMZNUSDT/AMZNUSDT-fundingRate-2026-04.zip",
+            "zip_size_bytes": 807
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/AMZNUSDT/AMZNUSDT-fundingRate-2026-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:14:18.043110+00:00",
+            "kind": "funding_rate",
+            "local_sha256": "cc00c1aebcd4be29d3eae14ab82d773cbfd73f62f733c6b4390a2a8077c0070d",
+            "official_checksum": "cc00c1aebcd4be29d3eae14ab82d773cbfd73f62f733c6b4390a2a8077c0070d",
+            "rows": 93,
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/AMZNUSDT/AMZNUSDT-fundingRate-2026-05.zip",
+            "zip_size_bytes": 787
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/AMZNUSDT/AMZNUSDT-fundingRate-2026-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:14:18.585685+00:00",
+            "kind": "funding_rate",
+            "local_sha256": "ca6995e5dce7549a8ed6071993e976ed619b830e9abaecc2ab3af2aa5c5e9930",
+            "official_checksum": "ca6995e5dce7549a8ed6071993e976ed619b830e9abaecc2ab3af2aa5c5e9930",
+            "rows": 90,
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/AMZNUSDT/AMZNUSDT-fundingRate-2026-06.zip",
+            "zip_size_bytes": 720
+          }
+        ],
+        "klines": [
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-09.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:24.924879+00:00",
+            "kind": "klines",
+            "local_sha256": "743e0ec6383669bed8eb4ad541fbb6800fc1bbf36fa289fc18630c35529184f6",
+            "official_checksum": "743e0ec6383669bed8eb4ad541fbb6800fc1bbf36fa289fc18630c35529184f6",
+            "rows": 0,
+            "segment_end": "2026-02-09",
+            "segment_start": "2026-02-09",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-09.zip",
+            "zip_size_bytes": 18479
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-10.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:25.754494+00:00",
+            "kind": "klines",
+            "local_sha256": "27c4591d516acf31842f2662948ac6e2afc219dc6c18a6fc183123a9de808a99",
+            "official_checksum": "27c4591d516acf31842f2662948ac6e2afc219dc6c18a6fc183123a9de808a99",
+            "rows": 0,
+            "segment_end": "2026-02-10",
+            "segment_start": "2026-02-10",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-10.zip",
+            "zip_size_bytes": 37753
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-11.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:26.202657+00:00",
+            "kind": "klines",
+            "local_sha256": "1672643a0020664898b1236d19226dd19bab8f8c5fe4eb15c31cad073d97ef8f",
+            "official_checksum": "1672643a0020664898b1236d19226dd19bab8f8c5fe4eb15c31cad073d97ef8f",
+            "rows": 0,
+            "segment_end": "2026-02-11",
+            "segment_start": "2026-02-11",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-11.zip",
+            "zip_size_bytes": 35586
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-12.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:26.638476+00:00",
+            "kind": "klines",
+            "local_sha256": "2ea13034063b3128fb4b375d7b13d2e798c88e6b037c42b5ac0cce765ac772ee",
+            "official_checksum": "2ea13034063b3128fb4b375d7b13d2e798c88e6b037c42b5ac0cce765ac772ee",
+            "rows": 0,
+            "segment_end": "2026-02-12",
+            "segment_start": "2026-02-12",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-12.zip",
+            "zip_size_bytes": 34469
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-13.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:27.280752+00:00",
+            "kind": "klines",
+            "local_sha256": "1d49be278deca37724a130c15e1fee0f3e738cd08bcd42aad42161101df642eb",
+            "official_checksum": "1d49be278deca37724a130c15e1fee0f3e738cd08bcd42aad42161101df642eb",
+            "rows": 0,
+            "segment_end": "2026-02-13",
+            "segment_start": "2026-02-13",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-13.zip",
+            "zip_size_bytes": 34815
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-14.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:27.633179+00:00",
+            "kind": "klines",
+            "local_sha256": "1ebaceb9e9f42b2234f7d9128dc4ca13d6ffd719c7abd03598df67ac163d15e5",
+            "official_checksum": "1ebaceb9e9f42b2234f7d9128dc4ca13d6ffd719c7abd03598df67ac163d15e5",
+            "rows": 0,
+            "segment_end": "2026-02-14",
+            "segment_start": "2026-02-14",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-14.zip",
+            "zip_size_bytes": 21972
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-15.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:28.050859+00:00",
+            "kind": "klines",
+            "local_sha256": "b051e6b5d1a9453fab3bad7be5e47feba52e944d25cc51cfc20b27b82a2acd66",
+            "official_checksum": "b051e6b5d1a9453fab3bad7be5e47feba52e944d25cc51cfc20b27b82a2acd66",
+            "rows": 0,
+            "segment_end": "2026-02-15",
+            "segment_start": "2026-02-15",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-15.zip",
+            "zip_size_bytes": 22847
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-16.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:28.487301+00:00",
+            "kind": "klines",
+            "local_sha256": "90adef4caff415779d425dbe6dd15e372d29eec5a0231f16741b05babe4e97b9",
+            "official_checksum": "90adef4caff415779d425dbe6dd15e372d29eec5a0231f16741b05babe4e97b9",
+            "rows": 0,
+            "segment_end": "2026-02-16",
+            "segment_start": "2026-02-16",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-16.zip",
+            "zip_size_bytes": 17833
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-17.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:28.920304+00:00",
+            "kind": "klines",
+            "local_sha256": "95155d09ee25059c9e512249624a8a05c4a4cf5fac130011f4cd2beac1e6d490",
+            "official_checksum": "95155d09ee25059c9e512249624a8a05c4a4cf5fac130011f4cd2beac1e6d490",
+            "rows": 0,
+            "segment_end": "2026-02-17",
+            "segment_start": "2026-02-17",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-17.zip",
+            "zip_size_bytes": 31048
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-18.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:29.447665+00:00",
+            "kind": "klines",
+            "local_sha256": "0e5cc44a8bf5a670c35596176fea5e23d36e4677f7cdc0f31056bf8559e3d978",
+            "official_checksum": "0e5cc44a8bf5a670c35596176fea5e23d36e4677f7cdc0f31056bf8559e3d978",
+            "rows": 0,
+            "segment_end": "2026-02-18",
+            "segment_start": "2026-02-18",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-18.zip",
+            "zip_size_bytes": 31168
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-19.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:29.891174+00:00",
+            "kind": "klines",
+            "local_sha256": "0bb240279796fd8ee9c872e0a537b7bea874cc8592ed99ab61a8da4e7fdb14df",
+            "official_checksum": "0bb240279796fd8ee9c872e0a537b7bea874cc8592ed99ab61a8da4e7fdb14df",
+            "rows": 0,
+            "segment_end": "2026-02-19",
+            "segment_start": "2026-02-19",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-19.zip",
+            "zip_size_bytes": 29081
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-20.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:30.652463+00:00",
+            "kind": "klines",
+            "local_sha256": "b3d6cf01c594d116d9565bfb1dd3fcefbc7454c59241334a1c99c1ed7c47eaa4",
+            "official_checksum": "b3d6cf01c594d116d9565bfb1dd3fcefbc7454c59241334a1c99c1ed7c47eaa4",
+            "rows": 0,
+            "segment_end": "2026-02-20",
+            "segment_start": "2026-02-20",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-20.zip",
+            "zip_size_bytes": 29256
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-21.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:31.098831+00:00",
+            "kind": "klines",
+            "local_sha256": "27eedd42990597adb4cd18d27770878e7ee2bc2dd7a19d5745a9eb57e738f1dc",
+            "official_checksum": "27eedd42990597adb4cd18d27770878e7ee2bc2dd7a19d5745a9eb57e738f1dc",
+            "rows": 0,
+            "segment_end": "2026-02-21",
+            "segment_start": "2026-02-21",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-21.zip",
+            "zip_size_bytes": 18170
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-22.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:31.505197+00:00",
+            "kind": "klines",
+            "local_sha256": "b4194f23112fa4d8e55ce89379106dcc890057f9010c3c13f445085ed4d71cd1",
+            "official_checksum": "b4194f23112fa4d8e55ce89379106dcc890057f9010c3c13f445085ed4d71cd1",
+            "rows": 0,
+            "segment_end": "2026-02-22",
+            "segment_start": "2026-02-22",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-22.zip",
+            "zip_size_bytes": 18278
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-23.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:31.917910+00:00",
+            "kind": "klines",
+            "local_sha256": "7df5c67d51b0b2f8235de5806e4a84175bb41f1683170358457b944768f64f45",
+            "official_checksum": "7df5c67d51b0b2f8235de5806e4a84175bb41f1683170358457b944768f64f45",
+            "rows": 0,
+            "segment_end": "2026-02-23",
+            "segment_start": "2026-02-23",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-23.zip",
+            "zip_size_bytes": 31053
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-24.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:32.561063+00:00",
+            "kind": "klines",
+            "local_sha256": "71e3e6fdc01a2ba700e5b32dbc6a911615c74f7d490f6652ce0a695c4847fdf2",
+            "official_checksum": "71e3e6fdc01a2ba700e5b32dbc6a911615c74f7d490f6652ce0a695c4847fdf2",
+            "rows": 0,
+            "segment_end": "2026-02-24",
+            "segment_start": "2026-02-24",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-24.zip",
+            "zip_size_bytes": 35592
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-25.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:32.984802+00:00",
+            "kind": "klines",
+            "local_sha256": "5b2172182a98b92fd555db9bc002e649b4beb2e0222e34a06a81bb24e66182ea",
+            "official_checksum": "5b2172182a98b92fd555db9bc002e649b4beb2e0222e34a06a81bb24e66182ea",
+            "rows": 0,
+            "segment_end": "2026-02-25",
+            "segment_start": "2026-02-25",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-25.zip",
+            "zip_size_bytes": 37365
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-26.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:33.408826+00:00",
+            "kind": "klines",
+            "local_sha256": "00159d47028ebe6e8254919d2cb56423e371ceb8d0af906cd56f786acc63d1bc",
+            "official_checksum": "00159d47028ebe6e8254919d2cb56423e371ceb8d0af906cd56f786acc63d1bc",
+            "rows": 0,
+            "segment_end": "2026-02-26",
+            "segment_start": "2026-02-26",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-26.zip",
+            "zip_size_bytes": 37450
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-27.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:33.749704+00:00",
+            "kind": "klines",
+            "local_sha256": "7c28cd87645e0627e6c4c33d7eb905f5b17257f344139bcd49c1908591157fc8",
+            "official_checksum": "7c28cd87645e0627e6c4c33d7eb905f5b17257f344139bcd49c1908591157fc8",
+            "rows": 0,
+            "segment_end": "2026-02-27",
+            "segment_start": "2026-02-27",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-27.zip",
+            "zip_size_bytes": 37693
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-28.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:34.196817+00:00",
+            "kind": "klines",
+            "local_sha256": "86897b3e2078a645fa0bf20d4c27700d0db5331b51793fe6639d58736b522e68",
+            "official_checksum": "86897b3e2078a645fa0bf20d4c27700d0db5331b51793fe6639d58736b522e68",
+            "rows": 0,
+            "segment_end": "2026-02-28",
+            "segment_start": "2026-02-28",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-28.zip",
+            "zip_size_bytes": 31077
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:34.919919+00:00",
+            "kind": "klines",
+            "local_sha256": "eefae9cf4a9ca399502d9311d04529763b04a502833e00e6c4a073070c4fd9ca",
+            "official_checksum": "eefae9cf4a9ca399502d9311d04529763b04a502833e00e6c4a073070c4fd9ca",
+            "rows": 0,
+            "segment_end": "2026-03",
+            "segment_start": "2026-03",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-03.zip",
+            "zip_size_bytes": 1041204
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:35.967773+00:00",
+            "kind": "klines",
+            "local_sha256": "32bf34d4a794de4e2f4cc1e0b9a51229db4bc632f86d0a0a78ae24d51e87bfa1",
+            "official_checksum": "32bf34d4a794de4e2f4cc1e0b9a51229db4bc632f86d0a0a78ae24d51e87bfa1",
+            "rows": 0,
+            "segment_end": "2026-04",
+            "segment_start": "2026-04",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-04.zip",
+            "zip_size_bytes": 1041033
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:36.967846+00:00",
+            "kind": "klines",
+            "local_sha256": "ed9889674ad1c96cc1242fbfcf119b18ffc628459c89c8002875e56c8b6b1e1e",
+            "official_checksum": "ed9889674ad1c96cc1242fbfcf119b18ffc628459c89c8002875e56c8b6b1e1e",
+            "rows": 0,
+            "segment_end": "2026-05",
+            "segment_start": "2026-05",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-05.zip",
+            "zip_size_bytes": 1120327
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:37.959760+00:00",
+            "kind": "klines",
+            "local_sha256": "0b7be006d0add5c18904f18b79f1a20923107849f18606fa724e20144befa6e5",
+            "official_checksum": "0b7be006d0add5c18904f18b79f1a20923107849f18606fa724e20144befa6e5",
+            "rows": 0,
+            "segment_end": "2026-06",
+            "segment_start": "2026-06",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-06.zip",
+            "zip_size_bytes": 1118526
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-01.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:38.693448+00:00",
+            "kind": "klines",
+            "local_sha256": "0e97849f11091e60182ebe6f9d6ee3eacc7849c96e8174909b62a60ba5993aa7",
+            "official_checksum": "0e97849f11091e60182ebe6f9d6ee3eacc7849c96e8174909b62a60ba5993aa7",
+            "rows": 0,
+            "segment_end": "2026-07-01",
+            "segment_start": "2026-07-01",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-01.zip",
+            "zip_size_bytes": 39666
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:39.456564+00:00",
+            "kind": "klines",
+            "local_sha256": "7f7b139dbe9a31f3805b76cda005381e51f527209a039b5919f5fd175675ac6a",
+            "official_checksum": "7f7b139dbe9a31f3805b76cda005381e51f527209a039b5919f5fd175675ac6a",
+            "rows": 0,
+            "segment_end": "2026-07-02",
+            "segment_start": "2026-07-02",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-02.zip",
+            "zip_size_bytes": 42344
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:39.889795+00:00",
+            "kind": "klines",
+            "local_sha256": "6a6f8c6c194b840f058d45b0d9b149a26de409cdd440d8ad7f332eea1d535c8c",
+            "official_checksum": "6a6f8c6c194b840f058d45b0d9b149a26de409cdd440d8ad7f332eea1d535c8c",
+            "rows": 0,
+            "segment_end": "2026-07-03",
+            "segment_start": "2026-07-03",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-03.zip",
+            "zip_size_bytes": 30414
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:40.602447+00:00",
+            "kind": "klines",
+            "local_sha256": "90f396e58918b1d6fa0f746c2febae26c4a0f43217213670e609b37c42d94bda",
+            "official_checksum": "90f396e58918b1d6fa0f746c2febae26c4a0f43217213670e609b37c42d94bda",
+            "rows": 0,
+            "segment_end": "2026-07-04",
+            "segment_start": "2026-07-04",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-04.zip",
+            "zip_size_bytes": 24973
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:41.561596+00:00",
+            "kind": "klines",
+            "local_sha256": "1ff8325058d2807cad311ad2562b576443da48bfdd4ea8c07ea2747d03828cd7",
+            "official_checksum": "1ff8325058d2807cad311ad2562b576443da48bfdd4ea8c07ea2747d03828cd7",
+            "rows": 0,
+            "segment_end": "2026-07-05",
+            "segment_start": "2026-07-05",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-05.zip",
+            "zip_size_bytes": 22482
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:42.057129+00:00",
+            "kind": "klines",
+            "local_sha256": "8f1980a42cb2e914d0c5e74142296bc767ac42240764a4f85fe147f5225879d3",
+            "official_checksum": "8f1980a42cb2e914d0c5e74142296bc767ac42240764a4f85fe147f5225879d3",
+            "rows": 0,
+            "segment_end": "2026-07-06",
+            "segment_start": "2026-07-06",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-06.zip",
+            "zip_size_bytes": 36563
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-07.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:42.571383+00:00",
+            "kind": "klines",
+            "local_sha256": "56416f330b30f5349bd889be9b0d52526d55825a309d3d2b07264895b715111e",
+            "official_checksum": "56416f330b30f5349bd889be9b0d52526d55825a309d3d2b07264895b715111e",
+            "rows": 0,
+            "segment_end": "2026-07-07",
+            "segment_start": "2026-07-07",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-07.zip",
+            "zip_size_bytes": 40374
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-08.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:43.008694+00:00",
+            "kind": "klines",
+            "local_sha256": "e1bb131f39a19a7022bbd57eee19bf387c8f08cd47ba3d17176ae43ed9dfca97",
+            "official_checksum": "e1bb131f39a19a7022bbd57eee19bf387c8f08cd47ba3d17176ae43ed9dfca97",
+            "rows": 0,
+            "segment_end": "2026-07-08",
+            "segment_start": "2026-07-08",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-08.zip",
+            "zip_size_bytes": 39318
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-09.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:43.484279+00:00",
+            "kind": "klines",
+            "local_sha256": "e02cdaa36c392df27d75e5d6f3e847aed4e741bdf4491a875b8a991643fc536e",
+            "official_checksum": "e02cdaa36c392df27d75e5d6f3e847aed4e741bdf4491a875b8a991643fc536e",
+            "rows": 0,
+            "segment_end": "2026-07-09",
+            "segment_start": "2026-07-09",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-09.zip",
+            "zip_size_bytes": 39227
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-10.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:43.906574+00:00",
+            "kind": "klines",
+            "local_sha256": "4c02a6b59a1d6ec527d87d0acbe0f2a8bdb25a222dee9773ece837720ad80b79",
+            "official_checksum": "4c02a6b59a1d6ec527d87d0acbe0f2a8bdb25a222dee9773ece837720ad80b79",
+            "rows": 0,
+            "segment_end": "2026-07-10",
+            "segment_start": "2026-07-10",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-10.zip",
+            "zip_size_bytes": 36785
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-11.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:44.329789+00:00",
+            "kind": "klines",
+            "local_sha256": "05ad87823729adac122e3a49ef74bfc41fbb9f1002491d13f1953b2bfa91f373",
+            "official_checksum": "05ad87823729adac122e3a49ef74bfc41fbb9f1002491d13f1953b2bfa91f373",
+            "rows": 0,
+            "segment_end": "2026-07-11",
+            "segment_start": "2026-07-11",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-11.zip",
+            "zip_size_bytes": 25406
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-12.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:44.718105+00:00",
+            "kind": "klines",
+            "local_sha256": "eae4a69e8f2be478eb9391f656b4b8861d7db563e8322cda4cc14b8ff8e0aabc",
+            "official_checksum": "eae4a69e8f2be478eb9391f656b4b8861d7db563e8322cda4cc14b8ff8e0aabc",
+            "rows": 0,
+            "segment_end": "2026-07-12",
+            "segment_start": "2026-07-12",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-12.zip",
+            "zip_size_bytes": 21919
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-13.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:45.154115+00:00",
+            "kind": "klines",
+            "local_sha256": "2d6c7fc7ddaed8b9fc1360872a0937ded5efca308c2093c4a02ce15d5b899b55",
+            "official_checksum": "2d6c7fc7ddaed8b9fc1360872a0937ded5efca308c2093c4a02ce15d5b899b55",
+            "rows": 0,
+            "segment_end": "2026-07-13",
+            "segment_start": "2026-07-13",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-13.zip",
+            "zip_size_bytes": 38565
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-14.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:45.530178+00:00",
+            "kind": "klines",
+            "local_sha256": "ade74214573cf1a4f807859bdee25d545f578f79ac0c43007996c9fabb7ec272",
+            "official_checksum": "ade74214573cf1a4f807859bdee25d545f578f79ac0c43007996c9fabb7ec272",
+            "rows": 0,
+            "segment_end": "2026-07-14",
+            "segment_start": "2026-07-14",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-14.zip",
+            "zip_size_bytes": 40092
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-15.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:45.928080+00:00",
+            "kind": "klines",
+            "local_sha256": "e5cbcabf82e15c0d52639e6ae2b3e014474c351786dc406c5cd9dfb0763c595a",
+            "official_checksum": "e5cbcabf82e15c0d52639e6ae2b3e014474c351786dc406c5cd9dfb0763c595a",
+            "rows": 0,
+            "segment_end": "2026-07-15",
+            "segment_start": "2026-07-15",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-15.zip",
+            "zip_size_bytes": 38932
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-16.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:46.646690+00:00",
+            "kind": "klines",
+            "local_sha256": "84eb2369363609d242a96304fdf2587309926adec57c96b9a644c3bcb5fbf330",
+            "official_checksum": "84eb2369363609d242a96304fdf2587309926adec57c96b9a644c3bcb5fbf330",
+            "rows": 0,
+            "segment_end": "2026-07-16",
+            "segment_start": "2026-07-16",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-16.zip",
+            "zip_size_bytes": 41991
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-17.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:47.206789+00:00",
+            "kind": "klines",
+            "local_sha256": "8eba0fa1cc7e96f1c48ab59f751a0e038a4ad66c6e49dc7ae9fef89131a67e2d",
+            "official_checksum": "8eba0fa1cc7e96f1c48ab59f751a0e038a4ad66c6e49dc7ae9fef89131a67e2d",
+            "rows": 0,
+            "segment_end": "2026-07-17",
+            "segment_start": "2026-07-17",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-17.zip",
+            "zip_size_bytes": 41866
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-18.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:47.664344+00:00",
+            "kind": "klines",
+            "local_sha256": "d99c54d30919ae22a28b6719dcee201f0fec025408202d38cbb2c712672345c6",
+            "official_checksum": "d99c54d30919ae22a28b6719dcee201f0fec025408202d38cbb2c712672345c6",
+            "rows": 0,
+            "segment_end": "2026-07-18",
+            "segment_start": "2026-07-18",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-18.zip",
+            "zip_size_bytes": 23049
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-19.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:48.149848+00:00",
+            "kind": "klines",
+            "local_sha256": "29836902d55c003606921ec46d5f418ff5ca700017aa601fe3678d8fe89ba2e0",
+            "official_checksum": "29836902d55c003606921ec46d5f418ff5ca700017aa601fe3678d8fe89ba2e0",
+            "rows": 0,
+            "segment_end": "2026-07-19",
+            "segment_start": "2026-07-19",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-19.zip",
+            "zip_size_bytes": 24201
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-20.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:48.582873+00:00",
+            "kind": "klines",
+            "local_sha256": "277aa31e658dad85554cad6214339532efc1b2e76a9e8287dc210e8575eb74fc",
+            "official_checksum": "277aa31e658dad85554cad6214339532efc1b2e76a9e8287dc210e8575eb74fc",
+            "rows": 0,
+            "segment_end": "2026-07-20",
+            "segment_start": "2026-07-20",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-20.zip",
+            "zip_size_bytes": 37516
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-21.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:49.009285+00:00",
+            "kind": "klines",
+            "local_sha256": "e42130c780f84325e62c3ef22f5e62001649084d64b04a9189837757e385ef71",
+            "official_checksum": "e42130c780f84325e62c3ef22f5e62001649084d64b04a9189837757e385ef71",
+            "rows": 0,
+            "segment_end": "2026-07-21",
+            "segment_start": "2026-07-21",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-21.zip",
+            "zip_size_bytes": 36461
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-22.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:49.447700+00:00",
+            "kind": "klines",
+            "local_sha256": "da553b3bb2215629d82edbd45416518728814ee940d49e990de4e6759399598d",
+            "official_checksum": "da553b3bb2215629d82edbd45416518728814ee940d49e990de4e6759399598d",
+            "rows": 0,
+            "segment_end": "2026-07-22",
+            "segment_start": "2026-07-22",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-22.zip",
+            "zip_size_bytes": 41999
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-23.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:12:49.869273+00:00",
+            "kind": "klines",
+            "local_sha256": "ad04650b2d075887e8f56ecc5b7e88526564f1b2c5eb4e1c8ea338a952085a50",
+            "official_checksum": "ad04650b2d075887e8f56ecc5b7e88526564f1b2c5eb4e1c8ea338a952085a50",
+            "rows": 0,
+            "segment_end": "2026-07-23",
+            "segment_start": "2026-07-23",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-23.zip",
+            "zip_size_bytes": 41344
+          }
+        ],
+        "mark_price": [
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-09.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:00.501900+00:00",
+            "kind": "mark_price",
+            "local_sha256": "5c81266a614350611b06589755ecb61ed86b395451a60120dfa1531f9633a06e",
+            "official_checksum": "5c81266a614350611b06589755ecb61ed86b395451a60120dfa1531f9633a06e",
+            "segment_end": "2026-02-09",
+            "segment_start": "2026-02-09",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-09.zip",
+            "zip_size_bytes": 29377
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-10.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:00.918648+00:00",
+            "kind": "mark_price",
+            "local_sha256": "aee251f1a18e515f6407d9a7230f794b6e96672d62d57359c1d9a50eca1ddef3",
+            "official_checksum": "aee251f1a18e515f6407d9a7230f794b6e96672d62d57359c1d9a50eca1ddef3",
+            "segment_end": "2026-02-10",
+            "segment_start": "2026-02-10",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-10.zip",
+            "zip_size_bytes": 29542
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-11.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:01.203855+00:00",
+            "kind": "mark_price",
+            "local_sha256": "ab76d07542e89222a5909a9809a467e6afff70873fc41a864bd4716b4df96755",
+            "official_checksum": "ab76d07542e89222a5909a9809a467e6afff70873fc41a864bd4716b4df96755",
+            "segment_end": "2026-02-11",
+            "segment_start": "2026-02-11",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-11.zip",
+            "zip_size_bytes": 27751
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-12.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:01.735210+00:00",
+            "kind": "mark_price",
+            "local_sha256": "2f48e028575bdbf88223028b80d11d0087642fbdbdd56f3f1b19268985ca198e",
+            "official_checksum": "2f48e028575bdbf88223028b80d11d0087642fbdbdd56f3f1b19268985ca198e",
+            "segment_end": "2026-02-12",
+            "segment_start": "2026-02-12",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-12.zip",
+            "zip_size_bytes": 25397
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-13.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:02.165447+00:00",
+            "kind": "mark_price",
+            "local_sha256": "aebb9af7a8026c654e12411c8c341af809526d52302f0ddebf6b27df8bfdc29e",
+            "official_checksum": "aebb9af7a8026c654e12411c8c341af809526d52302f0ddebf6b27df8bfdc29e",
+            "segment_end": "2026-02-13",
+            "segment_start": "2026-02-13",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-13.zip",
+            "zip_size_bytes": 28417
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-14.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:02.651888+00:00",
+            "kind": "mark_price",
+            "local_sha256": "ed566bda10e3e5c99bc8c0e0cf544dd5b7ede70a0e747ef43ad7c10fc58b5d01",
+            "official_checksum": "ed566bda10e3e5c99bc8c0e0cf544dd5b7ede70a0e747ef43ad7c10fc58b5d01",
+            "segment_end": "2026-02-14",
+            "segment_start": "2026-02-14",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-14.zip",
+            "zip_size_bytes": 27377
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-15.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:03.285448+00:00",
+            "kind": "mark_price",
+            "local_sha256": "159750800c260980ba85f64a8e65735ce1c6876e30c48f098e1b52c5342d84c7",
+            "official_checksum": "159750800c260980ba85f64a8e65735ce1c6876e30c48f098e1b52c5342d84c7",
+            "segment_end": "2026-02-15",
+            "segment_start": "2026-02-15",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-15.zip",
+            "zip_size_bytes": 27395
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-16.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:03.672268+00:00",
+            "kind": "mark_price",
+            "local_sha256": "60c34cb2ef2d357741756fb46059273193e1b7367c728a36e8706b34beab83a0",
+            "official_checksum": "60c34cb2ef2d357741756fb46059273193e1b7367c728a36e8706b34beab83a0",
+            "segment_end": "2026-02-16",
+            "segment_start": "2026-02-16",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-16.zip",
+            "zip_size_bytes": 27308
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-17.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:04.095447+00:00",
+            "kind": "mark_price",
+            "local_sha256": "738ddf23747d50d1ab6b1d99034a27940913435d898c8de1bedc2c82445c452f",
+            "official_checksum": "738ddf23747d50d1ab6b1d99034a27940913435d898c8de1bedc2c82445c452f",
+            "segment_end": "2026-02-17",
+            "segment_start": "2026-02-17",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-17.zip",
+            "zip_size_bytes": 30553
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-18.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:04.528076+00:00",
+            "kind": "mark_price",
+            "local_sha256": "23932c7f35058f72975b086c2163012c368785dad03a6c63360fc52e502e8b4a",
+            "official_checksum": "23932c7f35058f72975b086c2163012c368785dad03a6c63360fc52e502e8b4a",
+            "segment_end": "2026-02-18",
+            "segment_start": "2026-02-18",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-18.zip",
+            "zip_size_bytes": 28575
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-19.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:04.985136+00:00",
+            "kind": "mark_price",
+            "local_sha256": "0d3b8b3bc0e36410439c398befd873fb16ee206b089ffd2d1b22c6edd6568f68",
+            "official_checksum": "0d3b8b3bc0e36410439c398befd873fb16ee206b089ffd2d1b22c6edd6568f68",
+            "segment_end": "2026-02-19",
+            "segment_start": "2026-02-19",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-19.zip",
+            "zip_size_bytes": 27375
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-20.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:05.625844+00:00",
+            "kind": "mark_price",
+            "local_sha256": "2d6e15b0e6b5fa9fdd5543f27a67be48569aa5be44ce6e6c3556bdd3d13a5bb7",
+            "official_checksum": "2d6e15b0e6b5fa9fdd5543f27a67be48569aa5be44ce6e6c3556bdd3d13a5bb7",
+            "segment_end": "2026-02-20",
+            "segment_start": "2026-02-20",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-20.zip",
+            "zip_size_bytes": 26459
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-21.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:06.078549+00:00",
+            "kind": "mark_price",
+            "local_sha256": "56f319e0e76100410ae63e328b26ad0928e991d88ea798e556fc87e0f89ff121",
+            "official_checksum": "56f319e0e76100410ae63e328b26ad0928e991d88ea798e556fc87e0f89ff121",
+            "segment_end": "2026-02-21",
+            "segment_start": "2026-02-21",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-21.zip",
+            "zip_size_bytes": 26717
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-22.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:06.792490+00:00",
+            "kind": "mark_price",
+            "local_sha256": "622914563c2061f1872c4553a49ee4e6cf46b1158df0455f0871c01a17701001",
+            "official_checksum": "622914563c2061f1872c4553a49ee4e6cf46b1158df0455f0871c01a17701001",
+            "segment_end": "2026-02-22",
+            "segment_start": "2026-02-22",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-22.zip",
+            "zip_size_bytes": 27188
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-23.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:07.216715+00:00",
+            "kind": "mark_price",
+            "local_sha256": "fa43a27f654ecafc7471893d84c55f0332f51f7b455a539b0ce4357cd1d8d5b7",
+            "official_checksum": "fa43a27f654ecafc7471893d84c55f0332f51f7b455a539b0ce4357cd1d8d5b7",
+            "segment_end": "2026-02-23",
+            "segment_start": "2026-02-23",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-23.zip",
+            "zip_size_bytes": 29283
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-24.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:07.687343+00:00",
+            "kind": "mark_price",
+            "local_sha256": "0e6534898efe4694a070bfe5df332a56de36b64bb379b43f28d8755f5e80b868",
+            "official_checksum": "0e6534898efe4694a070bfe5df332a56de36b64bb379b43f28d8755f5e80b868",
+            "segment_end": "2026-02-24",
+            "segment_start": "2026-02-24",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-24.zip",
+            "zip_size_bytes": 28630
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-25.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:08.103255+00:00",
+            "kind": "mark_price",
+            "local_sha256": "b151774242ef03b836bdbba9640b9aeb22f666f44d30145dafcc889c7daf3ec3",
+            "official_checksum": "b151774242ef03b836bdbba9640b9aeb22f666f44d30145dafcc889c7daf3ec3",
+            "segment_end": "2026-02-25",
+            "segment_start": "2026-02-25",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-25.zip",
+            "zip_size_bytes": 27563
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-26.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:08.528243+00:00",
+            "kind": "mark_price",
+            "local_sha256": "f73913b32e93fe1f75cf26fea62795fdb8ddb51b6b880d4b3748a551b0a66707",
+            "official_checksum": "f73913b32e93fe1f75cf26fea62795fdb8ddb51b6b880d4b3748a551b0a66707",
+            "segment_end": "2026-02-26",
+            "segment_start": "2026-02-26",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-26.zip",
+            "zip_size_bytes": 29327
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-27.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:08.997898+00:00",
+            "kind": "mark_price",
+            "local_sha256": "2fa521e38d9276a3c3ff2737212311a6b3dee4fa9a9e595ebce4059bfc18fdcb",
+            "official_checksum": "2fa521e38d9276a3c3ff2737212311a6b3dee4fa9a9e595ebce4059bfc18fdcb",
+            "segment_end": "2026-02-27",
+            "segment_start": "2026-02-27",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-27.zip",
+            "zip_size_bytes": 28990
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-28.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:09.394951+00:00",
+            "kind": "mark_price",
+            "local_sha256": "c323571da45a1bcb0d52704bb1e2dd4c379fc2921bb3cade70f9f9bcf13b7a0e",
+            "official_checksum": "c323571da45a1bcb0d52704bb1e2dd4c379fc2921bb3cade70f9f9bcf13b7a0e",
+            "segment_end": "2026-02-28",
+            "segment_start": "2026-02-28",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-28.zip",
+            "zip_size_bytes": 27984
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:10.007016+00:00",
+            "kind": "mark_price",
+            "local_sha256": "f2992d0fb85f1b55a15322b0ef157df894ba642b963ab2ff4bf1e32c995d2686",
+            "official_checksum": "f2992d0fb85f1b55a15322b0ef157df894ba642b963ab2ff4bf1e32c995d2686",
+            "segment_end": "2026-03",
+            "segment_start": "2026-03",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-03.zip",
+            "zip_size_bytes": 909778
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:10.781829+00:00",
+            "kind": "mark_price",
+            "local_sha256": "55a751cffafe5e36800ac9a6a192526a8fedeaf4796bf0a2f7857f6d5dfd7418",
+            "official_checksum": "55a751cffafe5e36800ac9a6a192526a8fedeaf4796bf0a2f7857f6d5dfd7418",
+            "segment_end": "2026-04",
+            "segment_start": "2026-04",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-04.zip",
+            "zip_size_bytes": 853479
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:11.510117+00:00",
+            "kind": "mark_price",
+            "local_sha256": "1dccec68d92e9abdfbf8ca35d21ee1e97a4992cc05fd4c4dd3a8196cdc56c002",
+            "official_checksum": "1dccec68d92e9abdfbf8ca35d21ee1e97a4992cc05fd4c4dd3a8196cdc56c002",
+            "segment_end": "2026-05",
+            "segment_start": "2026-05",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-05.zip",
+            "zip_size_bytes": 878442
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:12.401287+00:00",
+            "kind": "mark_price",
+            "local_sha256": "4717aee2b5ad0fc71a5a6213119469dd9026288515a30a6dde0b18a046cb4893",
+            "official_checksum": "4717aee2b5ad0fc71a5a6213119469dd9026288515a30a6dde0b18a046cb4893",
+            "segment_end": "2026-06",
+            "segment_start": "2026-06",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-06.zip",
+            "zip_size_bytes": 820128
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-01.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:12.948054+00:00",
+            "kind": "mark_price",
+            "local_sha256": "c4d170d42a23cde464bee1b2713b8e4f4c648b56cf54d74145afd9c959bbbda2",
+            "official_checksum": "c4d170d42a23cde464bee1b2713b8e4f4c648b56cf54d74145afd9c959bbbda2",
+            "segment_end": "2026-07-01",
+            "segment_start": "2026-07-01",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-01.zip",
+            "zip_size_bytes": 29496
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:13.355969+00:00",
+            "kind": "mark_price",
+            "local_sha256": "b09120c7924193814aabed6a0b372be95290543467d61a3fb4c63767d333222f",
+            "official_checksum": "b09120c7924193814aabed6a0b372be95290543467d61a3fb4c63767d333222f",
+            "segment_end": "2026-07-02",
+            "segment_start": "2026-07-02",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-02.zip",
+            "zip_size_bytes": 29535
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:13.687792+00:00",
+            "kind": "mark_price",
+            "local_sha256": "4d8c0e072e423811882d66674553c258121b04e2207f2103985b224bfd03bc0f",
+            "official_checksum": "4d8c0e072e423811882d66674553c258121b04e2207f2103985b224bfd03bc0f",
+            "segment_end": "2026-07-03",
+            "segment_start": "2026-07-03",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-03.zip",
+            "zip_size_bytes": 25934
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:14.134874+00:00",
+            "kind": "mark_price",
+            "local_sha256": "a335b004c2aaa64a3758d7d84b8efd568bb2211c54ef014bd6819d10e5deda61",
+            "official_checksum": "a335b004c2aaa64a3758d7d84b8efd568bb2211c54ef014bd6819d10e5deda61",
+            "segment_end": "2026-07-04",
+            "segment_start": "2026-07-04",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-04.zip",
+            "zip_size_bytes": 25048
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:14.594258+00:00",
+            "kind": "mark_price",
+            "local_sha256": "e22d9c015f155c43a553cdbd3407bbec5cee6f49a1c22831a04d98a23eec9f9a",
+            "official_checksum": "e22d9c015f155c43a553cdbd3407bbec5cee6f49a1c22831a04d98a23eec9f9a",
+            "segment_end": "2026-07-05",
+            "segment_start": "2026-07-05",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-05.zip",
+            "zip_size_bytes": 23598
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:15.072654+00:00",
+            "kind": "mark_price",
+            "local_sha256": "3e46cddf4d451b4e7eb2e3a5338a3365e60c264d188c4bc8a46134d5424a1e96",
+            "official_checksum": "3e46cddf4d451b4e7eb2e3a5338a3365e60c264d188c4bc8a46134d5424a1e96",
+            "segment_end": "2026-07-06",
+            "segment_start": "2026-07-06",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-06.zip",
+            "zip_size_bytes": 29339
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-07.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:15.502012+00:00",
+            "kind": "mark_price",
+            "local_sha256": "c71cf3a618268e4c330fea051e8653b062acc813f5f71df33b26902d0e1abe36",
+            "official_checksum": "c71cf3a618268e4c330fea051e8653b062acc813f5f71df33b26902d0e1abe36",
+            "segment_end": "2026-07-07",
+            "segment_start": "2026-07-07",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-07.zip",
+            "zip_size_bytes": 28609
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-08.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:15.920125+00:00",
+            "kind": "mark_price",
+            "local_sha256": "13f1a9dbe4eed937d19a19d86099d7710290758ba288cab419617358c7bc70ba",
+            "official_checksum": "13f1a9dbe4eed937d19a19d86099d7710290758ba288cab419617358c7bc70ba",
+            "segment_end": "2026-07-08",
+            "segment_start": "2026-07-08",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-08.zip",
+            "zip_size_bytes": 30004
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-09.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:16.335102+00:00",
+            "kind": "mark_price",
+            "local_sha256": "64b93ac356c08897f6628ae55edf3ce5c610d9ca39a045cc730eaab2ad4a545f",
+            "official_checksum": "64b93ac356c08897f6628ae55edf3ce5c610d9ca39a045cc730eaab2ad4a545f",
+            "segment_end": "2026-07-09",
+            "segment_start": "2026-07-09",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-09.zip",
+            "zip_size_bytes": 29995
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-10.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:16.733256+00:00",
+            "kind": "mark_price",
+            "local_sha256": "6ab23c453e4d0444e4ebc3b3480c288d79e44ce6c79fbba357a3c54d47ab5df6",
+            "official_checksum": "6ab23c453e4d0444e4ebc3b3480c288d79e44ce6c79fbba357a3c54d47ab5df6",
+            "segment_end": "2026-07-10",
+            "segment_start": "2026-07-10",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-10.zip",
+            "zip_size_bytes": 30145
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-11.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:17.145040+00:00",
+            "kind": "mark_price",
+            "local_sha256": "3e1f1f1b3964fb9517f0fdf73444be9c28457b78995453df595c6bf75b019247",
+            "official_checksum": "3e1f1f1b3964fb9517f0fdf73444be9c28457b78995453df595c6bf75b019247",
+            "segment_end": "2026-07-11",
+            "segment_start": "2026-07-11",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-11.zip",
+            "zip_size_bytes": 24254
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-12.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:17.544669+00:00",
+            "kind": "mark_price",
+            "local_sha256": "9fd8858c7287491158cb4c74c47c9890fdb7c51936946a52c39ab2475aee39cb",
+            "official_checksum": "9fd8858c7287491158cb4c74c47c9890fdb7c51936946a52c39ab2475aee39cb",
+            "segment_end": "2026-07-12",
+            "segment_start": "2026-07-12",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-12.zip",
+            "zip_size_bytes": 22584
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-13.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:17.961829+00:00",
+            "kind": "mark_price",
+            "local_sha256": "df5804a5175eceefe1d94b7094cfe48451a5488b1f379c8c9daf69a8f574ee81",
+            "official_checksum": "df5804a5175eceefe1d94b7094cfe48451a5488b1f379c8c9daf69a8f574ee81",
+            "segment_end": "2026-07-13",
+            "segment_start": "2026-07-13",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-13.zip",
+            "zip_size_bytes": 29328
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-14.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:18.397685+00:00",
+            "kind": "mark_price",
+            "local_sha256": "a18000968ce6d6c8d9713f56bf773ab66c93768264a370ab4b557d6a2effd720",
+            "official_checksum": "a18000968ce6d6c8d9713f56bf773ab66c93768264a370ab4b557d6a2effd720",
+            "segment_end": "2026-07-14",
+            "segment_start": "2026-07-14",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-14.zip",
+            "zip_size_bytes": 29971
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-15.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:18.867048+00:00",
+            "kind": "mark_price",
+            "local_sha256": "092cd4891a0cd8d8a4f58ffd58f72b34e04efb329f2c9298dfdb6f08ae3bec06",
+            "official_checksum": "092cd4891a0cd8d8a4f58ffd58f72b34e04efb329f2c9298dfdb6f08ae3bec06",
+            "segment_end": "2026-07-15",
+            "segment_start": "2026-07-15",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-15.zip",
+            "zip_size_bytes": 29889
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-16.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:19.302045+00:00",
+            "kind": "mark_price",
+            "local_sha256": "a00a94136d9ffae3e0d4cc60d9c7c2b8a35de91f88b4590e17d8c7c9e4fb1948",
+            "official_checksum": "a00a94136d9ffae3e0d4cc60d9c7c2b8a35de91f88b4590e17d8c7c9e4fb1948",
+            "segment_end": "2026-07-16",
+            "segment_start": "2026-07-16",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-16.zip",
+            "zip_size_bytes": 31156
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-17.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:20.472678+00:00",
+            "kind": "mark_price",
+            "local_sha256": "94fcb1f8006dfce592dac57e17f4f328531d73d50fed3985b27856cd6c91f30a",
+            "official_checksum": "94fcb1f8006dfce592dac57e17f4f328531d73d50fed3985b27856cd6c91f30a",
+            "segment_end": "2026-07-17",
+            "segment_start": "2026-07-17",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-17.zip",
+            "zip_size_bytes": 31535
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-18.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:20.996376+00:00",
+            "kind": "mark_price",
+            "local_sha256": "4db5393dfb6da8caa52d76d4fb35a548d7d626eef9692a449ab615e0804eeea9",
+            "official_checksum": "4db5393dfb6da8caa52d76d4fb35a548d7d626eef9692a449ab615e0804eeea9",
+            "segment_end": "2026-07-18",
+            "segment_start": "2026-07-18",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-18.zip",
+            "zip_size_bytes": 22978
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-19.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:21.404191+00:00",
+            "kind": "mark_price",
+            "local_sha256": "95dee2a9b53fac7d5df9bd44f2361096ed97ada0059ff3939c458d4464f9edcf",
+            "official_checksum": "95dee2a9b53fac7d5df9bd44f2361096ed97ada0059ff3939c458d4464f9edcf",
+            "segment_end": "2026-07-19",
+            "segment_start": "2026-07-19",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-19.zip",
+            "zip_size_bytes": 23941
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-20.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:21.829974+00:00",
+            "kind": "mark_price",
+            "local_sha256": "3565530619c09a4f48be0bec800547c2eb35b2f3eadf74e9b08841afb27f0282",
+            "official_checksum": "3565530619c09a4f48be0bec800547c2eb35b2f3eadf74e9b08841afb27f0282",
+            "segment_end": "2026-07-20",
+            "segment_start": "2026-07-20",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-20.zip",
+            "zip_size_bytes": 29233
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-21.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:22.301805+00:00",
+            "kind": "mark_price",
+            "local_sha256": "11998ce15ad4f6b2e4ff984af5683da3776675d92e17f285cd26eb1bda5dfab5",
+            "official_checksum": "11998ce15ad4f6b2e4ff984af5683da3776675d92e17f285cd26eb1bda5dfab5",
+            "segment_end": "2026-07-21",
+            "segment_start": "2026-07-21",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-21.zip",
+            "zip_size_bytes": 30879
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-22.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:22.747681+00:00",
+            "kind": "mark_price",
+            "local_sha256": "03cc480a1ebe43e187e6274b66fe43b0be645a84d8e174e1b9af145cfec18f7f",
+            "official_checksum": "03cc480a1ebe43e187e6274b66fe43b0be645a84d8e174e1b9af145cfec18f7f",
+            "segment_end": "2026-07-22",
+            "segment_start": "2026-07-22",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-22.zip",
+            "zip_size_bytes": 32420
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-23.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:23.066894+00:00",
+            "kind": "mark_price",
+            "local_sha256": "fd6a44bcb078a5524aa238c196025835ab818bbd8ebb89b8b7f123fb877dd9cd",
+            "official_checksum": "fd6a44bcb078a5524aa238c196025835ab818bbd8ebb89b8b7f123fb877dd9cd",
+            "segment_end": "2026-07-23",
+            "segment_start": "2026-07-23",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-23.zip",
+            "zip_size_bytes": 32333
+          }
+        ],
+        "premium_index": [
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-09.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:36.715590+00:00",
+            "kind": "premium_index",
+            "local_sha256": "51f55ba7da4295b710bd782d955e7b3826e27adc1e438773672014a48e9b3b29",
+            "official_checksum": "51f55ba7da4295b710bd782d955e7b3826e27adc1e438773672014a48e9b3b29",
+            "segment_end": "2026-02-09",
+            "segment_start": "2026-02-09",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-09.zip",
+            "zip_size_bytes": 14959
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-10.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:37.161367+00:00",
+            "kind": "premium_index",
+            "local_sha256": "6a72a16c8b0ae673c07430171be60af4061cc64f481b8c75ad2417e7d9a090cf",
+            "official_checksum": "6a72a16c8b0ae673c07430171be60af4061cc64f481b8c75ad2417e7d9a090cf",
+            "segment_end": "2026-02-10",
+            "segment_start": "2026-02-10",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-10.zip",
+            "zip_size_bytes": 23419
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-11.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:37.626261+00:00",
+            "kind": "premium_index",
+            "local_sha256": "c215e5b4dcd57a675d1fab6a4dd1cf0489eb7cfdb4f02b6032d3aa18fc711507",
+            "official_checksum": "c215e5b4dcd57a675d1fab6a4dd1cf0489eb7cfdb4f02b6032d3aa18fc711507",
+            "segment_end": "2026-02-11",
+            "segment_start": "2026-02-11",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-11.zip",
+            "zip_size_bytes": 16987
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-12.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:38.100911+00:00",
+            "kind": "premium_index",
+            "local_sha256": "85a520781d365cd195005cd1ac2a663f922900adf9bda1d633b264f82e47ff32",
+            "official_checksum": "85a520781d365cd195005cd1ac2a663f922900adf9bda1d633b264f82e47ff32",
+            "segment_end": "2026-02-12",
+            "segment_start": "2026-02-12",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-12.zip",
+            "zip_size_bytes": 13677
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-13.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:38.509571+00:00",
+            "kind": "premium_index",
+            "local_sha256": "ffd14bc6eaec0a544feb2147ca54be49683c4a8c9158b2d82b37f183036b6f2f",
+            "official_checksum": "ffd14bc6eaec0a544feb2147ca54be49683c4a8c9158b2d82b37f183036b6f2f",
+            "segment_end": "2026-02-13",
+            "segment_start": "2026-02-13",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-13.zip",
+            "zip_size_bytes": 24977
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-14.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:39.000275+00:00",
+            "kind": "premium_index",
+            "local_sha256": "d430380ffe5fda9eef4c863338c76775cbedf8769b88e53eb2b3dcd115fcc49b",
+            "official_checksum": "d430380ffe5fda9eef4c863338c76775cbedf8769b88e53eb2b3dcd115fcc49b",
+            "segment_end": "2026-02-14",
+            "segment_start": "2026-02-14",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-14.zip",
+            "zip_size_bytes": 16687
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-15.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:39.457388+00:00",
+            "kind": "premium_index",
+            "local_sha256": "f31111396da0028821cc040bf5e11d86c26d90d214f3427bce025185ec5c807d",
+            "official_checksum": "f31111396da0028821cc040bf5e11d86c26d90d214f3427bce025185ec5c807d",
+            "segment_end": "2026-02-15",
+            "segment_start": "2026-02-15",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-15.zip",
+            "zip_size_bytes": 21421
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-16.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:39.893450+00:00",
+            "kind": "premium_index",
+            "local_sha256": "05fdb8079aea24263f8d0f39b07af55ed649fc10310169aded13c3ec69373313",
+            "official_checksum": "05fdb8079aea24263f8d0f39b07af55ed649fc10310169aded13c3ec69373313",
+            "segment_end": "2026-02-16",
+            "segment_start": "2026-02-16",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-16.zip",
+            "zip_size_bytes": 16288
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-17.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:40.528346+00:00",
+            "kind": "premium_index",
+            "local_sha256": "e5164f52259086de4f53cebfcd33875f010aaf4488508be7ba1267df211ceb8a",
+            "official_checksum": "e5164f52259086de4f53cebfcd33875f010aaf4488508be7ba1267df211ceb8a",
+            "segment_end": "2026-02-17",
+            "segment_start": "2026-02-17",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-17.zip",
+            "zip_size_bytes": 21672
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-18.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:40.997512+00:00",
+            "kind": "premium_index",
+            "local_sha256": "d55630864395a1b8adb73408452b6393c72e4e89ce2bd140d3c16721cf8fa65d",
+            "official_checksum": "d55630864395a1b8adb73408452b6393c72e4e89ce2bd140d3c16721cf8fa65d",
+            "segment_end": "2026-02-18",
+            "segment_start": "2026-02-18",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-18.zip",
+            "zip_size_bytes": 26372
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-19.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:41.363699+00:00",
+            "kind": "premium_index",
+            "local_sha256": "e3119c88dbc9ca9d28779cbd54bf82b9a34e33f42601629521ec89fc4d8c7e01",
+            "official_checksum": "e3119c88dbc9ca9d28779cbd54bf82b9a34e33f42601629521ec89fc4d8c7e01",
+            "segment_end": "2026-02-19",
+            "segment_start": "2026-02-19",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-19.zip",
+            "zip_size_bytes": 25678
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-20.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:41.872651+00:00",
+            "kind": "premium_index",
+            "local_sha256": "c98b900ec9f04ccd32b7360f62431993e0c1921e822ec6c6ccd3d7f77995ba5c",
+            "official_checksum": "c98b900ec9f04ccd32b7360f62431993e0c1921e822ec6c6ccd3d7f77995ba5c",
+            "segment_end": "2026-02-20",
+            "segment_start": "2026-02-20",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-20.zip",
+            "zip_size_bytes": 27905
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-21.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:42.341514+00:00",
+            "kind": "premium_index",
+            "local_sha256": "0aceada21883f79332140ea9d5fcaa1c05cb5c33b8130ad555fa313280801084",
+            "official_checksum": "0aceada21883f79332140ea9d5fcaa1c05cb5c33b8130ad555fa313280801084",
+            "segment_end": "2026-02-21",
+            "segment_start": "2026-02-21",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-21.zip",
+            "zip_size_bytes": 18754
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-22.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:42.961622+00:00",
+            "kind": "premium_index",
+            "local_sha256": "663757137764a04f1037c018d21742da7eee979f0e4640791a073c8b614580cb",
+            "official_checksum": "663757137764a04f1037c018d21742da7eee979f0e4640791a073c8b614580cb",
+            "segment_end": "2026-02-22",
+            "segment_start": "2026-02-22",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-22.zip",
+            "zip_size_bytes": 19418
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-23.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:43.400558+00:00",
+            "kind": "premium_index",
+            "local_sha256": "e26633a90de65806abdce26a45f656666d6b6c265b0bf84cd01f66688029281f",
+            "official_checksum": "e26633a90de65806abdce26a45f656666d6b6c265b0bf84cd01f66688029281f",
+            "segment_end": "2026-02-23",
+            "segment_start": "2026-02-23",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-23.zip",
+            "zip_size_bytes": 24970
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-24.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:44.087147+00:00",
+            "kind": "premium_index",
+            "local_sha256": "2c37caba0ec7529a9465f324168bdccbaef4a54f32fcd0dfb8794980c16efb1d",
+            "official_checksum": "2c37caba0ec7529a9465f324168bdccbaef4a54f32fcd0dfb8794980c16efb1d",
+            "segment_end": "2026-02-24",
+            "segment_start": "2026-02-24",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-24.zip",
+            "zip_size_bytes": 28214
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-25.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:44.566972+00:00",
+            "kind": "premium_index",
+            "local_sha256": "81fdf900db8411de9a6ece14e5fbcb2b4ce44d987f40be8ae2e8db4ea1a65482",
+            "official_checksum": "81fdf900db8411de9a6ece14e5fbcb2b4ce44d987f40be8ae2e8db4ea1a65482",
+            "segment_end": "2026-02-25",
+            "segment_start": "2026-02-25",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-25.zip",
+            "zip_size_bytes": 28799
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-26.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:45.045914+00:00",
+            "kind": "premium_index",
+            "local_sha256": "233a986b44549b5690912885366442facb3c5ba09bc6c0fcdb79eb1f24c2189d",
+            "official_checksum": "233a986b44549b5690912885366442facb3c5ba09bc6c0fcdb79eb1f24c2189d",
+            "segment_end": "2026-02-26",
+            "segment_start": "2026-02-26",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-26.zip",
+            "zip_size_bytes": 28118
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-27.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:45.486987+00:00",
+            "kind": "premium_index",
+            "local_sha256": "5d00fb5aaaf57555afbebf8227524ebef3bd09ea44b241eb88a451b97c6c121e",
+            "official_checksum": "5d00fb5aaaf57555afbebf8227524ebef3bd09ea44b241eb88a451b97c6c121e",
+            "segment_end": "2026-02-27",
+            "segment_start": "2026-02-27",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-27.zip",
+            "zip_size_bytes": 26887
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-28.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:45.938470+00:00",
+            "kind": "premium_index",
+            "local_sha256": "08935342281fe8703ef8f0f58602208edf942c92bf4f6fba897651f326f71681",
+            "official_checksum": "08935342281fe8703ef8f0f58602208edf942c92bf4f6fba897651f326f71681",
+            "segment_end": "2026-02-28",
+            "segment_start": "2026-02-28",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-02-28.zip",
+            "zip_size_bytes": 23555
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:46.653710+00:00",
+            "kind": "premium_index",
+            "local_sha256": "c0f0df5b1a41685d8a311344cfc37b8f11dd617e746a3433abdd1d8c51159312",
+            "official_checksum": "c0f0df5b1a41685d8a311344cfc37b8f11dd617e746a3433abdd1d8c51159312",
+            "segment_end": "2026-03",
+            "segment_start": "2026-03",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-03.zip",
+            "zip_size_bytes": 721999
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:47.526668+00:00",
+            "kind": "premium_index",
+            "local_sha256": "7793cf585392e69592652c055ea93babf9735a2f8053aaa654fbac051b5dae32",
+            "official_checksum": "7793cf585392e69592652c055ea93babf9735a2f8053aaa654fbac051b5dae32",
+            "segment_end": "2026-04",
+            "segment_start": "2026-04",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-04.zip",
+            "zip_size_bytes": 729982
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:48.300386+00:00",
+            "kind": "premium_index",
+            "local_sha256": "62bf0ccf96029b86beebb0f8c86a6a2e05a4f790428529c8038af0b1303c6dd8",
+            "official_checksum": "62bf0ccf96029b86beebb0f8c86a6a2e05a4f790428529c8038af0b1303c6dd8",
+            "segment_end": "2026-05",
+            "segment_start": "2026-05",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-05.zip",
+            "zip_size_bytes": 676609
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:49.217435+00:00",
+            "kind": "premium_index",
+            "local_sha256": "aa65b8b7d22b4880f5d3d0e4ba19a5a66ee9c6e55b467f7e68e70be7eada757b",
+            "official_checksum": "aa65b8b7d22b4880f5d3d0e4ba19a5a66ee9c6e55b467f7e68e70be7eada757b",
+            "segment_end": "2026-06",
+            "segment_start": "2026-06",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-06.zip",
+            "zip_size_bytes": 655566
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-01.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:49.848387+00:00",
+            "kind": "premium_index",
+            "local_sha256": "7e9bec5abdfe2b50f0f585011d020476a0ecc511730eb7a2dc9c430ec565e8cc",
+            "official_checksum": "7e9bec5abdfe2b50f0f585011d020476a0ecc511730eb7a2dc9c430ec565e8cc",
+            "segment_end": "2026-07-01",
+            "segment_start": "2026-07-01",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-01.zip",
+            "zip_size_bytes": 27779
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:50.358311+00:00",
+            "kind": "premium_index",
+            "local_sha256": "6e6041044b4cba64fee6b429e8a0944b4ac28433bc38319f5f80876c0bf0ff16",
+            "official_checksum": "6e6041044b4cba64fee6b429e8a0944b4ac28433bc38319f5f80876c0bf0ff16",
+            "segment_end": "2026-07-02",
+            "segment_start": "2026-07-02",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-02.zip",
+            "zip_size_bytes": 28455
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:51.103800+00:00",
+            "kind": "premium_index",
+            "local_sha256": "494d462aa37f64459eec825888f543d7e9de03aedf2c2ea4fc26e258adbbd1c4",
+            "official_checksum": "494d462aa37f64459eec825888f543d7e9de03aedf2c2ea4fc26e258adbbd1c4",
+            "segment_end": "2026-07-03",
+            "segment_start": "2026-07-03",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-03.zip",
+            "zip_size_bytes": 24385
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:51.546936+00:00",
+            "kind": "premium_index",
+            "local_sha256": "8588e1c9ce4249b0b3f641ad1b794f3098f081f370362180c40daa23a65994a1",
+            "official_checksum": "8588e1c9ce4249b0b3f641ad1b794f3098f081f370362180c40daa23a65994a1",
+            "segment_end": "2026-07-04",
+            "segment_start": "2026-07-04",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-04.zip",
+            "zip_size_bytes": 21531
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:51.944180+00:00",
+            "kind": "premium_index",
+            "local_sha256": "809d16b57ffb0bf647c7963813378715052e14ae7be7e704664d1c646ab4a842",
+            "official_checksum": "809d16b57ffb0bf647c7963813378715052e14ae7be7e704664d1c646ab4a842",
+            "segment_end": "2026-07-05",
+            "segment_start": "2026-07-05",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-05.zip",
+            "zip_size_bytes": 19517
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:52.371699+00:00",
+            "kind": "premium_index",
+            "local_sha256": "68a2c4f97ab77044178eb575f4ebf3cdcb4ed9cea450fe132df488e55607726d",
+            "official_checksum": "68a2c4f97ab77044178eb575f4ebf3cdcb4ed9cea450fe132df488e55607726d",
+            "segment_end": "2026-07-06",
+            "segment_start": "2026-07-06",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-06.zip",
+            "zip_size_bytes": 27932
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-07.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:52.817152+00:00",
+            "kind": "premium_index",
+            "local_sha256": "1b69a90617da6745ac102a5ab2bbf9165614d8359dadfd5273e8f12d3eeab013",
+            "official_checksum": "1b69a90617da6745ac102a5ab2bbf9165614d8359dadfd5273e8f12d3eeab013",
+            "segment_end": "2026-07-07",
+            "segment_start": "2026-07-07",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-07.zip",
+            "zip_size_bytes": 28131
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-08.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:53.267990+00:00",
+            "kind": "premium_index",
+            "local_sha256": "a00d7a8688bf2e1da0b5e86951a417d13de9f61395e6e0fc2ed8c850820f19e2",
+            "official_checksum": "a00d7a8688bf2e1da0b5e86951a417d13de9f61395e6e0fc2ed8c850820f19e2",
+            "segment_end": "2026-07-08",
+            "segment_start": "2026-07-08",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-08.zip",
+            "zip_size_bytes": 27856
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-09.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:53.730303+00:00",
+            "kind": "premium_index",
+            "local_sha256": "06a80980da11a9f1290780d6affc567b50ed625ce4597cb37d91049a10b38343",
+            "official_checksum": "06a80980da11a9f1290780d6affc567b50ed625ce4597cb37d91049a10b38343",
+            "segment_end": "2026-07-09",
+            "segment_start": "2026-07-09",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-09.zip",
+            "zip_size_bytes": 27570
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-10.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:54.121655+00:00",
+            "kind": "premium_index",
+            "local_sha256": "7be4ab6fa1af66c924f966b8211f8078a25ac124c7a26fb052389d713123d11d",
+            "official_checksum": "7be4ab6fa1af66c924f966b8211f8078a25ac124c7a26fb052389d713123d11d",
+            "segment_end": "2026-07-10",
+            "segment_start": "2026-07-10",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-10.zip",
+            "zip_size_bytes": 27065
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-11.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:54.764649+00:00",
+            "kind": "premium_index",
+            "local_sha256": "45c22ab022f2a0b8cc61fcd3162118852fd0b2c9f883b2133d3432eca7a28d8b",
+            "official_checksum": "45c22ab022f2a0b8cc61fcd3162118852fd0b2c9f883b2133d3432eca7a28d8b",
+            "segment_end": "2026-07-11",
+            "segment_start": "2026-07-11",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-11.zip",
+            "zip_size_bytes": 20808
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-12.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:55.204394+00:00",
+            "kind": "premium_index",
+            "local_sha256": "3789958ead91ad80563c115697c2373f58c486b62df95d802529fd4b214ae61d",
+            "official_checksum": "3789958ead91ad80563c115697c2373f58c486b62df95d802529fd4b214ae61d",
+            "segment_end": "2026-07-12",
+            "segment_start": "2026-07-12",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-12.zip",
+            "zip_size_bytes": 22427
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-13.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:55.634543+00:00",
+            "kind": "premium_index",
+            "local_sha256": "a5080d11bfcf11cc3c79a1c3e23fb93652989feac13a8ed12fcd60923c188eb9",
+            "official_checksum": "a5080d11bfcf11cc3c79a1c3e23fb93652989feac13a8ed12fcd60923c188eb9",
+            "segment_end": "2026-07-13",
+            "segment_start": "2026-07-13",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-13.zip",
+            "zip_size_bytes": 27708
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-14.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:56.106798+00:00",
+            "kind": "premium_index",
+            "local_sha256": "302236ee663771b66c939627740a75278783be18070b465192b85f429853e76e",
+            "official_checksum": "302236ee663771b66c939627740a75278783be18070b465192b85f429853e76e",
+            "segment_end": "2026-07-14",
+            "segment_start": "2026-07-14",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-14.zip",
+            "zip_size_bytes": 27512
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-15.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:56.467162+00:00",
+            "kind": "premium_index",
+            "local_sha256": "c52531909aaf16a994d7d996323ae9e84c21f1b3a4de710d23b9b0b37428be3a",
+            "official_checksum": "c52531909aaf16a994d7d996323ae9e84c21f1b3a4de710d23b9b0b37428be3a",
+            "segment_end": "2026-07-15",
+            "segment_start": "2026-07-15",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-15.zip",
+            "zip_size_bytes": 26958
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-16.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:56.909157+00:00",
+            "kind": "premium_index",
+            "local_sha256": "b023307cac443a71693899ab83b29240d849ccb8cc925b7c0ce135f2da1aca90",
+            "official_checksum": "b023307cac443a71693899ab83b29240d849ccb8cc925b7c0ce135f2da1aca90",
+            "segment_end": "2026-07-16",
+            "segment_start": "2026-07-16",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-16.zip",
+            "zip_size_bytes": 27259
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-17.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:57.350895+00:00",
+            "kind": "premium_index",
+            "local_sha256": "69e79ae32a8517fc41ee68be811f4fbfcb477a8aaeb95a0e76546482764083da",
+            "official_checksum": "69e79ae32a8517fc41ee68be811f4fbfcb477a8aaeb95a0e76546482764083da",
+            "segment_end": "2026-07-17",
+            "segment_start": "2026-07-17",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-17.zip",
+            "zip_size_bytes": 21853
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-18.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:57.716841+00:00",
+            "kind": "premium_index",
+            "local_sha256": "431bfe37e1fed3dbb193fc22ae0b959dcdd326ba14aa48ac0f1b1574bf56768b",
+            "official_checksum": "431bfe37e1fed3dbb193fc22ae0b959dcdd326ba14aa48ac0f1b1574bf56768b",
+            "segment_end": "2026-07-18",
+            "segment_start": "2026-07-18",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-18.zip",
+            "zip_size_bytes": 16841
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-19.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:58.057503+00:00",
+            "kind": "premium_index",
+            "local_sha256": "2495c2518cca6fb5c054318fa97f3572cfb767940bc994e8390bfa9fdcaad255",
+            "official_checksum": "2495c2518cca6fb5c054318fa97f3572cfb767940bc994e8390bfa9fdcaad255",
+            "segment_end": "2026-07-19",
+            "segment_start": "2026-07-19",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-19.zip",
+            "zip_size_bytes": 15538
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-20.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:58.382143+00:00",
+            "kind": "premium_index",
+            "local_sha256": "e6c794309866d9058e5f4ee8e7f6e70f201a43e422e799d61095e671ace1a9f8",
+            "official_checksum": "e6c794309866d9058e5f4ee8e7f6e70f201a43e422e799d61095e671ace1a9f8",
+            "segment_end": "2026-07-20",
+            "segment_start": "2026-07-20",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-20.zip",
+            "zip_size_bytes": 23256
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-21.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:58.716107+00:00",
+            "kind": "premium_index",
+            "local_sha256": "ba46b99946c893b80d88a6b5ff5fa8a95d4fcf3ac5eb03f67adafbcc4479813b",
+            "official_checksum": "ba46b99946c893b80d88a6b5ff5fa8a95d4fcf3ac5eb03f67adafbcc4479813b",
+            "segment_end": "2026-07-21",
+            "segment_start": "2026-07-21",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-21.zip",
+            "zip_size_bytes": 23651
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-22.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:59.100839+00:00",
+            "kind": "premium_index",
+            "local_sha256": "0ddd1ff9a3430586b189e09428f5b4d2e46d2fe8db30ba999c3dbe6acc4fae01",
+            "official_checksum": "0ddd1ff9a3430586b189e09428f5b4d2e46d2fe8db30ba999c3dbe6acc4fae01",
+            "segment_end": "2026-07-22",
+            "segment_start": "2026-07-22",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-22.zip",
+            "zip_size_bytes": 23010
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-23.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:13:59.532961+00:00",
+            "kind": "premium_index",
+            "local_sha256": "0f5f7989affccc8439eb1a95413d1746cccf985bdcf78f8792b593f730de98b5",
+            "official_checksum": "0f5f7989affccc8439eb1a95413d1746cccf985bdcf78f8792b593f730de98b5",
+            "segment_end": "2026-07-23",
+            "segment_start": "2026-07-23",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/AMZNUSDT/1m/AMZNUSDT-1m-2026-07-23.zip",
+            "zip_size_bytes": 22944
+          }
+        ]
+      },
+      "start_time": "2026-02-09T14:40:00+00:00",
+      "symbol": "AMZNUSDT",
+      "tier": "TIER_A_CORE"
+    }
+  },
+  "data_previously_viewed": true,
+  "direction_mode": "NEUTRAL",
+  "discovery_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\symbol-discovery.json",
+  "discovery_sha256": "02aad5001519db2648f8140788204677335dcff478dab56f89416445b715b6b6",
+  "generated_at": "2026-07-24T18:00:16.019000+00:00",
+  "git_branch": "codex/profit-protection-backtest-v2.3",
+  "git_commit": "1cec0efe54947d5f6a18314b669c2db808f1a21c",
+  "last_complete_utc_date": "2026-07-23",
+  "leverage": 1,
+  "notes": [
+    "只冻结正式 H1 所需的 Tier A-Core；Tier A-Short 保留在发现报告，不参与正式门槛。",
+    "所有随机种子和窗口定义在收益计算前另由 window manifest 冻结。",
+    "本次公开数据在协议探索阶段已查看，故明确标记 data_previously_viewed=true。"
+  ],
+  "production_defaults_changed": false,
+  "protocol": "docs/codex-stock-perp-weekend-grid-backtest-v2.5.md",
+  "schema_version": 1,
+  "selected_tiers": [
+    "TIER_A_CORE"
+  ],
+  "skipped_symbols": [
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AAOIUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AAPLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ADBEUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ALABUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AMATUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AMDUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "APPUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ARMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ASMLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ASTSUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AVGOUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AXTIUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BABAUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BBXUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BEUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BMNRUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BNCUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BOTUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BRKBUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BSPUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BXUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CATUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CBRSUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CIENUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "COHRUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "COSTUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CRDOUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CRMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CRWDUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CRWVUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CSCOUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "DELLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "DISUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "DKNGUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "DRAMUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "EBAYUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "EWJUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "EWTUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "EWYUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "EWZUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "FLEXUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "FLNCUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "FWDIUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "GEVUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "GLWUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "GMEUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "GOOGLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "HDUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "HIMSUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "HK0700USDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "HK1810USDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "HPEUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "IBMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "INTWUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "IRENUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "IWMUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "JPMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "KLACUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "KORUUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "KSTRUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "LITEUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "LLYUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "LRCXUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "METAUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MINIMAXUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MRVLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MSFTUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MUUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MUUUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MVLLUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NBISUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NFLXUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NOKUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NOWUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NVDAUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NVOUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ONDSUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ORCLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "PANWUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "PAYPUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "PENGUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "POPMARTUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "QCOMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "QNTXUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "QQQUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "RIVNUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "RKLBUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SHAZUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SKHYUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SMCIUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SNDKUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SNOWUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SNXXUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SOFIUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SONYUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SOXLUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SOXSUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SPCXUSD1",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SPCXUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SPYUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SQQQUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "STRCUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "STXXUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TENCENTUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TERUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TQQQUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TSMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TTWOUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TXNUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TZAUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "UBERUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "URNMUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "USARUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "UVXYUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "VRTUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "VUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "WDCUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "WENUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "WMTUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "XBIUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "XLEUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ZHIPUUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ZMUSDT",
+      "tier": "TIER_A_SHORT"
+    }
+  ]
+}

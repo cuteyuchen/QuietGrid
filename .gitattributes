@@ -1,0 +1,8 @@
+.gitattributes text eol=lf
+reports/stock-perp-weekend-grid-v1/** text eol=lf
+reports/stock-perp-weekend-grid-v1-smoke/** text eol=lf
+scripts/build_stock_perp_windows.py text eol=lf
+scripts/discover_stock_perpetuals.py text eol=lf
+scripts/freeze_stock_perp_data.py text eol=lf
+scripts/stock_perp_*.py text eol=lf
+tests/test_stock_perp_*.py text eol=lf

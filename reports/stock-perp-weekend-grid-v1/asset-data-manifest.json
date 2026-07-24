@@ -1,0 +1,3353 @@
+{
+  "agg_trades_downloaded": true,
+  "as_of_utc": "2026-07-24T18:00:16.019000+00:00",
+  "assets": {
+    "AMZNUSDT": {
+      "asof_utc": "2026-07-24T18:00:16.019000+00:00",
+      "base_asset": "AMZN",
+      "data_previously_viewed": true,
+      "end_time_exclusive": "2026-07-24T00:00:00+00:00",
+      "files": {
+        "agg_trades": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-agg-trades.csv",
+          "row_count": 2758342,
+          "sha256": "8587d01904c281bc672c16c62f00c69bab38e892f965f9b395269c4afbf17fbb",
+          "size_bytes": 153874412
+        },
+        "funding": {
+          "first_funding_time": 1770652800001,
+          "last_funding_time": 1784822400001,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-funding.json",
+          "row_count": 493,
+          "sha256": "0c1d8bacc8a443776119657aaec0ba00437881200d5ddd0210e02ce81b19a555",
+          "size_bytes": 51501
+        },
+        "klines": {
+          "first_open_time": 1770648000000,
+          "last_open_time": 1784851140000,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-1m.csv",
+          "row_count": 236720,
+          "sha256": "8c8c85f057ee36aaeb6ba19d0fb962f4a56e0e175a0958af06a84fbf7fe0e7b4",
+          "size_bytes": 17066269
+        },
+        "mark_price": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-mark-price.csv",
+          "row_count": 235280,
+          "sha256": "e488eef2086c30ed8b8e31519b2da7c586c2cba6aecf24d2a9293eb5223ef379",
+          "size_bytes": 17280631
+        },
+        "premium_index": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-premium-index.csv",
+          "row_count": 228080,
+          "sha256": "6ffb722974458f130574d1d2b2bc98700440b0b4bac423e550cbb7e332b2c3d8",
+          "size_bytes": 15517312
+        }
+      },
+      "funding_interval_hours": 8.0,
+      "listing": {
+        "ETF": "N",
+        "Financial Status": "N",
+        "Market Category": "Q",
+        "NextShares": "N",
+        "Round Lot Size": "100",
+        "Security Name": "Amazon.com, Inc. - Common Stock",
+        "Symbol": "AMZN",
+        "Test Issue": "N"
+      },
+      "missing_segments": [],
+      "rest_requests": [],
+      "reused_existing_files": true,
+      "rules": {
+        "base_asset_precision": 8,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "20000",
+            "minPrice": "0.01000",
+            "tickSize": "0.01000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "20000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "2000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.9700",
+            "multiplierUp": "1.0300"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "max_move_order_limit": 10000,
+        "min_notional": 5.0,
+        "min_qty": 0.01,
+        "order_types": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "price_precision": 5,
+        "quantity_precision": 2,
+        "quote_precision": 8,
+        "step_size": 0.01,
+        "tick_size": 0.01,
+        "time_in_force": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ]
+      },
+      "source_segments": {
+        "note": "本进程在网络中断后复用已完成文件；原始 ZIP 官方 checksum 已在前一阶段验证。",
+        "status": "REUSED_PRIOR_CHECKSUM_VERIFIED_RUN"
+      },
+      "start_time": "2026-02-09T14:40:00+00:00",
+      "symbol": "AMZNUSDT",
+      "tier": "TIER_A_CORE"
+    },
+    "COINUSDT": {
+      "asof_utc": "2026-07-24T18:00:16.019000+00:00",
+      "base_asset": "COIN",
+      "data_previously_viewed": true,
+      "end_time_exclusive": "2026-07-24T00:00:00+00:00",
+      "files": {
+        "agg_trades": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-agg-trades.csv",
+          "row_count": 9957111,
+          "sha256": "41b2740bce787a75041d05c9d2c252c42faca0a971ffba76ca897be4aadc2cac",
+          "size_bytes": 571650310
+        },
+        "funding": {
+          "first_funding_time": 1770652800001,
+          "last_funding_time": 1784822400001,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-funding.json",
+          "row_count": 493,
+          "sha256": "672b78214ede0eeea4079ac48e16b48f9c23d5596bac0dc130ec667ba455afdc",
+          "size_bytes": 51610
+        },
+        "klines": {
+          "first_open_time": 1770649200000,
+          "last_open_time": 1784851140000,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-1m.csv",
+          "row_count": 236700,
+          "sha256": "e6c524928890ec38fbe2f3e5e01d5cd6043d77649ada0341066c2dc6efe1687c",
+          "size_bytes": 17780441
+        },
+        "mark_price": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-mark-price.csv",
+          "row_count": 235260,
+          "sha256": "2b88cdfbbdde382c107ba391fc2bbd439ed0652d73a009b66804e7e61a1e2320",
+          "size_bytes": 17375879
+        },
+        "premium_index": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-premium-index.csv",
+          "row_count": 230940,
+          "sha256": "7d23b9cc0114dff03b4a90e0038d24b8ed0b8f0704e0c4964585789d0162610f",
+          "size_bytes": 15705911
+        }
+      },
+      "funding_interval_hours": 8.0,
+      "listing": {
+        "ETF": "N",
+        "Financial Status": "N",
+        "Market Category": "Q",
+        "NextShares": "N",
+        "Round Lot Size": "100",
+        "Security Name": "Coinbase Global, Inc. - Class A Common Stock",
+        "Symbol": "COIN",
+        "Test Issue": "N"
+      },
+      "missing_segments": [],
+      "rest_requests": [],
+      "reused_existing_files": true,
+      "rules": {
+        "base_asset_precision": 8,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "20000",
+            "minPrice": "0.01000",
+            "tickSize": "0.01000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "24000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "2000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.9700",
+            "multiplierUp": "1.0300"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "max_move_order_limit": 10000,
+        "min_notional": 5.0,
+        "min_qty": 0.01,
+        "order_types": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "price_precision": 5,
+        "quantity_precision": 2,
+        "quote_precision": 8,
+        "step_size": 0.01,
+        "tick_size": 0.01,
+        "time_in_force": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ]
+      },
+      "source_segments": {
+        "note": "本进程在网络中断后复用已完成文件；原始 ZIP 官方 checksum 已在前一阶段验证。",
+        "status": "REUSED_PRIOR_CHECKSUM_VERIFIED_RUN"
+      },
+      "start_time": "2026-02-09T15:00:00+00:00",
+      "symbol": "COINUSDT",
+      "tier": "TIER_A_CORE"
+    },
+    "CRCLUSDT": {
+      "asof_utc": "2026-07-24T18:00:16.019000+00:00",
+      "base_asset": "CRCL",
+      "data_previously_viewed": true,
+      "end_time_exclusive": "2026-07-24T00:00:00+00:00",
+      "files": {
+        "agg_trades": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-agg-trades.csv",
+          "row_count": 14933692,
+          "sha256": "a28c3e9357514b928187b3224d923d0ae1a13a8dbb9b83b62208fa5c70537e09",
+          "size_bytes": 894136720
+        },
+        "funding": {
+          "first_funding_time": 1770652800001,
+          "last_funding_time": 1784822400001,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-funding.json",
+          "row_count": 493,
+          "sha256": "55f3c479e8f41bd7be1d9684c286b90c54413ed0671937e9aaf98b1b1d3f990e",
+          "size_bytes": 53071
+        },
+        "klines": {
+          "first_open_time": 1770648600000,
+          "last_open_time": 1784851140000,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-1m.csv",
+          "row_count": 236710,
+          "sha256": "99ccd83759578008ac1b13ffa56a9a12e698640e1a5936448395f66661425d09",
+          "size_bytes": 19391437
+        },
+        "mark_price": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-mark-price.csv",
+          "row_count": 235270,
+          "sha256": "535eb1b895d1a4ec697f77a2e46d51af6256c89f418a34e0741fa5eacc5b6e0e",
+          "size_bytes": 17904257
+        },
+        "premium_index": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-premium-index.csv",
+          "row_count": 232390,
+          "sha256": "bd07f8bb244e7755603e356c1f579b574c1aa14bec6c49bcf4b1e4c42a6a146a",
+          "size_bytes": 16966556
+        }
+      },
+      "funding_interval_hours": 8.0,
+      "listing": {
+        "ACT Symbol": "CRCL",
+        "CQS Symbol": "CRCL",
+        "ETF": "N",
+        "Exchange": "N",
+        "NASDAQ Symbol": "CRCL",
+        "Round Lot Size": "100",
+        "Security Name": "Circle Internet Group, Inc. Class A Common Stock",
+        "Test Issue": "N"
+      },
+      "missing_segments": [],
+      "rest_requests": [],
+      "reused_existing_files": true,
+      "rules": {
+        "base_asset_precision": 8,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "20000",
+            "minPrice": "0.01000",
+            "tickSize": "0.01000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "70000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "7000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.9700",
+            "multiplierUp": "1.0300"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "max_move_order_limit": 10000,
+        "min_notional": 5.0,
+        "min_qty": 0.01,
+        "order_types": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "price_precision": 5,
+        "quantity_precision": 2,
+        "quote_precision": 8,
+        "step_size": 0.01,
+        "tick_size": 0.01,
+        "time_in_force": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ]
+      },
+      "source_segments": {
+        "note": "本进程在网络中断后复用已完成文件；原始 ZIP 官方 checksum 已在前一阶段验证。",
+        "status": "REUSED_PRIOR_CHECKSUM_VERIFIED_RUN"
+      },
+      "start_time": "2026-02-09T14:50:00+00:00",
+      "symbol": "CRCLUSDT",
+      "tier": "TIER_A_CORE"
+    },
+    "HOODUSDT": {
+      "asof_utc": "2026-07-24T18:00:16.019000+00:00",
+      "base_asset": "HOOD",
+      "data_previously_viewed": true,
+      "end_time_exclusive": "2026-07-24T00:00:00+00:00",
+      "files": {
+        "agg_trades": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-agg-trades.csv",
+          "row_count": 5520978,
+          "sha256": "6be64b9eb64e8c61280a966d8bf782cb6ca68b7ec5f781b3c701e65d78ebb5b9",
+          "size_bytes": 328145590
+        },
+        "funding": {
+          "first_funding_time": 1770048000001,
+          "last_funding_time": 1784822400001,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-funding.json",
+          "row_count": 514,
+          "sha256": "257071fb6809f6beeac33086ee4c5b266c2af5c7e5e8eedbef48fb409dd150c9",
+          "size_bytes": 53914
+        },
+        "klines": {
+          "first_open_time": 1770043500000,
+          "last_open_time": 1784851140000,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-1m.csv",
+          "row_count": 246795,
+          "sha256": "fbe41c3fc3324e1916b7a1fa4399892e9c1a82b6166d591955011e497374ae28",
+          "size_bytes": 20747934
+        },
+        "mark_price": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-mark-price.csv",
+          "row_count": 245355,
+          "sha256": "e13e084efefa8b99f45dca589f70b009004c29948ff4354a1f3f033ef25b3d6e",
+          "size_bytes": 19324795
+        },
+        "premium_index": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-premium-index.csv",
+          "row_count": 242475,
+          "sha256": "2408cefb97ef333aaf7ee4ef73e1b771c6cbf6b706dfa8ad1b512b7ea22b1663",
+          "size_bytes": 16588523
+        }
+      },
+      "funding_interval_hours": 8.0,
+      "listing": {
+        "ETF": "N",
+        "Financial Status": "N",
+        "Market Category": "Q",
+        "NextShares": "N",
+        "Round Lot Size": "100",
+        "Security Name": "Robinhood Markets, Inc. - Class A Common Stock",
+        "Symbol": "HOOD",
+        "Test Issue": "N"
+      },
+      "missing_segments": [],
+      "rest_requests": [],
+      "reused_existing_files": true,
+      "rules": {
+        "base_asset_precision": 8,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "20000",
+            "minPrice": "0.01000",
+            "tickSize": "0.01000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "40000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "3800",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.9700",
+            "multiplierUp": "1.0300"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "max_move_order_limit": 10000,
+        "min_notional": 5.0,
+        "min_qty": 0.01,
+        "order_types": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "price_precision": 5,
+        "quantity_precision": 2,
+        "quote_precision": 8,
+        "step_size": 0.01,
+        "tick_size": 0.01,
+        "time_in_force": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ]
+      },
+      "source_segments": {
+        "note": "本进程在网络中断后复用已完成文件；原始 ZIP 官方 checksum 已在前一阶段验证。",
+        "status": "REUSED_PRIOR_CHECKSUM_VERIFIED_RUN"
+      },
+      "start_time": "2026-02-02T14:45:00+00:00",
+      "symbol": "HOODUSDT",
+      "tier": "TIER_A_CORE"
+    },
+    "INTCUSDT": {
+      "asof_utc": "2026-07-24T18:00:16.019000+00:00",
+      "base_asset": "INTC",
+      "data_previously_viewed": true,
+      "end_time_exclusive": "2026-07-24T00:00:00+00:00",
+      "files": {
+        "agg_trades": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-agg-trades.csv",
+          "row_count": 12988085,
+          "sha256": "719435053dfa29867af00b4094b33986fc0d934bd70bc1429a0f4b91034c26b4",
+          "size_bytes": 761680721
+        },
+        "funding": {
+          "first_funding_time": 1770048000001,
+          "last_funding_time": 1784822400001,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-funding.json",
+          "row_count": 514,
+          "sha256": "4a2f791fdb89608802268e1e7e2fa2cd46403ac12f0f060084b88e275de93fd3",
+          "size_bytes": 54244
+        },
+        "klines": {
+          "first_open_time": 1770042600000,
+          "last_open_time": 1784851140000,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-1m.csv",
+          "row_count": 246810,
+          "sha256": "94959f64fb6dc1187119f49583e46821f98f161d57f435e3ce30b5f5ae109970",
+          "size_bytes": 18722378
+        },
+        "mark_price": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-mark-price.csv",
+          "row_count": 245370,
+          "sha256": "c4833a6a152ca5aef66802858ab1fe17487461705e19a9bc30f5221144f973d5",
+          "size_bytes": 17924044
+        },
+        "premium_index": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-premium-index.csv",
+          "row_count": 241050,
+          "sha256": "d234062e1ee1b23c14cbeb5b11ed134c48eb4c125c4e57e755c41453f47cbe10",
+          "size_bytes": 16986716
+        }
+      },
+      "funding_interval_hours": 8.0,
+      "listing": {
+        "ETF": "N",
+        "Financial Status": "N",
+        "Market Category": "Q",
+        "NextShares": "N",
+        "Round Lot Size": "100",
+        "Security Name": "Intel Corporation - Common Stock",
+        "Symbol": "INTC",
+        "Test Issue": "N"
+      },
+      "missing_segments": [],
+      "rest_requests": [],
+      "reused_existing_files": true,
+      "rules": {
+        "base_asset_precision": 8,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "20000",
+            "minPrice": "0.01000",
+            "tickSize": "0.01000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "100000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "10000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.9700",
+            "multiplierUp": "1.0300"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "max_move_order_limit": 10000,
+        "min_notional": 5.0,
+        "min_qty": 0.01,
+        "order_types": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "price_precision": 5,
+        "quantity_precision": 2,
+        "quote_precision": 8,
+        "step_size": 0.01,
+        "tick_size": 0.01,
+        "time_in_force": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ]
+      },
+      "source_segments": {
+        "note": "本进程在网络中断后复用已完成文件；原始 ZIP 官方 checksum 已在前一阶段验证。",
+        "status": "REUSED_PRIOR_CHECKSUM_VERIFIED_RUN"
+      },
+      "start_time": "2026-02-02T14:30:00+00:00",
+      "symbol": "INTCUSDT",
+      "tier": "TIER_A_CORE"
+    },
+    "MSTRUSDT": {
+      "asof_utc": "2026-07-24T18:00:16.019000+00:00",
+      "base_asset": "MSTR",
+      "data_previously_viewed": true,
+      "end_time_exclusive": "2026-07-24T00:00:00+00:00",
+      "files": {
+        "agg_trades": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-agg-trades.csv",
+          "row_count": 13035657,
+          "sha256": "f23d897bf2debfae8d5fdde70e8464be4a663ce3af4a4f757f2e76d96363c7fa",
+          "size_bytes": 766578182
+        },
+        "funding": {
+          "first_funding_time": 1770652800001,
+          "last_funding_time": 1784822400001,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-funding.json",
+          "row_count": 493,
+          "sha256": "af36010ff13cd1962d2723a5d225974b3b49ddccf818ce470fd45348ee771187",
+          "size_bytes": 52313
+        },
+        "klines": {
+          "first_open_time": 1770647400000,
+          "last_open_time": 1784851140000,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-1m.csv",
+          "row_count": 236730,
+          "sha256": "91eb0c16d4cb12dbab98fe660ad49748aa5779623c1e45d94da38d192dc9a517",
+          "size_bytes": 18555167
+        },
+        "mark_price": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-mark-price.csv",
+          "row_count": 235290,
+          "sha256": "aa41f611917fc129ee4b9e9d6443277ce491772470880bf2096c23d1443169b0",
+          "size_bytes": 17590578
+        },
+        "premium_index": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-premium-index.csv",
+          "row_count": 229530,
+          "sha256": "fdf24ecb252b19221bbe998628d5f179cb8067eb46c7ce27d5ae991247da9fe1",
+          "size_bytes": 16705273
+        }
+      },
+      "funding_interval_hours": 8.0,
+      "listing": {
+        "ETF": "N",
+        "Financial Status": "N",
+        "Market Category": "Q",
+        "NextShares": "N",
+        "Round Lot Size": "100",
+        "Security Name": "Strategy Inc - Class A Common Stock",
+        "Symbol": "MSTR",
+        "Test Issue": "N"
+      },
+      "missing_segments": [],
+      "rest_requests": [],
+      "reused_existing_files": true,
+      "rules": {
+        "base_asset_precision": 8,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "20000",
+            "minPrice": "0.01000",
+            "tickSize": "0.01000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "42000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "4000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.9700",
+            "multiplierUp": "1.0300"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "max_move_order_limit": 10000,
+        "min_notional": 5.0,
+        "min_qty": 0.01,
+        "order_types": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "price_precision": 5,
+        "quantity_precision": 2,
+        "quote_precision": 8,
+        "step_size": 0.01,
+        "tick_size": 0.01,
+        "time_in_force": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ]
+      },
+      "source_segments": {
+        "note": "本进程在网络中断后复用已完成文件；原始 ZIP 官方 checksum 已在前一阶段验证。",
+        "status": "REUSED_PRIOR_CHECKSUM_VERIFIED_RUN"
+      },
+      "start_time": "2026-02-09T14:30:00+00:00",
+      "symbol": "MSTRUSDT",
+      "tier": "TIER_A_CORE"
+    },
+    "PLTRUSDT": {
+      "asof_utc": "2026-07-24T18:00:16.019000+00:00",
+      "base_asset": "PLTR",
+      "data_previously_viewed": true,
+      "end_time_exclusive": "2026-07-24T00:00:00+00:00",
+      "files": {
+        "agg_trades": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-agg-trades.csv",
+          "row_count": 3440727,
+          "sha256": "6883f4259e44c66a58a65384df073012fd3b671469cc0535a4b793a338de1271",
+          "size_bytes": 192791658
+        },
+        "funding": {
+          "first_funding_time": 1770652800001,
+          "last_funding_time": 1784822400001,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-funding.json",
+          "row_count": 493,
+          "sha256": "816e6907fe5903c8368a324de457e710549b6cedcc5ebbe9533a8971cab55b94",
+          "size_bytes": 50766
+        },
+        "klines": {
+          "first_open_time": 1770649800000,
+          "last_open_time": 1784851140000,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-1m.csv",
+          "row_count": 236690,
+          "sha256": "abab0c616ee9640b4b9836009a532618f1375013560ad17a1d7bbee511e4d581",
+          "size_bytes": 17295287
+        },
+        "mark_price": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-mark-price.csv",
+          "row_count": 235250,
+          "sha256": "bfcda113aa96c95136882aa3253ed6f1c3d53309b1d85410e13c9011b463ca2a",
+          "size_bytes": 17416568
+        },
+        "premium_index": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-premium-index.csv",
+          "row_count": 230930,
+          "sha256": "f76aa237b7c35c8878d552334bceef3eeeaab6fa720b1ece305f89fe39d1a58a",
+          "size_bytes": 14541003
+        }
+      },
+      "funding_interval_hours": 8.0,
+      "listing": {
+        "ETF": "N",
+        "Financial Status": "N",
+        "Market Category": "Q",
+        "NextShares": "N",
+        "Round Lot Size": "100",
+        "Security Name": "Palantir Technologies Inc. - Class A Common Stock",
+        "Symbol": "PLTR",
+        "Test Issue": "N"
+      },
+      "missing_segments": [],
+      "rest_requests": [],
+      "reused_existing_files": true,
+      "rules": {
+        "base_asset_precision": 8,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "20000",
+            "minPrice": "0.01000",
+            "tickSize": "0.01000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "20000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "2600",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.9700",
+            "multiplierUp": "1.0300"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "max_move_order_limit": 10000,
+        "min_notional": 5.0,
+        "min_qty": 0.01,
+        "order_types": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "price_precision": 5,
+        "quantity_precision": 2,
+        "quote_precision": 8,
+        "step_size": 0.01,
+        "tick_size": 0.01,
+        "time_in_force": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ]
+      },
+      "source_segments": {
+        "note": "本进程在网络中断后复用已完成文件；原始 ZIP 官方 checksum 已在前一阶段验证。",
+        "status": "REUSED_PRIOR_CHECKSUM_VERIFIED_RUN"
+      },
+      "start_time": "2026-02-09T15:10:00+00:00",
+      "symbol": "PLTRUSDT",
+      "tier": "TIER_A_CORE"
+    },
+    "TSLAUSDT": {
+      "asof_utc": "2026-07-24T18:00:16.019000+00:00",
+      "base_asset": "TSLA",
+      "data_previously_viewed": true,
+      "end_time_exclusive": "2026-07-24T00:00:00+00:00",
+      "files": {
+        "agg_trades": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-agg-trades.csv",
+          "row_count": 14037852,
+          "sha256": "f97747814508218e2c39226f7772c3c5990023242e180bd8da7275f3faf24cef",
+          "size_bytes": 814233529
+        },
+        "funding": {
+          "first_funding_time": 1769616000001,
+          "last_funding_time": 1784822400001,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-funding.json",
+          "row_count": 535,
+          "sha256": "f61ac37f7bc811a1420ca34dfe645ea8fa06e843c6aed407e9064400d7ff58e5",
+          "size_bytes": 56492
+        },
+        "klines": {
+          "first_open_time": 1769610600000,
+          "last_open_time": 1784851140000,
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-1m.csv",
+          "row_count": 254010,
+          "sha256": "6e7d255e2350900a119d2a09c048abcea30a4d321d789b4e758fc9ad95a9c051",
+          "size_bytes": 19355250
+        },
+        "mark_price": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-mark-price.csv",
+          "row_count": 252570,
+          "sha256": "58685501e1104d9714b12b1f47576a6812b141e8454a86e016a39fba64467098",
+          "size_bytes": 18540337
+        },
+        "premium_index": {
+          "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-premium-index.csv",
+          "row_count": 248250,
+          "sha256": "975187134efb18927febe393b756dd1f0b79c3cb703bd728612ce9eac12ad4a3",
+          "size_bytes": 18396278
+        }
+      },
+      "funding_interval_hours": 8.0,
+      "listing": {
+        "ETF": "N",
+        "Financial Status": "N",
+        "Market Category": "Q",
+        "NextShares": "N",
+        "Round Lot Size": "40",
+        "Security Name": "Tesla, Inc.  - Common Stock",
+        "Symbol": "TSLA",
+        "Test Issue": "N"
+      },
+      "missing_segments": [],
+      "rest_requests": [
+        {
+          "params": {
+            "endTime": 1784851199999,
+            "limit": 1000,
+            "startTime": 1782835200002,
+            "symbol": "TSLAUSDT"
+          },
+          "response_sha256": "af4a64fbff1b38445cc648dfd776b9c06ebd900614ce6c56101a8f3bc39933ab",
+          "retrieved_at": "2026-07-24T18:50:42.145790+00:00",
+          "row_count": 69,
+          "url": "https://fapi.binance.com/fapi/v1/fundingRate"
+        }
+      ],
+      "rules": {
+        "base_asset_precision": 8,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "100000",
+            "minPrice": "0.01000",
+            "tickSize": "0.01000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "20000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "2000",
+            "minQty": "0.01",
+            "stepSize": "0.01"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.9700",
+            "multiplierUp": "1.0300"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "max_move_order_limit": 10000,
+        "min_notional": 5.0,
+        "min_qty": 0.01,
+        "order_types": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "price_precision": 5,
+        "quantity_precision": 2,
+        "quote_precision": 8,
+        "step_size": 0.01,
+        "tick_size": 0.01,
+        "time_in_force": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ]
+      },
+      "source_segments": {
+        "agg_trades": [
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-01-28.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:53.351159+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "7fd5fd72e6757cf3603f83a355ac6393ddbe83bdad29d698257d702e55f2b878",
+            "official_checksum": "7fd5fd72e6757cf3603f83a355ac6393ddbe83bdad29d698257d702e55f2b878",
+            "rows": 153339,
+            "segment_end": "2026-01-28",
+            "segment_start": "2026-01-28",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-01-28.zip",
+            "zip_size_bytes": 1979248
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-01-29.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:54.252500+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "a82c657925f3884b02d7765e4947b96c3165f59f9f251bea01dbefcf6aedea5c",
+            "official_checksum": "a82c657925f3884b02d7765e4947b96c3165f59f9f251bea01dbefcf6aedea5c",
+            "rows": 181039,
+            "segment_end": "2026-01-29",
+            "segment_start": "2026-01-29",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-01-29.zip",
+            "zip_size_bytes": 2323029
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-01-30.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:54.870927+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "84f8160bb9db5b3a4ea5964eda25cfdcc8f557cf30415741f84072d1e3115280",
+            "official_checksum": "84f8160bb9db5b3a4ea5964eda25cfdcc8f557cf30415741f84072d1e3115280",
+            "rows": 160291,
+            "segment_end": "2026-01-30",
+            "segment_start": "2026-01-30",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-01-30.zip",
+            "zip_size_bytes": 2022356
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-01-31.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:55.413373+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "f3c9fe1d84b22d955f3f9906e46e1498240bdb71a130263930738ca010a16904",
+            "official_checksum": "f3c9fe1d84b22d955f3f9906e46e1498240bdb71a130263930738ca010a16904",
+            "rows": 48080,
+            "segment_end": "2026-01-31",
+            "segment_start": "2026-01-31",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-01-31.zip",
+            "zip_size_bytes": 599399
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:56.929004+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "4d66422a76f55df53388c0aee46a2a79b28609e9f36c48aa2634bb309614c7cc",
+            "official_checksum": "4d66422a76f55df53388c0aee46a2a79b28609e9f36c48aa2634bb309614c7cc",
+            "rows": 1456250,
+            "segment_end": "2026-02",
+            "segment_start": "2026-02",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-02.zip",
+            "zip_size_bytes": 18828405
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:59.623068+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "0b42cea4cc063788ef1e8f8a453c9b63f2de21db4ea9a29117835d176ac5e5fa",
+            "official_checksum": "0b42cea4cc063788ef1e8f8a453c9b63f2de21db4ea9a29117835d176ac5e5fa",
+            "rows": 2700385,
+            "segment_end": "2026-03",
+            "segment_start": "2026-03",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-03.zip",
+            "zip_size_bytes": 35876291
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:02.126284+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "46ca5ed802fb05b715f8d4f5d2b01ec5aea5165a5cd3a722bd72aeaf45bc57da",
+            "official_checksum": "46ca5ed802fb05b715f8d4f5d2b01ec5aea5165a5cd3a722bd72aeaf45bc57da",
+            "rows": 2629397,
+            "segment_end": "2026-04",
+            "segment_start": "2026-04",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-04.zip",
+            "zip_size_bytes": 34520867
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:04.739527+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "2980d003b97f281dba96deff6b1adb78c5c786dba0d51e06256b71c8b2433cb8",
+            "official_checksum": "2980d003b97f281dba96deff6b1adb78c5c786dba0d51e06256b71c8b2433cb8",
+            "rows": 2175983,
+            "segment_end": "2026-05",
+            "segment_start": "2026-05",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-05.zip",
+            "zip_size_bytes": 28004633
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:07.155084+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "0db2d47bb699e4c1e170154270272decf8fe5240dfc8b0edb03d096a4170b79a",
+            "official_checksum": "0db2d47bb699e4c1e170154270272decf8fe5240dfc8b0edb03d096a4170b79a",
+            "rows": 2457946,
+            "segment_end": "2026-06",
+            "segment_start": "2026-06",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-06.zip",
+            "zip_size_bytes": 31855790
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-01.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:07.713179+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "dd82b12029ef51610cafb5014be84e16e0be0b3fcd42c493ab5228a71ecb02c4",
+            "official_checksum": "dd82b12029ef51610cafb5014be84e16e0be0b3fcd42c493ab5228a71ecb02c4",
+            "rows": 95942,
+            "segment_end": "2026-07-01",
+            "segment_start": "2026-07-01",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-01.zip",
+            "zip_size_bytes": 1254800
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:08.356118+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "63b1b194e8ac3dcf961a06779cd50bfa1e87aa99039ebc761c153c7dc35315da",
+            "official_checksum": "63b1b194e8ac3dcf961a06779cd50bfa1e87aa99039ebc761c153c7dc35315da",
+            "rows": 204914,
+            "segment_end": "2026-07-02",
+            "segment_start": "2026-07-02",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-02.zip",
+            "zip_size_bytes": 2638805
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:08.871630+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "43b040085fc1200fa57ea432ca4fea3571e09a31a1b69a9d41b2c406d0e8e35d",
+            "official_checksum": "43b040085fc1200fa57ea432ca4fea3571e09a31a1b69a9d41b2c406d0e8e35d",
+            "rows": 32991,
+            "segment_end": "2026-07-03",
+            "segment_start": "2026-07-03",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-03.zip",
+            "zip_size_bytes": 442562
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:09.482564+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "9dea04a6403236e2b9b56494246be59ab11f0942a48abea34a61a1e827917cdb",
+            "official_checksum": "9dea04a6403236e2b9b56494246be59ab11f0942a48abea34a61a1e827917cdb",
+            "rows": 12803,
+            "segment_end": "2026-07-04",
+            "segment_start": "2026-07-04",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-04.zip",
+            "zip_size_bytes": 173029
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:09.954195+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "6ceec8542dbacdb834d28675aca5e2db7694d085e8de83cef3dfa6b6482b8e4f",
+            "official_checksum": "6ceec8542dbacdb834d28675aca5e2db7694d085e8de83cef3dfa6b6482b8e4f",
+            "rows": 14272,
+            "segment_end": "2026-07-05",
+            "segment_start": "2026-07-05",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-05.zip",
+            "zip_size_bytes": 191292
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:10.571771+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "adf4f18e4592e85caa7f19258319130b18baa79cf620ad16199ef98363d72221",
+            "official_checksum": "adf4f18e4592e85caa7f19258319130b18baa79cf620ad16199ef98363d72221",
+            "rows": 106942,
+            "segment_end": "2026-07-06",
+            "segment_start": "2026-07-06",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-06.zip",
+            "zip_size_bytes": 1398418
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-07.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:11.160763+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "4ccc3f69925ebbaa9f32accc5451e4b03ca94b0a64f0b8db7a707195c8c1efc5",
+            "official_checksum": "4ccc3f69925ebbaa9f32accc5451e4b03ca94b0a64f0b8db7a707195c8c1efc5",
+            "rows": 97370,
+            "segment_end": "2026-07-07",
+            "segment_start": "2026-07-07",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-07.zip",
+            "zip_size_bytes": 1261048
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-08.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:11.669067+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "bf2fd174ae78dc9def57d4d4b9fc5ac68a7a9dda3dc1d0b952fe40bcc7dc665f",
+            "official_checksum": "bf2fd174ae78dc9def57d4d4b9fc5ac68a7a9dda3dc1d0b952fe40bcc7dc665f",
+            "rows": 95669,
+            "segment_end": "2026-07-08",
+            "segment_start": "2026-07-08",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-08.zip",
+            "zip_size_bytes": 1239028
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-09.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:12.286696+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "4ed8764a44295743cf0c3c4d8ac7523a47170ac20e0ccac8a4f96c2e09631308",
+            "official_checksum": "4ed8764a44295743cf0c3c4d8ac7523a47170ac20e0ccac8a4f96c2e09631308",
+            "rows": 88939,
+            "segment_end": "2026-07-09",
+            "segment_start": "2026-07-09",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-09.zip",
+            "zip_size_bytes": 1153733
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-10.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:12.798788+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "512c1b7ccdceacb8a5399cdd6a6f23a4996cf6167f13c7a589f491d87ba2e921",
+            "official_checksum": "512c1b7ccdceacb8a5399cdd6a6f23a4996cf6167f13c7a589f491d87ba2e921",
+            "rows": 98012,
+            "segment_end": "2026-07-10",
+            "segment_start": "2026-07-10",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-10.zip",
+            "zip_size_bytes": 1245565
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-11.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:13.271380+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "4081a5f40ef42524dc6fd9b029dd79d4b25673de4eb6b9575f385ee16eef0c00",
+            "official_checksum": "4081a5f40ef42524dc6fd9b029dd79d4b25673de4eb6b9575f385ee16eef0c00",
+            "rows": 13218,
+            "segment_end": "2026-07-11",
+            "segment_start": "2026-07-11",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-11.zip",
+            "zip_size_bytes": 176118
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-12.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:13.594484+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "145655df4b3c97942b99d7e3e8c8c47d01a783200f88adb6340b160e172ca8d2",
+            "official_checksum": "145655df4b3c97942b99d7e3e8c8c47d01a783200f88adb6340b160e172ca8d2",
+            "rows": 11054,
+            "segment_end": "2026-07-12",
+            "segment_start": "2026-07-12",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-12.zip",
+            "zip_size_bytes": 148117
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-13.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:14.106452+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "ec0c8f8ca9317a5de6e2ad6fe6b0545cad13713cf449fc317e7d92722f4da960",
+            "official_checksum": "ec0c8f8ca9317a5de6e2ad6fe6b0545cad13713cf449fc317e7d92722f4da960",
+            "rows": 95777,
+            "segment_end": "2026-07-13",
+            "segment_start": "2026-07-13",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-13.zip",
+            "zip_size_bytes": 1235029
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-14.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:14.683416+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "795a07e226d5a1267ae3591b4de03fdff95e857c74413d90eda35511d6c88a10",
+            "official_checksum": "795a07e226d5a1267ae3591b4de03fdff95e857c74413d90eda35511d6c88a10",
+            "rows": 102464,
+            "segment_end": "2026-07-14",
+            "segment_start": "2026-07-14",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-14.zip",
+            "zip_size_bytes": 1328864
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-15.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:15.383811+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "564853b9a5d8f0ce8bcc6c0fe3ec3e4d113a07e1543c8d0286a7fea7d7ff2a80",
+            "official_checksum": "564853b9a5d8f0ce8bcc6c0fe3ec3e4d113a07e1543c8d0286a7fea7d7ff2a80",
+            "rows": 94787,
+            "segment_end": "2026-07-15",
+            "segment_start": "2026-07-15",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-15.zip",
+            "zip_size_bytes": 1230234
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-16.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:18.645126+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "30f66c4558843dea328c4d91994dcc1e39abf07d47448ed3d647096d05927fff",
+            "official_checksum": "30f66c4558843dea328c4d91994dcc1e39abf07d47448ed3d647096d05927fff",
+            "rows": 100800,
+            "segment_end": "2026-07-16",
+            "segment_start": "2026-07-16",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-16.zip",
+            "zip_size_bytes": 1301965
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-17.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:19.547668+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "260b9deebefa3ea53ddc3c1887286cde3c5b3b48a2dafff4a212a929a7df1cb7",
+            "official_checksum": "260b9deebefa3ea53ddc3c1887286cde3c5b3b48a2dafff4a212a929a7df1cb7",
+            "rows": 94495,
+            "segment_end": "2026-07-17",
+            "segment_start": "2026-07-17",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-17.zip",
+            "zip_size_bytes": 1232778
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-18.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:20.034987+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "91ee0b9d9fa855823edb3b4a5ce7535cf9b77c6fd3a1583cb3d6b3c07f69852f",
+            "official_checksum": "91ee0b9d9fa855823edb3b4a5ce7535cf9b77c6fd3a1583cb3d6b3c07f69852f",
+            "rows": 11275,
+            "segment_end": "2026-07-18",
+            "segment_start": "2026-07-18",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-18.zip",
+            "zip_size_bytes": 150720
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-19.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:20.471858+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "6bc61dd7bbd9d9211baeea80d792b76f0ab7e8a591e63005deee1076cf0e80ee",
+            "official_checksum": "6bc61dd7bbd9d9211baeea80d792b76f0ab7e8a591e63005deee1076cf0e80ee",
+            "rows": 11341,
+            "segment_end": "2026-07-19",
+            "segment_start": "2026-07-19",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-19.zip",
+            "zip_size_bytes": 154142
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-20.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:21.244559+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "67f879116fa9f7ec330a015f0e2cda6902268e018095b8bbd95434d8b8faf022",
+            "official_checksum": "67f879116fa9f7ec330a015f0e2cda6902268e018095b8bbd95434d8b8faf022",
+            "rows": 82989,
+            "segment_end": "2026-07-20",
+            "segment_start": "2026-07-20",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-20.zip",
+            "zip_size_bytes": 1095593
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-21.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:21.902669+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "b76bffa6fe42673d983118e8becebfb52ed4d434ec1fed9f9c33b7d3367691ac",
+            "official_checksum": "b76bffa6fe42673d983118e8becebfb52ed4d434ec1fed9f9c33b7d3367691ac",
+            "rows": 80116,
+            "segment_end": "2026-07-21",
+            "segment_start": "2026-07-21",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-21.zip",
+            "zip_size_bytes": 1044491
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-22.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:22.762404+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "650db3b31417ba463cd915d7ac05f974ce6f78cfb368cfd3e2195e3f2f59619f",
+            "official_checksum": "650db3b31417ba463cd915d7ac05f974ce6f78cfb368cfd3e2195e3f2f59619f",
+            "rows": 183528,
+            "segment_end": "2026-07-22",
+            "segment_start": "2026-07-22",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-22.zip",
+            "zip_size_bytes": 2305804
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-23.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:51:23.672324+00:00",
+            "kind": "agg_trades",
+            "local_sha256": "dfa057ca6e64d5945f849a5b0567e4a36a84b31a20132b231f9602a8150e5a87",
+            "official_checksum": "dfa057ca6e64d5945f849a5b0567e4a36a84b31a20132b231f9602a8150e5a87",
+            "rows": 345444,
+            "segment_end": "2026-07-23",
+            "segment_start": "2026-07-23",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/TSLAUSDT/TSLAUSDT-aggTrades-2026-07-23.zip",
+            "zip_size_bytes": 4502924
+          }
+        ],
+        "funding": [
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-01.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:36.120704+00:00",
+            "kind": "funding_rate",
+            "local_sha256": "6907fa921460d83781836b0a3d5940c7944648f37df05e1982630bf0a4fffca2",
+            "official_checksum": "6907fa921460d83781836b0a3d5940c7944648f37df05e1982630bf0a4fffca2",
+            "rows": 16,
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-01.zip",
+            "zip_size_bytes": 433
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:36.469044+00:00",
+            "kind": "funding_rate",
+            "local_sha256": "6557b01e3803626bd893d90ab4698ad8660487946cf2195475920d0c12e025a7",
+            "official_checksum": "6557b01e3803626bd893d90ab4698ad8660487946cf2195475920d0c12e025a7",
+            "rows": 84,
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-02.zip",
+            "zip_size_bytes": 767
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:36.822148+00:00",
+            "kind": "funding_rate",
+            "local_sha256": "3eb639dc6556112886802d73d39579d36342b1e74a2a532a467601400b759dd5",
+            "official_checksum": "3eb639dc6556112886802d73d39579d36342b1e74a2a532a467601400b759dd5",
+            "rows": 93,
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-03.zip",
+            "zip_size_bytes": 849
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:37.178665+00:00",
+            "kind": "funding_rate",
+            "local_sha256": "6a6afa8251a8a8d8c53b0c8e316ca256bcd94254202ac2eb88a34db2d883e470",
+            "official_checksum": "6a6afa8251a8a8d8c53b0c8e316ca256bcd94254202ac2eb88a34db2d883e470",
+            "rows": 90,
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-04.zip",
+            "zip_size_bytes": 855
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:37.531050+00:00",
+            "kind": "funding_rate",
+            "local_sha256": "80faaf7a53e8059599d283d92f24161614f3d74a6aeaa216606eeeef9459d291",
+            "official_checksum": "80faaf7a53e8059599d283d92f24161614f3d74a6aeaa216606eeeef9459d291",
+            "rows": 93,
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-05.zip",
+            "zip_size_bytes": 852
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:37.803866+00:00",
+            "kind": "funding_rate",
+            "local_sha256": "ab98e6eaae07844c6950e9329cdab9952397dbc739af1be37b0bb14c52764821",
+            "official_checksum": "ab98e6eaae07844c6950e9329cdab9952397dbc739af1be37b0bb14c52764821",
+            "rows": 90,
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/TSLAUSDT/TSLAUSDT-fundingRate-2026-06.zip",
+            "zip_size_bytes": 717
+          }
+        ],
+        "klines": [
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-28.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:26.071279+00:00",
+            "kind": "klines",
+            "local_sha256": "66110e40644243c63efc980df91a223de43327a5ef4a87f58bfddda4fc46cd38",
+            "official_checksum": "66110e40644243c63efc980df91a223de43327a5ef4a87f58bfddda4fc46cd38",
+            "rows": 0,
+            "segment_end": "2026-01-28",
+            "segment_start": "2026-01-28",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-28.zip",
+            "zip_size_bytes": 22511
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-29.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:26.604785+00:00",
+            "kind": "klines",
+            "local_sha256": "b7ca02dad347433e0109a5703be2a29263c9636578f9915a42fbc7fcaed37f41",
+            "official_checksum": "b7ca02dad347433e0109a5703be2a29263c9636578f9915a42fbc7fcaed37f41",
+            "rows": 0,
+            "segment_end": "2026-01-29",
+            "segment_start": "2026-01-29",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-29.zip",
+            "zip_size_bytes": 53215
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-30.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:27.139818+00:00",
+            "kind": "klines",
+            "local_sha256": "41347c220a94e6028d3a05a5be97d75c11713d2b86d0df901958cdab24931ef9",
+            "official_checksum": "41347c220a94e6028d3a05a5be97d75c11713d2b86d0df901958cdab24931ef9",
+            "rows": 0,
+            "segment_end": "2026-01-30",
+            "segment_start": "2026-01-30",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-30.zip",
+            "zip_size_bytes": 52721
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-31.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:27.574394+00:00",
+            "kind": "klines",
+            "local_sha256": "4b99a7b36a40a068b9ef42bb814d8d85209997dc283979cee8f43636a609156a",
+            "official_checksum": "4b99a7b36a40a068b9ef42bb814d8d85209997dc283979cee8f43636a609156a",
+            "rows": 0,
+            "segment_end": "2026-01-31",
+            "segment_start": "2026-01-31",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-31.zip",
+            "zip_size_bytes": 45442
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:28.527927+00:00",
+            "kind": "klines",
+            "local_sha256": "0517c27fabc789ed4b9856512accaa9a5f68740f80c76a08df860e27f9e47246",
+            "official_checksum": "0517c27fabc789ed4b9856512accaa9a5f68740f80c76a08df860e27f9e47246",
+            "rows": 0,
+            "segment_end": "2026-02",
+            "segment_start": "2026-02",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-02.zip",
+            "zip_size_bytes": 1220132
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:29.289053+00:00",
+            "kind": "klines",
+            "local_sha256": "6fd1175984ddff329ae0e13a714c5427108cd2bb4b9f120f41c89b2004858e49",
+            "official_checksum": "6fd1175984ddff329ae0e13a714c5427108cd2bb4b9f120f41c89b2004858e49",
+            "rows": 0,
+            "segment_end": "2026-03",
+            "segment_start": "2026-03",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-03.zip",
+            "zip_size_bytes": 1446054
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:31.036867+00:00",
+            "kind": "klines",
+            "local_sha256": "425b9dce0575c8dca39c26d2a0906efa251258469b5279274fc627c1e1b0e56f",
+            "official_checksum": "425b9dce0575c8dca39c26d2a0906efa251258469b5279274fc627c1e1b0e56f",
+            "rows": 0,
+            "segment_end": "2026-04",
+            "segment_start": "2026-04",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-04.zip",
+            "zip_size_bytes": 1380665
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:32.211133+00:00",
+            "kind": "klines",
+            "local_sha256": "a7d76b11980dcac0e886fe16542f5228c75bf4a4393c3f6a7689d97428e23070",
+            "official_checksum": "a7d76b11980dcac0e886fe16542f5228c75bf4a4393c3f6a7689d97428e23070",
+            "rows": 0,
+            "segment_end": "2026-05",
+            "segment_start": "2026-05",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-05.zip",
+            "zip_size_bytes": 1407082
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:33.289084+00:00",
+            "kind": "klines",
+            "local_sha256": "9419f84e05e621c56716e53d3f5070a0ecf46ed2e9c39bac1a90c30025433441",
+            "official_checksum": "9419f84e05e621c56716e53d3f5070a0ecf46ed2e9c39bac1a90c30025433441",
+            "rows": 0,
+            "segment_end": "2026-06",
+            "segment_start": "2026-06",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-06.zip",
+            "zip_size_bytes": 1422445
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-01.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:33.920945+00:00",
+            "kind": "klines",
+            "local_sha256": "f85f03e58749a5dd1f9799e6cb8ae742460de7eebfe504ed8947eeec958b06d7",
+            "official_checksum": "f85f03e58749a5dd1f9799e6cb8ae742460de7eebfe504ed8947eeec958b06d7",
+            "rows": 0,
+            "segment_end": "2026-07-01",
+            "segment_start": "2026-07-01",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-01.zip",
+            "zip_size_bytes": 50298
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:34.329147+00:00",
+            "kind": "klines",
+            "local_sha256": "0ecd3be35b5193dab52e3289f8eba809e7deeca5d30048c65beeb4fc96f5d808",
+            "official_checksum": "0ecd3be35b5193dab52e3289f8eba809e7deeca5d30048c65beeb4fc96f5d808",
+            "rows": 0,
+            "segment_end": "2026-07-02",
+            "segment_start": "2026-07-02",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-02.zip",
+            "zip_size_bytes": 51640
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:34.797388+00:00",
+            "kind": "klines",
+            "local_sha256": "ba88a18a1f768f5136d58e0b19f505f4d7d5125b6514aa89ee946234ff10821c",
+            "official_checksum": "ba88a18a1f768f5136d58e0b19f505f4d7d5125b6514aa89ee946234ff10821c",
+            "rows": 0,
+            "segment_end": "2026-07-03",
+            "segment_start": "2026-07-03",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-03.zip",
+            "zip_size_bytes": 45894
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:35.201648+00:00",
+            "kind": "klines",
+            "local_sha256": "cdf414fbdff012ddff981295d210c9a8b1d523de4de8ec31a82100821facb1da",
+            "official_checksum": "cdf414fbdff012ddff981295d210c9a8b1d523de4de8ec31a82100821facb1da",
+            "rows": 0,
+            "segment_end": "2026-07-04",
+            "segment_start": "2026-07-04",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-04.zip",
+            "zip_size_bytes": 39790
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:35.616226+00:00",
+            "kind": "klines",
+            "local_sha256": "88dae558713071785548919326dd64f55ca119c2ef107e66cd646303375c3926",
+            "official_checksum": "88dae558713071785548919326dd64f55ca119c2ef107e66cd646303375c3926",
+            "rows": 0,
+            "segment_end": "2026-07-05",
+            "segment_start": "2026-07-05",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-05.zip",
+            "zip_size_bytes": 40170
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:35.978072+00:00",
+            "kind": "klines",
+            "local_sha256": "d79db2806220e63a81ab0bae81a470c18ec7c609302b51efd6975fcfc82efca7",
+            "official_checksum": "d79db2806220e63a81ab0bae81a470c18ec7c609302b51efd6975fcfc82efca7",
+            "rows": 0,
+            "segment_end": "2026-07-06",
+            "segment_start": "2026-07-06",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-06.zip",
+            "zip_size_bytes": 49907
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-07.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:36.444795+00:00",
+            "kind": "klines",
+            "local_sha256": "9b84cdd3f40e051e3d5faa7ff3592f57e750ced76b36ca8dadc544cad3be7e54",
+            "official_checksum": "9b84cdd3f40e051e3d5faa7ff3592f57e750ced76b36ca8dadc544cad3be7e54",
+            "rows": 0,
+            "segment_end": "2026-07-07",
+            "segment_start": "2026-07-07",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-07.zip",
+            "zip_size_bytes": 50339
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-08.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:36.779591+00:00",
+            "kind": "klines",
+            "local_sha256": "ed18d328c7f284fd1a790dedbdc4793e88da6ffa4f7fe9d327817ce21fa33400",
+            "official_checksum": "ed18d328c7f284fd1a790dedbdc4793e88da6ffa4f7fe9d327817ce21fa33400",
+            "rows": 0,
+            "segment_end": "2026-07-08",
+            "segment_start": "2026-07-08",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-08.zip",
+            "zip_size_bytes": 49713
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-09.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:37.195377+00:00",
+            "kind": "klines",
+            "local_sha256": "e9283ea0bf743b4b9094ead964de3da042a151bcf68f70edb463767181e60f30",
+            "official_checksum": "e9283ea0bf743b4b9094ead964de3da042a151bcf68f70edb463767181e60f30",
+            "rows": 0,
+            "segment_end": "2026-07-09",
+            "segment_start": "2026-07-09",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-09.zip",
+            "zip_size_bytes": 49863
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-10.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:37.650553+00:00",
+            "kind": "klines",
+            "local_sha256": "e64bb420db9d37d734917ed28c614007b56038cf65a2ecf175906c5ac1498533",
+            "official_checksum": "e64bb420db9d37d734917ed28c614007b56038cf65a2ecf175906c5ac1498533",
+            "rows": 0,
+            "segment_end": "2026-07-10",
+            "segment_start": "2026-07-10",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-10.zip",
+            "zip_size_bytes": 48240
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-11.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:38.083767+00:00",
+            "kind": "klines",
+            "local_sha256": "2c64869d302cc73c553eecbc7b8bfbed6e79fc9d525e8c2e3ecc9664e5fe4272",
+            "official_checksum": "2c64869d302cc73c553eecbc7b8bfbed6e79fc9d525e8c2e3ecc9664e5fe4272",
+            "rows": 0,
+            "segment_end": "2026-07-11",
+            "segment_start": "2026-07-11",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-11.zip",
+            "zip_size_bytes": 37669
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-12.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:38.452424+00:00",
+            "kind": "klines",
+            "local_sha256": "caa815857d15c0b92cef40a1e4a9de9114ff5b93287fd1d3a8b2966e1f1f0628",
+            "official_checksum": "caa815857d15c0b92cef40a1e4a9de9114ff5b93287fd1d3a8b2966e1f1f0628",
+            "rows": 0,
+            "segment_end": "2026-07-12",
+            "segment_start": "2026-07-12",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-12.zip",
+            "zip_size_bytes": 36261
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-13.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:38.963255+00:00",
+            "kind": "klines",
+            "local_sha256": "fa2af2b5192e02f4547627d71a17e68b62ef24cc558dc08806377d51432ebb0c",
+            "official_checksum": "fa2af2b5192e02f4547627d71a17e68b62ef24cc558dc08806377d51432ebb0c",
+            "rows": 0,
+            "segment_end": "2026-07-13",
+            "segment_start": "2026-07-13",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-13.zip",
+            "zip_size_bytes": 49464
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-14.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:39.394710+00:00",
+            "kind": "klines",
+            "local_sha256": "6190f6b7da5d6777fac5f4b1f0b158d7942e6165f6c22e7872427e4b96052925",
+            "official_checksum": "6190f6b7da5d6777fac5f4b1f0b158d7942e6165f6c22e7872427e4b96052925",
+            "rows": 0,
+            "segment_end": "2026-07-14",
+            "segment_start": "2026-07-14",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-14.zip",
+            "zip_size_bytes": 49280
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-15.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:39.771553+00:00",
+            "kind": "klines",
+            "local_sha256": "5db6e031590366516759da6691f70e9f26aaaa40cb551bbcb0a488c9e111b78f",
+            "official_checksum": "5db6e031590366516759da6691f70e9f26aaaa40cb551bbcb0a488c9e111b78f",
+            "rows": 0,
+            "segment_end": "2026-07-15",
+            "segment_start": "2026-07-15",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-15.zip",
+            "zip_size_bytes": 47757
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-16.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:40.130741+00:00",
+            "kind": "klines",
+            "local_sha256": "f4129d5615ce319713c2f63c3a3e084c0b8acf45a701cd3966f97e12aaf10894",
+            "official_checksum": "f4129d5615ce319713c2f63c3a3e084c0b8acf45a701cd3966f97e12aaf10894",
+            "rows": 0,
+            "segment_end": "2026-07-16",
+            "segment_start": "2026-07-16",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-16.zip",
+            "zip_size_bytes": 48641
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-17.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:41.308643+00:00",
+            "kind": "klines",
+            "local_sha256": "24bf34fa78c1c4bbc986b6592f57ce0155162931701cd13b934f6da9d7616277",
+            "official_checksum": "24bf34fa78c1c4bbc986b6592f57ce0155162931701cd13b934f6da9d7616277",
+            "rows": 0,
+            "segment_end": "2026-07-17",
+            "segment_start": "2026-07-17",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-17.zip",
+            "zip_size_bytes": 49023
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-18.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:41.741941+00:00",
+            "kind": "klines",
+            "local_sha256": "ce46c09bceafafe40483c596650ea87efb3c30a298c73193cc534dc3af13590d",
+            "official_checksum": "ce46c09bceafafe40483c596650ea87efb3c30a298c73193cc534dc3af13590d",
+            "rows": 0,
+            "segment_end": "2026-07-18",
+            "segment_start": "2026-07-18",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-18.zip",
+            "zip_size_bytes": 35167
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-19.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:42.063702+00:00",
+            "kind": "klines",
+            "local_sha256": "d37cf89dc3e10d69d6fa332515cebc75662e5e12ae2946e0625eaf78ab8a7723",
+            "official_checksum": "d37cf89dc3e10d69d6fa332515cebc75662e5e12ae2946e0625eaf78ab8a7723",
+            "rows": 0,
+            "segment_end": "2026-07-19",
+            "segment_start": "2026-07-19",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-19.zip",
+            "zip_size_bytes": 36283
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-20.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:42.481161+00:00",
+            "kind": "klines",
+            "local_sha256": "fb20cbd299fcb5f0a64b328693e1022999936c978a078251facf93bb77d25c39",
+            "official_checksum": "fb20cbd299fcb5f0a64b328693e1022999936c978a078251facf93bb77d25c39",
+            "rows": 0,
+            "segment_end": "2026-07-20",
+            "segment_start": "2026-07-20",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-20.zip",
+            "zip_size_bytes": 49060
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-21.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:42.833213+00:00",
+            "kind": "klines",
+            "local_sha256": "402ed04ca8d92c8eb284f0c48239d57d271be9d640531ab27d8d63a90a95a194",
+            "official_checksum": "402ed04ca8d92c8eb284f0c48239d57d271be9d640531ab27d8d63a90a95a194",
+            "rows": 0,
+            "segment_end": "2026-07-21",
+            "segment_start": "2026-07-21",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-21.zip",
+            "zip_size_bytes": 49124
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-22.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:43.207262+00:00",
+            "kind": "klines",
+            "local_sha256": "2492740f77db8c6c9a97f87804aadd0239859fd2fe64433fdaded7df4df343a7",
+            "official_checksum": "2492740f77db8c6c9a97f87804aadd0239859fd2fe64433fdaded7df4df343a7",
+            "rows": 0,
+            "segment_end": "2026-07-22",
+            "segment_start": "2026-07-22",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-22.zip",
+            "zip_size_bytes": 51238
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-23.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:43.693538+00:00",
+            "kind": "klines",
+            "local_sha256": "73dc09f22308da1f0111e88611857905a6405de7937f1dedebca21b93e1874c0",
+            "official_checksum": "73dc09f22308da1f0111e88611857905a6405de7937f1dedebca21b93e1874c0",
+            "rows": 0,
+            "segment_end": "2026-07-23",
+            "segment_start": "2026-07-23",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/klines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-23.zip",
+            "zip_size_bytes": 54639
+          }
+        ],
+        "mark_price": [
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-28.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:48.261539+00:00",
+            "kind": "mark_price",
+            "local_sha256": "0cd71ea381cdcf98fb406798f091775700032b0a41e5db084abe022780700bae",
+            "official_checksum": "0cd71ea381cdcf98fb406798f091775700032b0a41e5db084abe022780700bae",
+            "segment_end": "2026-01-28",
+            "segment_start": "2026-01-28",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-28.zip",
+            "zip_size_bytes": 30560
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-29.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:48.687619+00:00",
+            "kind": "mark_price",
+            "local_sha256": "d25647b5a7be32b7b26985d169e1fe7601fcfceecc2a75d9b6e1175f93632310",
+            "official_checksum": "d25647b5a7be32b7b26985d169e1fe7601fcfceecc2a75d9b6e1175f93632310",
+            "segment_end": "2026-01-29",
+            "segment_start": "2026-01-29",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-29.zip",
+            "zip_size_bytes": 31676
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-30.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:49.183401+00:00",
+            "kind": "mark_price",
+            "local_sha256": "a6aa2b012988e99e7fdcc00395eba67be36a7246913726e2701c9ce3fef911b2",
+            "official_checksum": "a6aa2b012988e99e7fdcc00395eba67be36a7246913726e2701c9ce3fef911b2",
+            "segment_end": "2026-01-30",
+            "segment_start": "2026-01-30",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-30.zip",
+            "zip_size_bytes": 31893
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-31.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:49.901179+00:00",
+            "kind": "mark_price",
+            "local_sha256": "95e6db35af84e419200b2fba180f39983ce2a207f25d100c84e81a6648094792",
+            "official_checksum": "95e6db35af84e419200b2fba180f39983ce2a207f25d100c84e81a6648094792",
+            "segment_end": "2026-01-31",
+            "segment_start": "2026-01-31",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-31.zip",
+            "zip_size_bytes": 28942
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:51.149508+00:00",
+            "kind": "mark_price",
+            "local_sha256": "76aa9f17bb645b5e6ab59147aeb7e5c3f03a7c8a289907f8ed862731e8c750cd",
+            "official_checksum": "76aa9f17bb645b5e6ab59147aeb7e5c3f03a7c8a289907f8ed862731e8c750cd",
+            "segment_end": "2026-02",
+            "segment_start": "2026-02",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-02.zip",
+            "zip_size_bytes": 830407
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:51.635687+00:00",
+            "kind": "mark_price",
+            "local_sha256": "ac9b4a93e92770a8c82620c9e6d92668f56c9c431d02f8236eb1ee74f801da2c",
+            "official_checksum": "ac9b4a93e92770a8c82620c9e6d92668f56c9c431d02f8236eb1ee74f801da2c",
+            "segment_end": "2026-03",
+            "segment_start": "2026-03",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-03.zip",
+            "zip_size_bytes": 948155
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:52.632230+00:00",
+            "kind": "mark_price",
+            "local_sha256": "3701f475555daa9d89334afe7d9187359e2bcbe7a742feaaa054e8e2674402ba",
+            "official_checksum": "3701f475555daa9d89334afe7d9187359e2bcbe7a742feaaa054e8e2674402ba",
+            "segment_end": "2026-04",
+            "segment_start": "2026-04",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-04.zip",
+            "zip_size_bytes": 887910
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:53.430228+00:00",
+            "kind": "mark_price",
+            "local_sha256": "23017c5ce2f54d58db935b9302a82fede8deab2756c7513d32b4c5a63187255b",
+            "official_checksum": "23017c5ce2f54d58db935b9302a82fede8deab2756c7513d32b4c5a63187255b",
+            "segment_end": "2026-05",
+            "segment_start": "2026-05",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-05.zip",
+            "zip_size_bytes": 916875
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:54.166519+00:00",
+            "kind": "mark_price",
+            "local_sha256": "70ea3b7aef985da5741e69deb95a2f1ba4f51f0c11b53fc590bd793d490bdc3f",
+            "official_checksum": "70ea3b7aef985da5741e69deb95a2f1ba4f51f0c11b53fc590bd793d490bdc3f",
+            "segment_end": "2026-06",
+            "segment_start": "2026-06",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-06.zip",
+            "zip_size_bytes": 879451
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-01.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:54.738182+00:00",
+            "kind": "mark_price",
+            "local_sha256": "f0b11e7cb178df953a678c9295d530bce71f57294545ae4ddaa81f5c2c879a9c",
+            "official_checksum": "f0b11e7cb178df953a678c9295d530bce71f57294545ae4ddaa81f5c2c879a9c",
+            "segment_end": "2026-07-01",
+            "segment_start": "2026-07-01",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-01.zip",
+            "zip_size_bytes": 32210
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:55.170079+00:00",
+            "kind": "mark_price",
+            "local_sha256": "f823dd29bb06b285644dfa30d0a503c19a009257f7f033a202252c04540d8655",
+            "official_checksum": "f823dd29bb06b285644dfa30d0a503c19a009257f7f033a202252c04540d8655",
+            "segment_end": "2026-07-02",
+            "segment_start": "2026-07-02",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-02.zip",
+            "zip_size_bytes": 32548
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:55.593446+00:00",
+            "kind": "mark_price",
+            "local_sha256": "bb8edaf0bd63477748097dda28d151b6e40de9444dd68ebc30ddf42679e8ebd0",
+            "official_checksum": "bb8edaf0bd63477748097dda28d151b6e40de9444dd68ebc30ddf42679e8ebd0",
+            "segment_end": "2026-07-03",
+            "segment_start": "2026-07-03",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-03.zip",
+            "zip_size_bytes": 28298
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:56.012237+00:00",
+            "kind": "mark_price",
+            "local_sha256": "9b4d70b0b1abbfa5d31bd18111236baed561489def306e3fba08d91c4c68a71a",
+            "official_checksum": "9b4d70b0b1abbfa5d31bd18111236baed561489def306e3fba08d91c4c68a71a",
+            "segment_end": "2026-07-04",
+            "segment_start": "2026-07-04",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-04.zip",
+            "zip_size_bytes": 27135
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:56.479747+00:00",
+            "kind": "mark_price",
+            "local_sha256": "22702d0608634bf5570b8dc1bff1a5dd1cc8f99301dafa64ec60129f2068031c",
+            "official_checksum": "22702d0608634bf5570b8dc1bff1a5dd1cc8f99301dafa64ec60129f2068031c",
+            "segment_end": "2026-07-05",
+            "segment_start": "2026-07-05",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-05.zip",
+            "zip_size_bytes": 27413
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:56.904383+00:00",
+            "kind": "mark_price",
+            "local_sha256": "b0f2a1c5ac1c04bb144cca55100e5dc0584f8b778a9d1420a3ba6852ba3fc852",
+            "official_checksum": "b0f2a1c5ac1c04bb144cca55100e5dc0584f8b778a9d1420a3ba6852ba3fc852",
+            "segment_end": "2026-07-06",
+            "segment_start": "2026-07-06",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-06.zip",
+            "zip_size_bytes": 32237
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-07.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:57.247040+00:00",
+            "kind": "mark_price",
+            "local_sha256": "f55e280fab4ba750858185928d1aef06cef4c206ad3eab2a2cb7eeb435805b43",
+            "official_checksum": "f55e280fab4ba750858185928d1aef06cef4c206ad3eab2a2cb7eeb435805b43",
+            "segment_end": "2026-07-07",
+            "segment_start": "2026-07-07",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-07.zip",
+            "zip_size_bytes": 32632
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-08.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:57.765372+00:00",
+            "kind": "mark_price",
+            "local_sha256": "604557fd60892deb96ff9e492fcab8773ae141897cb31bc190fe9c3050d6b0c9",
+            "official_checksum": "604557fd60892deb96ff9e492fcab8773ae141897cb31bc190fe9c3050d6b0c9",
+            "segment_end": "2026-07-08",
+            "segment_start": "2026-07-08",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-08.zip",
+            "zip_size_bytes": 32118
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-09.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:58.330632+00:00",
+            "kind": "mark_price",
+            "local_sha256": "e2676f3843f48c59aa981bc3e9b9c7ebaa0bbaf9dbd6a62fc5311dca6a8541d1",
+            "official_checksum": "e2676f3843f48c59aa981bc3e9b9c7ebaa0bbaf9dbd6a62fc5311dca6a8541d1",
+            "segment_end": "2026-07-09",
+            "segment_start": "2026-07-09",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-09.zip",
+            "zip_size_bytes": 31559
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-10.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:58.683543+00:00",
+            "kind": "mark_price",
+            "local_sha256": "b0d7e04493075e654c3bce6f793a91b1e3cd8c486183518a9f2a926bcb332b51",
+            "official_checksum": "b0d7e04493075e654c3bce6f793a91b1e3cd8c486183518a9f2a926bcb332b51",
+            "segment_end": "2026-07-10",
+            "segment_start": "2026-07-10",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-10.zip",
+            "zip_size_bytes": 30808
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-11.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:59.030947+00:00",
+            "kind": "mark_price",
+            "local_sha256": "f645ac334dc6e8dc31fbab80af2a870eb71149bb41a62388ff484eb6fe7010b8",
+            "official_checksum": "f645ac334dc6e8dc31fbab80af2a870eb71149bb41a62388ff484eb6fe7010b8",
+            "segment_end": "2026-07-11",
+            "segment_start": "2026-07-11",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-11.zip",
+            "zip_size_bytes": 26345
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-12.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:59.488538+00:00",
+            "kind": "mark_price",
+            "local_sha256": "981bdf86d638bbce044c84b3031dddad056d6d6f0190e30b6691d98543c63ca4",
+            "official_checksum": "981bdf86d638bbce044c84b3031dddad056d6d6f0190e30b6691d98543c63ca4",
+            "segment_end": "2026-07-12",
+            "segment_start": "2026-07-12",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-12.zip",
+            "zip_size_bytes": 25978
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-13.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:49:59.937358+00:00",
+            "kind": "mark_price",
+            "local_sha256": "4133551cecc29943dc58628f15e4a4489a132b5be24b0c446035c1fa91217d50",
+            "official_checksum": "4133551cecc29943dc58628f15e4a4489a132b5be24b0c446035c1fa91217d50",
+            "segment_end": "2026-07-13",
+            "segment_start": "2026-07-13",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-13.zip",
+            "zip_size_bytes": 31780
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-14.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:00.623123+00:00",
+            "kind": "mark_price",
+            "local_sha256": "f307d5c6adfe5dd0ac4a9012bbc638842eeddf6f8b92325bd8adb9f966f26cd8",
+            "official_checksum": "f307d5c6adfe5dd0ac4a9012bbc638842eeddf6f8b92325bd8adb9f966f26cd8",
+            "segment_end": "2026-07-14",
+            "segment_start": "2026-07-14",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-14.zip",
+            "zip_size_bytes": 31181
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-15.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:01.079282+00:00",
+            "kind": "mark_price",
+            "local_sha256": "4ba80c528505d913e1035ec378350aea14a3281788ced50d02b45d49325bc8bd",
+            "official_checksum": "4ba80c528505d913e1035ec378350aea14a3281788ced50d02b45d49325bc8bd",
+            "segment_end": "2026-07-15",
+            "segment_start": "2026-07-15",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-15.zip",
+            "zip_size_bytes": 30914
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-16.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:01.501087+00:00",
+            "kind": "mark_price",
+            "local_sha256": "135456daf56ffb6c1ad1796e7c96a3bdf4820a1200b1e96a23745750d28a81fc",
+            "official_checksum": "135456daf56ffb6c1ad1796e7c96a3bdf4820a1200b1e96a23745750d28a81fc",
+            "segment_end": "2026-07-16",
+            "segment_start": "2026-07-16",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-16.zip",
+            "zip_size_bytes": 31696
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-17.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:01.929031+00:00",
+            "kind": "mark_price",
+            "local_sha256": "ffc22803506b0adbe751178b17443b5974c7f3ac3349900b910755b3000a9f6b",
+            "official_checksum": "ffc22803506b0adbe751178b17443b5974c7f3ac3349900b910755b3000a9f6b",
+            "segment_end": "2026-07-17",
+            "segment_start": "2026-07-17",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-17.zip",
+            "zip_size_bytes": 32897
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-18.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:02.345998+00:00",
+            "kind": "mark_price",
+            "local_sha256": "4531634bae3576759300a7df62722d73dd157a716749d69add5a2d5308249242",
+            "official_checksum": "4531634bae3576759300a7df62722d73dd157a716749d69add5a2d5308249242",
+            "segment_end": "2026-07-18",
+            "segment_start": "2026-07-18",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-18.zip",
+            "zip_size_bytes": 24699
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-19.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:02.784940+00:00",
+            "kind": "mark_price",
+            "local_sha256": "5f9b352255a14ee832b315aea92695edc83aa1679b2acebc33e267dbb5ffdb3c",
+            "official_checksum": "5f9b352255a14ee832b315aea92695edc83aa1679b2acebc33e267dbb5ffdb3c",
+            "segment_end": "2026-07-19",
+            "segment_start": "2026-07-19",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-19.zip",
+            "zip_size_bytes": 25481
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-20.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:03.143615+00:00",
+            "kind": "mark_price",
+            "local_sha256": "163b55be25c8aa35c0776c1c1e5d0b913cd7d3004a14c32a7e0254505836c311",
+            "official_checksum": "163b55be25c8aa35c0776c1c1e5d0b913cd7d3004a14c32a7e0254505836c311",
+            "segment_end": "2026-07-20",
+            "segment_start": "2026-07-20",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-20.zip",
+            "zip_size_bytes": 32167
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-21.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:03.650934+00:00",
+            "kind": "mark_price",
+            "local_sha256": "e1cf3b0109787b079f45cf8d168159ca0b971a1fd34f360560a88aa21b04fb65",
+            "official_checksum": "e1cf3b0109787b079f45cf8d168159ca0b971a1fd34f360560a88aa21b04fb65",
+            "segment_end": "2026-07-21",
+            "segment_start": "2026-07-21",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-21.zip",
+            "zip_size_bytes": 31787
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-22.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:04.123503+00:00",
+            "kind": "mark_price",
+            "local_sha256": "30660cf4366a681e4d54664fb40348d76673fab7a15f8a1807af79dc725cf54f",
+            "official_checksum": "30660cf4366a681e4d54664fb40348d76673fab7a15f8a1807af79dc725cf54f",
+            "segment_end": "2026-07-22",
+            "segment_start": "2026-07-22",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-22.zip",
+            "zip_size_bytes": 33188
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-23.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:04.642529+00:00",
+            "kind": "mark_price",
+            "local_sha256": "aadea0ecbcbe47da20c793e880cbbed77ac150c593fd950884128ab1e42f4ae2",
+            "official_checksum": "aadea0ecbcbe47da20c793e880cbbed77ac150c593fd950884128ab1e42f4ae2",
+            "segment_end": "2026-07-23",
+            "segment_start": "2026-07-23",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/markPriceKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-23.zip",
+            "zip_size_bytes": 33201
+          }
+        ],
+        "premium_index": [
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-28.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:20.303383+00:00",
+            "kind": "premium_index",
+            "local_sha256": "4158379ffcbdabea4c59fc16c19f52a40decd502b72fe4f29ce0ed83b3759a2b",
+            "official_checksum": "4158379ffcbdabea4c59fc16c19f52a40decd502b72fe4f29ce0ed83b3759a2b",
+            "segment_end": "2026-01-28",
+            "segment_start": "2026-01-28",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-28.zip",
+            "zip_size_bytes": 17781
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-29.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:20.759878+00:00",
+            "kind": "premium_index",
+            "local_sha256": "b0d7706b9cfc281a8b602d3247a28f4485fe0f19fc7a58efbec11572b4e9577a",
+            "official_checksum": "b0d7706b9cfc281a8b602d3247a28f4485fe0f19fc7a58efbec11572b4e9577a",
+            "segment_end": "2026-01-29",
+            "segment_start": "2026-01-29",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-29.zip",
+            "zip_size_bytes": 29866
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-30.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:21.154078+00:00",
+            "kind": "premium_index",
+            "local_sha256": "1873bb47893447e281dfd2593ebe47e1fa730042623ed1671ab691b44e337e11",
+            "official_checksum": "1873bb47893447e281dfd2593ebe47e1fa730042623ed1671ab691b44e337e11",
+            "segment_end": "2026-01-30",
+            "segment_start": "2026-01-30",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-30.zip",
+            "zip_size_bytes": 29794
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-31.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:21.431748+00:00",
+            "kind": "premium_index",
+            "local_sha256": "ab3d15c5903e969761289aacfcfd9356c4a3d3bdfa9ac7c6fdf9f76f8600887d",
+            "official_checksum": "ab3d15c5903e969761289aacfcfd9356c4a3d3bdfa9ac7c6fdf9f76f8600887d",
+            "segment_end": "2026-01-31",
+            "segment_start": "2026-01-31",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-01-31.zip",
+            "zip_size_bytes": 27708
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:22.056867+00:00",
+            "kind": "premium_index",
+            "local_sha256": "c4360537154596f73b5512583b1638776f3a0a2d0cfe7617c4ae9acacaad9192",
+            "official_checksum": "c4360537154596f73b5512583b1638776f3a0a2d0cfe7617c4ae9acacaad9192",
+            "segment_end": "2026-02",
+            "segment_start": "2026-02",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-02.zip",
+            "zip_size_bytes": 720891
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:22.739924+00:00",
+            "kind": "premium_index",
+            "local_sha256": "2294cf1d24ef8ade722c06511a54bdccd0d5fa6580a7528dd89aaf453c0b9cb5",
+            "official_checksum": "2294cf1d24ef8ade722c06511a54bdccd0d5fa6580a7528dd89aaf453c0b9cb5",
+            "segment_end": "2026-03",
+            "segment_start": "2026-03",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-03.zip",
+            "zip_size_bytes": 820163
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:23.348152+00:00",
+            "kind": "premium_index",
+            "local_sha256": "ccdd54fff855a4d6333641b36e1b515999ada5f1e9304f351e0f73e78eff6524",
+            "official_checksum": "ccdd54fff855a4d6333641b36e1b515999ada5f1e9304f351e0f73e78eff6524",
+            "segment_end": "2026-04",
+            "segment_start": "2026-04",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-04.zip",
+            "zip_size_bytes": 777079
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:23.884224+00:00",
+            "kind": "premium_index",
+            "local_sha256": "34ad007fbeb55fa3bd5cc351d0ccd6311cc90c3b11332b252213a6217b9a91bb",
+            "official_checksum": "34ad007fbeb55fa3bd5cc351d0ccd6311cc90c3b11332b252213a6217b9a91bb",
+            "segment_end": "2026-05",
+            "segment_start": "2026-05",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-05.zip",
+            "zip_size_bytes": 826850
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:24.534339+00:00",
+            "kind": "premium_index",
+            "local_sha256": "aa29792706f755d0a8eb85d18d1bcb1f9cc31863418b732dcb8c13de6b898e5c",
+            "official_checksum": "aa29792706f755d0a8eb85d18d1bcb1f9cc31863418b732dcb8c13de6b898e5c",
+            "segment_end": "2026-06",
+            "segment_start": "2026-06",
+            "source": "monthly_archive",
+            "url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-06.zip",
+            "zip_size_bytes": 726474
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-01.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:25.012786+00:00",
+            "kind": "premium_index",
+            "local_sha256": "4ac8af9994bee25e13610a17e38e33bf6e9f1a4d1fef177b1f50b7947abfcae4",
+            "official_checksum": "4ac8af9994bee25e13610a17e38e33bf6e9f1a4d1fef177b1f50b7947abfcae4",
+            "segment_end": "2026-07-01",
+            "segment_start": "2026-07-01",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-01.zip",
+            "zip_size_bytes": 28002
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-02.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:25.432547+00:00",
+            "kind": "premium_index",
+            "local_sha256": "d69a91d59c64e944eda03ddf8c24aded0c4bb198773c0f8ce17f863be5ecf6c6",
+            "official_checksum": "d69a91d59c64e944eda03ddf8c24aded0c4bb198773c0f8ce17f863be5ecf6c6",
+            "segment_end": "2026-07-02",
+            "segment_start": "2026-07-02",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-02.zip",
+            "zip_size_bytes": 28532
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-03.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:25.828006+00:00",
+            "kind": "premium_index",
+            "local_sha256": "cda1dcf3df114911de7f54fa0ec0c645bf4f0f169d2a83502df9cd3d19eecd54",
+            "official_checksum": "cda1dcf3df114911de7f54fa0ec0c645bf4f0f169d2a83502df9cd3d19eecd54",
+            "segment_end": "2026-07-03",
+            "segment_start": "2026-07-03",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-03.zip",
+            "zip_size_bytes": 27312
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-04.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:26.226840+00:00",
+            "kind": "premium_index",
+            "local_sha256": "96974e47f2f02f63e213a01877b445ad35fd5d63fbfb22d9431af8f5e34b306f",
+            "official_checksum": "96974e47f2f02f63e213a01877b445ad35fd5d63fbfb22d9431af8f5e34b306f",
+            "segment_end": "2026-07-04",
+            "segment_start": "2026-07-04",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-04.zip",
+            "zip_size_bytes": 25530
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-05.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:26.709031+00:00",
+            "kind": "premium_index",
+            "local_sha256": "e41e333c97437a8262d7520c03c3c6d5d82a7e3fce3653b845d51dd7a74170f6",
+            "official_checksum": "e41e333c97437a8262d7520c03c3c6d5d82a7e3fce3653b845d51dd7a74170f6",
+            "segment_end": "2026-07-05",
+            "segment_start": "2026-07-05",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-05.zip",
+            "zip_size_bytes": 25918
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-06.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:27.094399+00:00",
+            "kind": "premium_index",
+            "local_sha256": "f9993b69fefb1370ebfe944aa834af7bd43994645dac994f2a31f5788e58d770",
+            "official_checksum": "f9993b69fefb1370ebfe944aa834af7bd43994645dac994f2a31f5788e58d770",
+            "segment_end": "2026-07-06",
+            "segment_start": "2026-07-06",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-06.zip",
+            "zip_size_bytes": 27597
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-07.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:27.324115+00:00",
+            "kind": "premium_index",
+            "local_sha256": "a6f8dbfee7f2972c6c3fa819252fde31bc26573a92221549043b5e8fda71b466",
+            "official_checksum": "a6f8dbfee7f2972c6c3fa819252fde31bc26573a92221549043b5e8fda71b466",
+            "segment_end": "2026-07-07",
+            "segment_start": "2026-07-07",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-07.zip",
+            "zip_size_bytes": 26259
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-08.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:27.659649+00:00",
+            "kind": "premium_index",
+            "local_sha256": "5cb3ff2b6b668777df89ec38aaf1097f4ecfdbeb5f0b1bfd8a7a35783c89c6f5",
+            "official_checksum": "5cb3ff2b6b668777df89ec38aaf1097f4ecfdbeb5f0b1bfd8a7a35783c89c6f5",
+            "segment_end": "2026-07-08",
+            "segment_start": "2026-07-08",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-08.zip",
+            "zip_size_bytes": 27864
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-09.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:28.063118+00:00",
+            "kind": "premium_index",
+            "local_sha256": "5e36efc9b964e09f0d0cd80f01a0a6676b6c4df91544012251ed9cf9a24c46d6",
+            "official_checksum": "5e36efc9b964e09f0d0cd80f01a0a6676b6c4df91544012251ed9cf9a24c46d6",
+            "segment_end": "2026-07-09",
+            "segment_start": "2026-07-09",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-09.zip",
+            "zip_size_bytes": 28138
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-10.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:28.373425+00:00",
+            "kind": "premium_index",
+            "local_sha256": "f19f16d5b133b8d5a9f7368e63082c40a30f09ba2f9948694e819a663451d9cc",
+            "official_checksum": "f19f16d5b133b8d5a9f7368e63082c40a30f09ba2f9948694e819a663451d9cc",
+            "segment_end": "2026-07-10",
+            "segment_start": "2026-07-10",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-10.zip",
+            "zip_size_bytes": 28613
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-11.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:28.764271+00:00",
+            "kind": "premium_index",
+            "local_sha256": "92d5f2857e4fdd03430fb0fc9af1349cc15d064cb7dc5b77af355cd534aa5f9e",
+            "official_checksum": "92d5f2857e4fdd03430fb0fc9af1349cc15d064cb7dc5b77af355cd534aa5f9e",
+            "segment_end": "2026-07-11",
+            "segment_start": "2026-07-11",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-11.zip",
+            "zip_size_bytes": 25306
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-12.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:29.175360+00:00",
+            "kind": "premium_index",
+            "local_sha256": "7e93afcec043bec0b4547a0e73299538ca28e2ebc2217027eb89b979c6751caa",
+            "official_checksum": "7e93afcec043bec0b4547a0e73299538ca28e2ebc2217027eb89b979c6751caa",
+            "segment_end": "2026-07-12",
+            "segment_start": "2026-07-12",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-12.zip",
+            "zip_size_bytes": 25485
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-13.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:29.569722+00:00",
+            "kind": "premium_index",
+            "local_sha256": "f13479e532bfb631cd0cfe1f62bbc13827e7a3800337617ab974340c3dca0bf1",
+            "official_checksum": "f13479e532bfb631cd0cfe1f62bbc13827e7a3800337617ab974340c3dca0bf1",
+            "segment_end": "2026-07-13",
+            "segment_start": "2026-07-13",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-13.zip",
+            "zip_size_bytes": 28761
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-14.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:29.986996+00:00",
+            "kind": "premium_index",
+            "local_sha256": "3c0b053cf7078c4707fa968b82341a247a550e92b99924d222d3d8eed83cccc0",
+            "official_checksum": "3c0b053cf7078c4707fa968b82341a247a550e92b99924d222d3d8eed83cccc0",
+            "segment_end": "2026-07-14",
+            "segment_start": "2026-07-14",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-14.zip",
+            "zip_size_bytes": 29376
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-15.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:30.424746+00:00",
+            "kind": "premium_index",
+            "local_sha256": "827b824c7fe6daf67db328396a730c230ff4875b2bdb89c2ae94b7b2c72a724b",
+            "official_checksum": "827b824c7fe6daf67db328396a730c230ff4875b2bdb89c2ae94b7b2c72a724b",
+            "segment_end": "2026-07-15",
+            "segment_start": "2026-07-15",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-15.zip",
+            "zip_size_bytes": 28078
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-16.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:30.829116+00:00",
+            "kind": "premium_index",
+            "local_sha256": "68fb160819170c8e54ccd183b9674eb9a76bf9ffe82cd73ffcbda25ceb5effb4",
+            "official_checksum": "68fb160819170c8e54ccd183b9674eb9a76bf9ffe82cd73ffcbda25ceb5effb4",
+            "segment_end": "2026-07-16",
+            "segment_start": "2026-07-16",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-16.zip",
+            "zip_size_bytes": 27205
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-17.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:31.232405+00:00",
+            "kind": "premium_index",
+            "local_sha256": "aa6fbdbc16112de49eb89091de5aa0a87348b5596db655f6e6028e9a394b2839",
+            "official_checksum": "aa6fbdbc16112de49eb89091de5aa0a87348b5596db655f6e6028e9a394b2839",
+            "segment_end": "2026-07-17",
+            "segment_start": "2026-07-17",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-17.zip",
+            "zip_size_bytes": 25231
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-18.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:31.628056+00:00",
+            "kind": "premium_index",
+            "local_sha256": "46e138bb159ccfb97f1340c8032e1d02c30fea27f4a2d96e6b82dee776915fdf",
+            "official_checksum": "46e138bb159ccfb97f1340c8032e1d02c30fea27f4a2d96e6b82dee776915fdf",
+            "segment_end": "2026-07-18",
+            "segment_start": "2026-07-18",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-18.zip",
+            "zip_size_bytes": 25714
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-19.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:32.046150+00:00",
+            "kind": "premium_index",
+            "local_sha256": "14a22bb9ca2aad5fa8b132a37fd84283977a6307e831d0ba9f931cb17353cc9a",
+            "official_checksum": "14a22bb9ca2aad5fa8b132a37fd84283977a6307e831d0ba9f931cb17353cc9a",
+            "segment_end": "2026-07-19",
+            "segment_start": "2026-07-19",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-19.zip",
+            "zip_size_bytes": 25818
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-20.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:32.688066+00:00",
+            "kind": "premium_index",
+            "local_sha256": "4616173d1b23433ee19c4bcf98f767c85b4a0aba342a08156dfc9c10e9728b10",
+            "official_checksum": "4616173d1b23433ee19c4bcf98f767c85b4a0aba342a08156dfc9c10e9728b10",
+            "segment_end": "2026-07-20",
+            "segment_start": "2026-07-20",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-20.zip",
+            "zip_size_bytes": 27913
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-21.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:33.106161+00:00",
+            "kind": "premium_index",
+            "local_sha256": "8a1793927ab9831c50f15d943bc4406d91563d8fc29d67fecf60dabbbc5024d8",
+            "official_checksum": "8a1793927ab9831c50f15d943bc4406d91563d8fc29d67fecf60dabbbc5024d8",
+            "segment_end": "2026-07-21",
+            "segment_start": "2026-07-21",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-21.zip",
+            "zip_size_bytes": 28597
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-22.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:33.505270+00:00",
+            "kind": "premium_index",
+            "local_sha256": "9a698dcaba98d6c79e4786eff48e30ed85dd9b2f4c2ab552963fa6ab1040f68f",
+            "official_checksum": "9a698dcaba98d6c79e4786eff48e30ed85dd9b2f4c2ab552963fa6ab1040f68f",
+            "segment_end": "2026-07-22",
+            "segment_start": "2026-07-22",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-22.zip",
+            "zip_size_bytes": 26650
+          },
+          {
+            "checksum_url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-23.zip.CHECKSUM",
+            "downloaded_at": "2026-07-24T18:50:33.921747+00:00",
+            "kind": "premium_index",
+            "local_sha256": "f8c11dfcd0d355ec36daccdbcb2a906a7872a54cb189d1a049cbc21febf925fa",
+            "official_checksum": "f8c11dfcd0d355ec36daccdbcb2a906a7872a54cb189d1a049cbc21febf925fa",
+            "segment_end": "2026-07-23",
+            "segment_start": "2026-07-23",
+            "source": "daily_archive",
+            "url": "https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/TSLAUSDT/1m/TSLAUSDT-1m-2026-07-23.zip",
+            "zip_size_bytes": 28940
+          }
+        ]
+      },
+      "start_time": "2026-01-28T14:30:00+00:00",
+      "symbol": "TSLAUSDT",
+      "tier": "TIER_A_CORE"
+    }
+  },
+  "data_previously_viewed": true,
+  "direction_mode": "NEUTRAL",
+  "discovery_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\symbol-discovery.json",
+  "discovery_sha256": "02aad5001519db2648f8140788204677335dcff478dab56f89416445b715b6b6",
+  "generated_at": "2026-07-24T18:00:16.019000+00:00",
+  "git_branch": "codex/profit-protection-backtest-v2.3",
+  "git_commit": "1cec0efe54947d5f6a18314b669c2db808f1a21c",
+  "last_complete_utc_date": "2026-07-23",
+  "leverage": 1,
+  "notes": [
+    "只冻结正式 H1 所需的 Tier A-Core；Tier A-Short 保留在发现报告，不参与正式门槛。",
+    "所有随机种子和窗口定义在收益计算前另由 window manifest 冻结。",
+    "本次公开数据在协议探索阶段已查看，故明确标记 data_previously_viewed=true。"
+  ],
+  "production_defaults_changed": false,
+  "protocol": "docs/codex-stock-perp-weekend-grid-backtest-v2.5.md",
+  "schema_version": 1,
+  "selected_tiers": [
+    "TIER_A_CORE"
+  ],
+  "skipped_symbols": [
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AAOIUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AAPLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ADBEUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ALABUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AMATUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AMDUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "APPUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ARMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ASMLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ASTSUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AVGOUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "AXTIUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BABAUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BBXUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BEUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BMNRUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BNCUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BOTUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BRKBUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BSPUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "BXUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CATUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CBRSUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CIENUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "COHRUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "COSTUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CRDOUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CRMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CRWDUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CRWVUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "CSCOUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "DELLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "DISUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "DKNGUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "DRAMUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "EBAYUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "EWJUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "EWTUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "EWYUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "EWZUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "FLEXUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "FLNCUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "FWDIUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "GEVUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "GLWUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "GMEUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "GOOGLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "HDUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "HIMSUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "HK0700USDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "HK1810USDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "HPEUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "IBMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "INTWUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "IRENUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "IWMUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "JPMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "KLACUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "KORUUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "KSTRUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "LITEUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "LLYUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "LRCXUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "METAUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MINIMAXUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MRVLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MSFTUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MUUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MUUUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "MVLLUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NBISUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NFLXUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NOKUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NOWUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NVDAUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "NVOUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ONDSUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ORCLUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "PANWUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "PAYPUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "PENGUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "POPMARTUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "QCOMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "QNTXUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "QQQUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "RIVNUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "RKLBUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SHAZUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SKHYUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SMCIUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SNDKUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SNOWUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SNXXUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SOFIUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SONYUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SOXLUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SOXSUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SPCXUSD1",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SPCXUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SPYUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "SQQQUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "STRCUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "STXXUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TENCENTUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TERUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TQQQUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TSMUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TTWOUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TXNUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "TZAUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "UBERUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "URNMUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "USARUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "UVXYUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "VRTUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "VUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "WDCUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "WENUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "WMTUSDT",
+      "tier": "TIER_A_SHORT"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "XBIUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "XLEUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ZHIPUUSDT",
+      "tier": "EXCLUDED"
+    },
+    {
+      "reason": "not_in_formal_H1_freeze_set",
+      "symbol": "ZMUSDT",
+      "tier": "TIER_A_SHORT"
+    }
+  ]
+}

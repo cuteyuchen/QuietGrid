@@ -1,5 +1,5 @@
 {
-  "asset_manifest_sha256": "e840aed59a9f4b2f4c3f694ab60bd669eafa340046377c89d534f8148bdc5266",
+  "asset_manifest_sha256": "a0daee17bde18784a603524c597d1ceee8df9a93ac0abd7a4ae57f4f8159ae45",
   "baselines": {
     "B0": {
       "reason": "H1_FAILED_STOP_RULE",
@@ -566,326 +566,326 @@
   },
   "data_audit_passed": true,
   "data_audit_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\asset-data-audit.json",
-  "data_audit_sha256": "a34235d555ba6f1bd53b9047dbf552062dde2b5f115d3b86553f7c2090806ae6",
+  "data_audit_sha256": "b2483f73faee7d17fd8a89629b421a645afd495ddd2504e4044cc806da95c79c",
   "data_files": [
     {
       "kind": "agg_trades",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-agg-trades.csv",
-      "row_count": 2728784,
-      "sha256": "1586fb4eb6235534eac5574dc733676e54eb71feba23ef4bd8d7c584e7712a8b",
-      "size_bytes": 149677738,
+      "row_count": 2758342,
+      "sha256": "8587d01904c281bc672c16c62f00c69bab38e892f965f9b395269c4afbf17fbb",
+      "size_bytes": 153874412,
       "symbol": "AMZNUSDT"
     },
     {
       "kind": "funding",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-funding.json",
-      "row_count": 492,
-      "sha256": "ff563d02a838a846cbc83592e495054613e665d5804f84cf79af8f88d95aca17",
-      "size_bytes": 53866,
+      "row_count": 493,
+      "sha256": "0c1d8bacc8a443776119657aaec0ba00437881200d5ddd0210e02ce81b19a555",
+      "size_bytes": 51501,
       "symbol": "AMZNUSDT"
     },
     {
       "kind": "klines",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-1m.csv",
-      "row_count": 236160,
-      "sha256": "0086e0bfdba9dbb8955ddd6f239f6f08b95e96090f9c274efe058728f2deda47",
-      "size_bytes": 16787523,
+      "row_count": 236720,
+      "sha256": "8c8c85f057ee36aaeb6ba19d0fb962f4a56e0e175a0958af06a84fbf7fe0e7b4",
+      "size_bytes": 17066269,
       "symbol": "AMZNUSDT"
     },
     {
       "kind": "mark_price",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-mark-price.csv",
-      "row_count": 234720,
-      "sha256": "e329ebea29ecc715a15ba6f1b789c2925dedacd736aa871a92bfd6a100b850c7",
-      "size_bytes": 17005357,
+      "row_count": 235280,
+      "sha256": "e488eef2086c30ed8b8e31519b2da7c586c2cba6aecf24d2a9293eb5223ef379",
+      "size_bytes": 17280631,
       "symbol": "AMZNUSDT"
     },
     {
       "kind": "premium_index",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-premium-index.csv",
-      "row_count": 227520,
-      "sha256": "0c47d266ab517d44277642e240b2fddb5eee4e6f1b9ccb961451441795880873",
-      "size_bytes": 15253578,
+      "row_count": 228080,
+      "sha256": "6ffb722974458f130574d1d2b2bc98700440b0b4bac423e550cbb7e332b2c3d8",
+      "size_bytes": 15517312,
       "symbol": "AMZNUSDT"
     },
     {
       "kind": "agg_trades",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-agg-trades.csv",
-      "row_count": 9942285,
-      "sha256": "252b4ac95b5bb098abfd97d16f22df1e6a2d34f03c963e7c6f2163e05e025786",
-      "size_bytes": 560988314,
+      "row_count": 9957111,
+      "sha256": "41b2740bce787a75041d05c9d2c252c42faca0a971ffba76ca897be4aadc2cac",
+      "size_bytes": 571650310,
       "symbol": "COINUSDT"
     },
     {
       "kind": "funding",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-funding.json",
-      "row_count": 492,
-      "sha256": "9f13847a62f4ee5b4225c252b3bc4aa052de10af8754bf5f08732cd3f5970900",
-      "size_bytes": 53975,
+      "row_count": 493,
+      "sha256": "672b78214ede0eeea4079ac48e16b48f9c23d5596bac0dc130ec667ba455afdc",
+      "size_bytes": 51610,
       "symbol": "COINUSDT"
     },
     {
       "kind": "klines",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-1m.csv",
-      "row_count": 236160,
-      "sha256": "cb3aef6659a9f499864d1c89c493eb46aee1e294d46ce6a84538b974f4c3ea26",
-      "size_bytes": 17503731,
+      "row_count": 236700,
+      "sha256": "e6c524928890ec38fbe2f3e5e01d5cd6043d77649ada0341066c2dc6efe1687c",
+      "size_bytes": 17780441,
       "symbol": "COINUSDT"
     },
     {
       "kind": "mark_price",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-mark-price.csv",
-      "row_count": 234720,
-      "sha256": "d83822b370804b9fda75a4ec20142765386496a1cf6f2c7a516ce2b615db1394",
-      "size_bytes": 17101828,
+      "row_count": 235260,
+      "sha256": "2b88cdfbbdde382c107ba391fc2bbd439ed0652d73a009b66804e7e61a1e2320",
+      "size_bytes": 17375879,
       "symbol": "COINUSDT"
     },
     {
       "kind": "premium_index",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-premium-index.csv",
-      "row_count": 230400,
-      "sha256": "136826708ca9cb7c5c1bd37a9cf259378e689bb285667aadb3624733c1b61f7d",
-      "size_bytes": 15441324,
+      "row_count": 230940,
+      "sha256": "7d23b9cc0114dff03b4a90e0038d24b8ed0b8f0704e0c4964585789d0162610f",
+      "size_bytes": 15705911,
       "symbol": "COINUSDT"
     },
     {
       "kind": "agg_trades",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-agg-trades.csv",
-      "row_count": 14908330,
-      "sha256": "add0b68a2b3c6e3d08b3efd416ca8ab01fe274cea08929442a7d9cff7ed3f2bc",
-      "size_bytes": 877996672,
+      "row_count": 14933692,
+      "sha256": "a28c3e9357514b928187b3224d923d0ae1a13a8dbb9b83b62208fa5c70537e09",
+      "size_bytes": 894136720,
       "symbol": "CRCLUSDT"
     },
     {
       "kind": "funding",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-funding.json",
-      "row_count": 492,
-      "sha256": "0a077738fec2ebccf8c85f0e2661722fb3cadc7621ce95d6dbb9aab3b3992ad7",
-      "size_bytes": 55436,
+      "row_count": 493,
+      "sha256": "55f3c479e8f41bd7be1d9684c286b90c54413ed0671937e9aaf98b1b1d3f990e",
+      "size_bytes": 53071,
       "symbol": "CRCLUSDT"
     },
     {
       "kind": "klines",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-1m.csv",
-      "row_count": 236160,
-      "sha256": "0e02ec13b70a67933452cc3ff11e478e92733eeb2689590688b3586c047ff501",
-      "size_bytes": 19115111,
+      "row_count": 236710,
+      "sha256": "99ccd83759578008ac1b13ffa56a9a12e698640e1a5936448395f66661425d09",
+      "size_bytes": 19391437,
       "symbol": "CRCLUSDT"
     },
     {
       "kind": "mark_price",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-mark-price.csv",
-      "row_count": 234720,
-      "sha256": "38dba4f521f956a028dcca54564963855765b7e8c6d4d52b4248afcf84b5f776",
-      "size_bytes": 17631506,
+      "row_count": 235270,
+      "sha256": "535eb1b895d1a4ec697f77a2e46d51af6256c89f418a34e0741fa5eacc5b6e0e",
+      "size_bytes": 17904257,
       "symbol": "CRCLUSDT"
     },
     {
       "kind": "premium_index",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-premium-index.csv",
-      "row_count": 231840,
-      "sha256": "4444b97db11e8bca04490405a1bf840863e52bc03ed0bf3ad6b9609010cacf7b",
-      "size_bytes": 16697208,
+      "row_count": 232390,
+      "sha256": "bd07f8bb244e7755603e356c1f579b574c1aa14bec6c49bcf4b1e4c42a6a146a",
+      "size_bytes": 16966556,
       "symbol": "CRCLUSDT"
     },
     {
       "kind": "agg_trades",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-agg-trades.csv",
-      "row_count": 5498686,
-      "sha256": "34c0a4a8e3c723aa0a841fedd88a65c61d785a2ce5e5288732edabbaa5e8d5e3",
-      "size_bytes": 321479936,
+      "row_count": 5520978,
+      "sha256": "6be64b9eb64e8c61280a966d8bf782cb6ca68b7ec5f781b3c701e65d78ebb5b9",
+      "size_bytes": 328145590,
       "symbol": "HOODUSDT"
     },
     {
       "kind": "funding",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-funding.json",
-      "row_count": 513,
-      "sha256": "5216cdcbdf53bef29be0453e8235ca80458308cda52b0e15d6cbc24f61ed1006",
-      "size_bytes": 56379,
+      "row_count": 514,
+      "sha256": "257071fb6809f6beeac33086ee4c5b266c2af5c7e5e8eedbef48fb409dd150c9",
+      "size_bytes": 53914,
       "symbol": "HOODUSDT"
     },
     {
       "kind": "klines",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-1m.csv",
-      "row_count": 246240,
-      "sha256": "317cef3fee1be1041881be5c205cc887c89556f4976cdd07e8293ed3e9cd23f4",
-      "size_bytes": 20452602,
+      "row_count": 246795,
+      "sha256": "fbe41c3fc3324e1916b7a1fa4399892e9c1a82b6166d591955011e497374ae28",
+      "size_bytes": 20747934,
       "symbol": "HOODUSDT"
     },
     {
       "kind": "mark_price",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-mark-price.csv",
-      "row_count": 244800,
-      "sha256": "14875fb876eda2a991c849df3753e8d6a1cf760d99f7cec6601d9157d26fa3c5",
-      "size_bytes": 19035994,
+      "row_count": 245355,
+      "sha256": "e13e084efefa8b99f45dca589f70b009004c29948ff4354a1f3f033ef25b3d6e",
+      "size_bytes": 19324795,
       "symbol": "HOODUSDT"
     },
     {
       "kind": "premium_index",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-premium-index.csv",
-      "row_count": 241920,
-      "sha256": "88b3f55f910a33de6625824b8aa1c8b104ccecf4fa9e0ba70515d304d8937da3",
-      "size_bytes": 16315436,
+      "row_count": 242475,
+      "sha256": "2408cefb97ef333aaf7ee4ef73e1b771c6cbf6b706dfa8ad1b512b7ea22b1663",
+      "size_bytes": 16588523,
       "symbol": "HOODUSDT"
     },
     {
       "kind": "agg_trades",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-agg-trades.csv",
-      "row_count": 12940897,
-      "sha256": "6d029f36b7c7437504e435e46bc79826caca384b0b37a1dddc5be5e3f8537904",
-      "size_bytes": 746420367,
+      "row_count": 12988085,
+      "sha256": "719435053dfa29867af00b4094b33986fc0d934bd70bc1429a0f4b91034c26b4",
+      "size_bytes": 761680721,
       "symbol": "INTCUSDT"
     },
     {
       "kind": "funding",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-funding.json",
-      "row_count": 513,
-      "sha256": "c5810682a6363907fdc4d37d88db42616126e04ea7fc1b194307f2fc1fb85e4d",
-      "size_bytes": 56709,
+      "row_count": 514,
+      "sha256": "4a2f791fdb89608802268e1e7e2fa2cd46403ac12f0f060084b88e275de93fd3",
+      "size_bytes": 54244,
       "symbol": "INTCUSDT"
     },
     {
       "kind": "klines",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-1m.csv",
-      "row_count": 246240,
-      "sha256": "8c849be147e78d08bec2374bbe6fc258693cc63acdd13ad5a2d94e44386c8830",
-      "size_bytes": 18434489,
+      "row_count": 246810,
+      "sha256": "94959f64fb6dc1187119f49583e46821f98f161d57f435e3ce30b5f5ae109970",
+      "size_bytes": 18722378,
       "symbol": "INTCUSDT"
     },
     {
       "kind": "mark_price",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-mark-price.csv",
-      "row_count": 244800,
-      "sha256": "2e6b7a6f959b9537265dabce335e7963141ea9ec774223374d57d9c960a3aeaa",
-      "size_bytes": 17638872,
+      "row_count": 245370,
+      "sha256": "c4833a6a152ca5aef66802858ab1fe17487461705e19a9bc30f5221144f973d5",
+      "size_bytes": 17924044,
       "symbol": "INTCUSDT"
     },
     {
       "kind": "premium_index",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-premium-index.csv",
-      "row_count": 240480,
-      "sha256": "6ad4e56ef175e8e2fca48cbb5ea17f81c51d4f0d5236353a7c7a3f95fa229e72",
-      "size_bytes": 16712755,
+      "row_count": 241050,
+      "sha256": "d234062e1ee1b23c14cbeb5b11ed134c48eb4c125c4e57e755c41453f47cbe10",
+      "size_bytes": 16986716,
       "symbol": "INTCUSDT"
     },
     {
       "kind": "agg_trades",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-agg-trades.csv",
-      "row_count": 12981346,
-      "sha256": "5c67225c2a844ba8674db11ea3ce09f4bcef4e211fc12861fa0d08b351503ccf",
-      "size_bytes": 750859292,
+      "row_count": 13035657,
+      "sha256": "f23d897bf2debfae8d5fdde70e8464be4a663ce3af4a4f757f2e76d96363c7fa",
+      "size_bytes": 766578182,
       "symbol": "MSTRUSDT"
     },
     {
       "kind": "funding",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-funding.json",
-      "row_count": 492,
-      "sha256": "b14a84d03978278f5aed4ed0672fbb133790abef5a43dd9c977b523b766bfc83",
-      "size_bytes": 54678,
+      "row_count": 493,
+      "sha256": "af36010ff13cd1962d2723a5d225974b3b49ddccf818ce470fd45348ee771187",
+      "size_bytes": 52313,
       "symbol": "MSTRUSDT"
     },
     {
       "kind": "klines",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-1m.csv",
-      "row_count": 236160,
-      "sha256": "520519bc59326510b79ae1ad47a66d69a4f62ef3431d8f3e248a2030e832856a",
-      "size_bytes": 18274574,
+      "row_count": 236730,
+      "sha256": "91eb0c16d4cb12dbab98fe660ad49748aa5779623c1e45d94da38d192dc9a517",
+      "size_bytes": 18555167,
       "symbol": "MSTRUSDT"
     },
     {
       "kind": "mark_price",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-mark-price.csv",
-      "row_count": 234720,
-      "sha256": "a7f7bc1ad411552a10bc8d658105274f3d04b617c6170624c830fc448227f8a7",
-      "size_bytes": 17315006,
+      "row_count": 235290,
+      "sha256": "aa41f611917fc129ee4b9e9d6443277ce491772470880bf2096c23d1443169b0",
+      "size_bytes": 17590578,
       "symbol": "MSTRUSDT"
     },
     {
       "kind": "premium_index",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-premium-index.csv",
-      "row_count": 228960,
-      "sha256": "f596f53066163f7b2c978949d4566fb311790ec79033f2bbb5512795e39fddb5",
-      "size_bytes": 16435106,
+      "row_count": 229530,
+      "sha256": "fdf24ecb252b19221bbe998628d5f179cb8067eb46c7ce27d5ae991247da9fe1",
+      "size_bytes": 16705273,
       "symbol": "MSTRUSDT"
     },
     {
       "kind": "agg_trades",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-agg-trades.csv",
-      "row_count": 3425931,
-      "sha256": "0648804db006ea9320d6dc6f5a5b957d6261623fea0de50189d4205921b609a1",
-      "size_bytes": 188642264,
+      "row_count": 3440727,
+      "sha256": "6883f4259e44c66a58a65384df073012fd3b671469cc0535a4b793a338de1271",
+      "size_bytes": 192791658,
       "symbol": "PLTRUSDT"
     },
     {
       "kind": "funding",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-funding.json",
-      "row_count": 492,
-      "sha256": "d8cae35d912c0d76e9326391ec2d048a93ef05f6e00670993f8bccf2c521a58e",
-      "size_bytes": 53131,
+      "row_count": 493,
+      "sha256": "816e6907fe5903c8368a324de457e710549b6cedcc5ebbe9533a8971cab55b94",
+      "size_bytes": 50766,
       "symbol": "PLTRUSDT"
     },
     {
       "kind": "klines",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-1m.csv",
-      "row_count": 236160,
-      "sha256": "99a8da2ff4df8730714fd313394a23cf1623faaf81a5be5453bf55aaf5be48a7",
-      "size_bytes": 17019194,
+      "row_count": 236690,
+      "sha256": "abab0c616ee9640b4b9836009a532618f1375013560ad17a1d7bbee511e4d581",
+      "size_bytes": 17295287,
       "symbol": "PLTRUSDT"
     },
     {
       "kind": "mark_price",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-mark-price.csv",
-      "row_count": 234720,
-      "sha256": "363510cd998e4ccd27d4c9cb4785d43cf264624f80f4e02664172dff5ceff051",
-      "size_bytes": 17143386,
+      "row_count": 235250,
+      "sha256": "bfcda113aa96c95136882aa3253ed6f1c3d53309b1d85410e13c9011b463ca2a",
+      "size_bytes": 17416568,
       "symbol": "PLTRUSDT"
     },
     {
       "kind": "premium_index",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-premium-index.csv",
-      "row_count": 230400,
-      "sha256": "00fa81a917118269af565dc369145cc85d1bd0a6c0dd1f32d9954a37562a591e",
-      "size_bytes": 14277504,
+      "row_count": 230930,
+      "sha256": "f76aa237b7c35c8878d552334bceef3eeeaab6fa720b1ece305f89fe39d1a58a",
+      "size_bytes": 14541003,
       "symbol": "PLTRUSDT"
     },
     {
       "kind": "agg_trades",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-agg-trades.csv",
-      "row_count": 13884513,
-      "sha256": "c56c9e03e1c58c3a41662a1e6cc273305cdec65cd6ffdcea7b821e756307a399",
-      "size_bytes": 792369277,
+      "row_count": 14037852,
+      "sha256": "f97747814508218e2c39226f7772c3c5990023242e180bd8da7275f3faf24cef",
+      "size_bytes": 814233529,
       "symbol": "TSLAUSDT"
     },
     {
       "kind": "funding",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-funding.json",
-      "row_count": 533,
-      "sha256": "5a0855f0c54e5c6c3fab8c8d3876b7876a41cc3f7e02125cc001d9e858ea7c4c",
-      "size_bytes": 58944,
+      "row_count": 535,
+      "sha256": "f61ac37f7bc811a1420ca34dfe645ea8fa06e843c6aed407e9064400d7ff58e5",
+      "size_bytes": 56492,
       "symbol": "TSLAUSDT"
     },
     {
       "kind": "klines",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-1m.csv",
-      "row_count": 253440,
-      "sha256": "8f40fb8806f3d9a8b102d53464962036c66af53bc637e6a2c7110f93aefe9ee9",
-      "size_bytes": 19056430,
+      "row_count": 254010,
+      "sha256": "6e7d255e2350900a119d2a09c048abcea30a4d321d789b4e758fc9ad95a9c051",
+      "size_bytes": 19355250,
       "symbol": "TSLAUSDT"
     },
     {
       "kind": "mark_price",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-mark-price.csv",
-      "row_count": 252000,
-      "sha256": "6d3aa2aca0c34ca94c8faffe8815126a75e55ebb459d3da112f07ffb4b721358",
-      "size_bytes": 18247637,
+      "row_count": 252570,
+      "sha256": "58685501e1104d9714b12b1f47576a6812b141e8454a86e016a39fba64467098",
+      "size_bytes": 18540337,
       "symbol": "TSLAUSDT"
     },
     {
       "kind": "premium_index",
       "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-premium-index.csv",
-      "row_count": 247680,
-      "sha256": "2bb4ad931359ac045552753a82623a5e954358fd9229c7c795848563d417ffe8",
-      "size_bytes": 18105329,
+      "row_count": 248250,
+      "sha256": "975187134efb18927febe393b756dd1f0b79c3cb703bd728612ce9eac12ad4a3",
+      "size_bytes": 18396278,
       "symbol": "TSLAUSDT"
     }
   ],
@@ -903,7 +903,7 @@
     "symbol-breakdown.csv": "df5be3315733d3b0690e0cdc30e239177f1262a6a8a88a689a40f844a6643b54",
     "window-breakdown.csv": "ac894fdb1b992d935efb52fa3f76eb45b5a97a06dd06ae126927a1e43778c654"
   },
-  "feature_count": 1255,
+  "feature_count": 1274,
   "feature_index": [
     {
       "calendar_key": "NYSE:2026-02-13T21:00:00+00:00:2026-02-17T07:00:00+00:00",
@@ -1182,42 +1182,6 @@
       "window_id": "AMZNUSDT-nyse_20260717T200000Z"
     },
     {
-      "calendar_key": "NYSE:2026-02-09T21:00:00+00:00:2026-02-10T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_1_14",
-      "matched_window_id": "",
-      "month": "2026-02",
-      "seed": "",
-      "split": "DESCRIPTIVE_ONLY",
-      "status": "READY",
-      "symbol": "AMZNUSDT",
-      "window_id": "AMZNUSDT-O-20260209T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-03-05T21:00:00+00:00:2026-03-06T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_15_30",
-      "matched_window_id": "",
-      "month": "2026-03",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "AMZNUSDT",
-      "window_id": "AMZNUSDT-O-20260305T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-03-12T20:00:00+00:00:2026-03-13T06:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_AFTER_30_DAYS",
-      "matched_window_id": "",
-      "month": "2026-03",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "AMZNUSDT",
-      "window_id": "AMZNUSDT-O-20260312T200000Z"
-    },
-    {
       "calendar_key": "NYSE:2026-07-23T20:00:00+00:00:2026-07-24T06:00:00+00:00",
       "group": "O",
       "listing_stage": "LISTING_AFTER_30_DAYS",
@@ -1372,6 +1336,78 @@
       "status": "READY",
       "symbol": "AMZNUSDT",
       "window_id": "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s97"
+    },
+    {
+      "calendar_key": "R:AMZNUSDT:2026-02:3",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "AMZNUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 3,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "AMZNUSDT",
+      "window_id": "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s3"
+    },
+    {
+      "calendar_key": "R:AMZNUSDT:2026-02:10",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "AMZNUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 10,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "AMZNUSDT",
+      "window_id": "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s10"
+    },
+    {
+      "calendar_key": "R:AMZNUSDT:2026-02:17",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "AMZNUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 17,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "AMZNUSDT",
+      "window_id": "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s17"
+    },
+    {
+      "calendar_key": "R:AMZNUSDT:2026-02:31",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "AMZNUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 31,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "AMZNUSDT",
+      "window_id": "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s31"
+    },
+    {
+      "calendar_key": "R:AMZNUSDT:2026-02:59",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "AMZNUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 59,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "AMZNUSDT",
+      "window_id": "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s59"
+    },
+    {
+      "calendar_key": "R:AMZNUSDT:2026-02:97",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "AMZNUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 97,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "AMZNUSDT",
+      "window_id": "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s97"
     },
     {
       "calendar_key": "R:AMZNUSDT:2026-03:3",
@@ -3018,42 +3054,6 @@
       "window_id": "COINUSDT-nyse_20260717T200000Z"
     },
     {
-      "calendar_key": "NYSE:2026-02-09T21:00:00+00:00:2026-02-10T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_1_14",
-      "matched_window_id": "",
-      "month": "2026-02",
-      "seed": "",
-      "split": "DESCRIPTIVE_ONLY",
-      "status": "READY",
-      "symbol": "COINUSDT",
-      "window_id": "COINUSDT-O-20260209T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-03-05T21:00:00+00:00:2026-03-06T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_15_30",
-      "matched_window_id": "",
-      "month": "2026-03",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "COINUSDT",
-      "window_id": "COINUSDT-O-20260305T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-03-12T20:00:00+00:00:2026-03-13T06:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_AFTER_30_DAYS",
-      "matched_window_id": "",
-      "month": "2026-03",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "COINUSDT",
-      "window_id": "COINUSDT-O-20260312T200000Z"
-    },
-    {
       "calendar_key": "NYSE:2026-07-23T20:00:00+00:00:2026-07-24T06:00:00+00:00",
       "group": "O",
       "listing_stage": "LISTING_AFTER_30_DAYS",
@@ -3208,6 +3208,78 @@
       "status": "READY",
       "symbol": "COINUSDT",
       "window_id": "COINUSDT-R-COINUSDT-nyse_20260220T210000Z-s97"
+    },
+    {
+      "calendar_key": "R:COINUSDT:2026-02:3",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "COINUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 3,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "COINUSDT",
+      "window_id": "COINUSDT-R-COINUSDT-nyse_20260227T210000Z-s3"
+    },
+    {
+      "calendar_key": "R:COINUSDT:2026-02:10",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "COINUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 10,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "COINUSDT",
+      "window_id": "COINUSDT-R-COINUSDT-nyse_20260227T210000Z-s10"
+    },
+    {
+      "calendar_key": "R:COINUSDT:2026-02:17",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "COINUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 17,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "COINUSDT",
+      "window_id": "COINUSDT-R-COINUSDT-nyse_20260227T210000Z-s17"
+    },
+    {
+      "calendar_key": "R:COINUSDT:2026-02:31",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "COINUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 31,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "COINUSDT",
+      "window_id": "COINUSDT-R-COINUSDT-nyse_20260227T210000Z-s31"
+    },
+    {
+      "calendar_key": "R:COINUSDT:2026-02:59",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "COINUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 59,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "COINUSDT",
+      "window_id": "COINUSDT-R-COINUSDT-nyse_20260227T210000Z-s59"
+    },
+    {
+      "calendar_key": "R:COINUSDT:2026-02:97",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "COINUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 97,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "COINUSDT",
+      "window_id": "COINUSDT-R-COINUSDT-nyse_20260227T210000Z-s97"
     },
     {
       "calendar_key": "R:COINUSDT:2026-03:3",
@@ -4854,42 +4926,6 @@
       "window_id": "CRCLUSDT-nyse_20260717T200000Z"
     },
     {
-      "calendar_key": "NYSE:2026-02-09T21:00:00+00:00:2026-02-10T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_1_14",
-      "matched_window_id": "",
-      "month": "2026-02",
-      "seed": "",
-      "split": "DESCRIPTIVE_ONLY",
-      "status": "READY",
-      "symbol": "CRCLUSDT",
-      "window_id": "CRCLUSDT-O-20260209T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-03-05T21:00:00+00:00:2026-03-06T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_15_30",
-      "matched_window_id": "",
-      "month": "2026-03",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "CRCLUSDT",
-      "window_id": "CRCLUSDT-O-20260305T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-03-12T20:00:00+00:00:2026-03-13T06:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_AFTER_30_DAYS",
-      "matched_window_id": "",
-      "month": "2026-03",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "CRCLUSDT",
-      "window_id": "CRCLUSDT-O-20260312T200000Z"
-    },
-    {
       "calendar_key": "NYSE:2026-07-23T20:00:00+00:00:2026-07-24T06:00:00+00:00",
       "group": "O",
       "listing_stage": "LISTING_AFTER_30_DAYS",
@@ -5044,6 +5080,78 @@
       "status": "READY",
       "symbol": "CRCLUSDT",
       "window_id": "CRCLUSDT-R-CRCLUSDT-nyse_20260220T210000Z-s97"
+    },
+    {
+      "calendar_key": "R:CRCLUSDT:2026-02:3",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "CRCLUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 3,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "CRCLUSDT",
+      "window_id": "CRCLUSDT-R-CRCLUSDT-nyse_20260227T210000Z-s3"
+    },
+    {
+      "calendar_key": "R:CRCLUSDT:2026-02:10",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "CRCLUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 10,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "CRCLUSDT",
+      "window_id": "CRCLUSDT-R-CRCLUSDT-nyse_20260227T210000Z-s10"
+    },
+    {
+      "calendar_key": "R:CRCLUSDT:2026-02:17",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "CRCLUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 17,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "CRCLUSDT",
+      "window_id": "CRCLUSDT-R-CRCLUSDT-nyse_20260227T210000Z-s17"
+    },
+    {
+      "calendar_key": "R:CRCLUSDT:2026-02:31",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "CRCLUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 31,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "CRCLUSDT",
+      "window_id": "CRCLUSDT-R-CRCLUSDT-nyse_20260227T210000Z-s31"
+    },
+    {
+      "calendar_key": "R:CRCLUSDT:2026-02:59",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "CRCLUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 59,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "CRCLUSDT",
+      "window_id": "CRCLUSDT-R-CRCLUSDT-nyse_20260227T210000Z-s59"
+    },
+    {
+      "calendar_key": "R:CRCLUSDT:2026-02:97",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "CRCLUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 97,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "CRCLUSDT",
+      "window_id": "CRCLUSDT-R-CRCLUSDT-nyse_20260227T210000Z-s97"
     },
     {
       "calendar_key": "R:CRCLUSDT:2026-03:3",
@@ -6702,18 +6810,6 @@
       "window_id": "HOODUSDT-nyse_20260717T200000Z"
     },
     {
-      "calendar_key": "NYSE:2026-02-02T21:00:00+00:00:2026-02-03T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_1_14",
-      "matched_window_id": "",
-      "month": "2026-02",
-      "seed": "",
-      "split": "DESCRIPTIVE_ONLY",
-      "status": "READY",
-      "symbol": "HOODUSDT",
-      "window_id": "HOODUSDT-O-20260202T210000Z"
-    },
-    {
       "calendar_key": "NYSE:2026-03-02T21:00:00+00:00:2026-03-03T07:00:00+00:00",
       "group": "O",
       "listing_stage": "LISTING_DAYS_15_30",
@@ -6740,7 +6836,7 @@
     {
       "calendar_key": "NYSE:2026-03-04T21:00:00+00:00:2026-03-05T07:00:00+00:00",
       "group": "O",
-      "listing_stage": "LISTING_DAYS_15_30",
+      "listing_stage": "LISTING_AFTER_30_DAYS",
       "matched_window_id": "",
       "month": "2026-03",
       "seed": "",
@@ -6858,6 +6954,18 @@
       "window_id": "HOODUSDT-R-HOODUSDT-nyse_20260213T210000Z-s3"
     },
     {
+      "calendar_key": "R:HOODUSDT:2026-02:10",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_1_14",
+      "matched_window_id": "HOODUSDT-nyse_20260213T210000Z",
+      "month": "2026-02",
+      "seed": 10,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "HOODUSDT",
+      "window_id": "HOODUSDT-R-HOODUSDT-nyse_20260213T210000Z-s10"
+    },
+    {
       "calendar_key": "R:HOODUSDT:2026-02:17",
       "group": "R",
       "listing_stage": "LISTING_DAYS_1_14",
@@ -6868,6 +6976,42 @@
       "status": "READY",
       "symbol": "HOODUSDT",
       "window_id": "HOODUSDT-R-HOODUSDT-nyse_20260213T210000Z-s17"
+    },
+    {
+      "calendar_key": "R:HOODUSDT:2026-02:31",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_1_14",
+      "matched_window_id": "HOODUSDT-nyse_20260213T210000Z",
+      "month": "2026-02",
+      "seed": 31,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "HOODUSDT",
+      "window_id": "HOODUSDT-R-HOODUSDT-nyse_20260213T210000Z-s31"
+    },
+    {
+      "calendar_key": "R:HOODUSDT:2026-02:59",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_1_14",
+      "matched_window_id": "HOODUSDT-nyse_20260213T210000Z",
+      "month": "2026-02",
+      "seed": 59,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "HOODUSDT",
+      "window_id": "HOODUSDT-R-HOODUSDT-nyse_20260213T210000Z-s59"
+    },
+    {
+      "calendar_key": "R:HOODUSDT:2026-02:97",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_1_14",
+      "matched_window_id": "HOODUSDT-nyse_20260213T210000Z",
+      "month": "2026-02",
+      "seed": 97,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "HOODUSDT",
+      "window_id": "HOODUSDT-R-HOODUSDT-nyse_20260213T210000Z-s97"
     },
     {
       "calendar_key": "R:HOODUSDT:2026-02:3",
@@ -8670,18 +8814,6 @@
       "window_id": "INTCUSDT-nyse_20260717T200000Z"
     },
     {
-      "calendar_key": "NYSE:2026-02-02T21:00:00+00:00:2026-02-03T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_1_14",
-      "matched_window_id": "",
-      "month": "2026-02",
-      "seed": "",
-      "split": "DESCRIPTIVE_ONLY",
-      "status": "READY",
-      "symbol": "INTCUSDT",
-      "window_id": "INTCUSDT-O-20260202T210000Z"
-    },
-    {
       "calendar_key": "NYSE:2026-03-02T21:00:00+00:00:2026-03-03T07:00:00+00:00",
       "group": "O",
       "listing_stage": "LISTING_DAYS_15_30",
@@ -8708,7 +8840,7 @@
     {
       "calendar_key": "NYSE:2026-03-04T21:00:00+00:00:2026-03-05T07:00:00+00:00",
       "group": "O",
-      "listing_stage": "LISTING_DAYS_15_30",
+      "listing_stage": "LISTING_AFTER_30_DAYS",
       "matched_window_id": "",
       "month": "2026-03",
       "seed": "",
@@ -8826,6 +8958,18 @@
       "window_id": "INTCUSDT-R-INTCUSDT-nyse_20260213T210000Z-s3"
     },
     {
+      "calendar_key": "R:INTCUSDT:2026-02:10",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_1_14",
+      "matched_window_id": "INTCUSDT-nyse_20260213T210000Z",
+      "month": "2026-02",
+      "seed": 10,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "INTCUSDT",
+      "window_id": "INTCUSDT-R-INTCUSDT-nyse_20260213T210000Z-s10"
+    },
+    {
       "calendar_key": "R:INTCUSDT:2026-02:17",
       "group": "R",
       "listing_stage": "LISTING_DAYS_1_14",
@@ -8836,6 +8980,42 @@
       "status": "READY",
       "symbol": "INTCUSDT",
       "window_id": "INTCUSDT-R-INTCUSDT-nyse_20260213T210000Z-s17"
+    },
+    {
+      "calendar_key": "R:INTCUSDT:2026-02:31",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_1_14",
+      "matched_window_id": "INTCUSDT-nyse_20260213T210000Z",
+      "month": "2026-02",
+      "seed": 31,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "INTCUSDT",
+      "window_id": "INTCUSDT-R-INTCUSDT-nyse_20260213T210000Z-s31"
+    },
+    {
+      "calendar_key": "R:INTCUSDT:2026-02:59",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_1_14",
+      "matched_window_id": "INTCUSDT-nyse_20260213T210000Z",
+      "month": "2026-02",
+      "seed": 59,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "INTCUSDT",
+      "window_id": "INTCUSDT-R-INTCUSDT-nyse_20260213T210000Z-s59"
+    },
+    {
+      "calendar_key": "R:INTCUSDT:2026-02:97",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_1_14",
+      "matched_window_id": "INTCUSDT-nyse_20260213T210000Z",
+      "month": "2026-02",
+      "seed": 97,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "INTCUSDT",
+      "window_id": "INTCUSDT-R-INTCUSDT-nyse_20260213T210000Z-s97"
     },
     {
       "calendar_key": "R:INTCUSDT:2026-02:3",
@@ -10626,42 +10806,6 @@
       "window_id": "MSTRUSDT-nyse_20260717T200000Z"
     },
     {
-      "calendar_key": "NYSE:2026-02-09T21:00:00+00:00:2026-02-10T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_1_14",
-      "matched_window_id": "",
-      "month": "2026-02",
-      "seed": "",
-      "split": "DESCRIPTIVE_ONLY",
-      "status": "READY",
-      "symbol": "MSTRUSDT",
-      "window_id": "MSTRUSDT-O-20260209T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-03-05T21:00:00+00:00:2026-03-06T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_15_30",
-      "matched_window_id": "",
-      "month": "2026-03",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "MSTRUSDT",
-      "window_id": "MSTRUSDT-O-20260305T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-03-12T20:00:00+00:00:2026-03-13T06:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_AFTER_30_DAYS",
-      "matched_window_id": "",
-      "month": "2026-03",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "MSTRUSDT",
-      "window_id": "MSTRUSDT-O-20260312T200000Z"
-    },
-    {
       "calendar_key": "NYSE:2026-07-23T20:00:00+00:00:2026-07-24T06:00:00+00:00",
       "group": "O",
       "listing_stage": "LISTING_AFTER_30_DAYS",
@@ -10816,6 +10960,78 @@
       "status": "READY",
       "symbol": "MSTRUSDT",
       "window_id": "MSTRUSDT-R-MSTRUSDT-nyse_20260220T210000Z-s97"
+    },
+    {
+      "calendar_key": "R:MSTRUSDT:2026-02:3",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "MSTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 3,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "MSTRUSDT",
+      "window_id": "MSTRUSDT-R-MSTRUSDT-nyse_20260227T210000Z-s3"
+    },
+    {
+      "calendar_key": "R:MSTRUSDT:2026-02:10",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "MSTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 10,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "MSTRUSDT",
+      "window_id": "MSTRUSDT-R-MSTRUSDT-nyse_20260227T210000Z-s10"
+    },
+    {
+      "calendar_key": "R:MSTRUSDT:2026-02:17",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "MSTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 17,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "MSTRUSDT",
+      "window_id": "MSTRUSDT-R-MSTRUSDT-nyse_20260227T210000Z-s17"
+    },
+    {
+      "calendar_key": "R:MSTRUSDT:2026-02:31",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "MSTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 31,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "MSTRUSDT",
+      "window_id": "MSTRUSDT-R-MSTRUSDT-nyse_20260227T210000Z-s31"
+    },
+    {
+      "calendar_key": "R:MSTRUSDT:2026-02:59",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "MSTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 59,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "MSTRUSDT",
+      "window_id": "MSTRUSDT-R-MSTRUSDT-nyse_20260227T210000Z-s59"
+    },
+    {
+      "calendar_key": "R:MSTRUSDT:2026-02:97",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "MSTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 97,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "MSTRUSDT",
+      "window_id": "MSTRUSDT-R-MSTRUSDT-nyse_20260227T210000Z-s97"
     },
     {
       "calendar_key": "R:MSTRUSDT:2026-03:3",
@@ -12462,42 +12678,6 @@
       "window_id": "PLTRUSDT-nyse_20260717T200000Z"
     },
     {
-      "calendar_key": "NYSE:2026-02-09T21:00:00+00:00:2026-02-10T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_1_14",
-      "matched_window_id": "",
-      "month": "2026-02",
-      "seed": "",
-      "split": "DESCRIPTIVE_ONLY",
-      "status": "READY",
-      "symbol": "PLTRUSDT",
-      "window_id": "PLTRUSDT-O-20260209T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-03-05T21:00:00+00:00:2026-03-06T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_15_30",
-      "matched_window_id": "",
-      "month": "2026-03",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "PLTRUSDT",
-      "window_id": "PLTRUSDT-O-20260305T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-03-12T20:00:00+00:00:2026-03-13T06:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_AFTER_30_DAYS",
-      "matched_window_id": "",
-      "month": "2026-03",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "PLTRUSDT",
-      "window_id": "PLTRUSDT-O-20260312T200000Z"
-    },
-    {
       "calendar_key": "NYSE:2026-07-23T20:00:00+00:00:2026-07-24T06:00:00+00:00",
       "group": "O",
       "listing_stage": "LISTING_AFTER_30_DAYS",
@@ -12652,6 +12832,78 @@
       "status": "READY",
       "symbol": "PLTRUSDT",
       "window_id": "PLTRUSDT-R-PLTRUSDT-nyse_20260220T210000Z-s97"
+    },
+    {
+      "calendar_key": "R:PLTRUSDT:2026-02:3",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "PLTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 3,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "PLTRUSDT",
+      "window_id": "PLTRUSDT-R-PLTRUSDT-nyse_20260227T210000Z-s3"
+    },
+    {
+      "calendar_key": "R:PLTRUSDT:2026-02:10",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "PLTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 10,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "PLTRUSDT",
+      "window_id": "PLTRUSDT-R-PLTRUSDT-nyse_20260227T210000Z-s10"
+    },
+    {
+      "calendar_key": "R:PLTRUSDT:2026-02:17",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "PLTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 17,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "PLTRUSDT",
+      "window_id": "PLTRUSDT-R-PLTRUSDT-nyse_20260227T210000Z-s17"
+    },
+    {
+      "calendar_key": "R:PLTRUSDT:2026-02:31",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "PLTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 31,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "PLTRUSDT",
+      "window_id": "PLTRUSDT-R-PLTRUSDT-nyse_20260227T210000Z-s31"
+    },
+    {
+      "calendar_key": "R:PLTRUSDT:2026-02:59",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "PLTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 59,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "PLTRUSDT",
+      "window_id": "PLTRUSDT-R-PLTRUSDT-nyse_20260227T210000Z-s59"
+    },
+    {
+      "calendar_key": "R:PLTRUSDT:2026-02:97",
+      "group": "R",
+      "listing_stage": "LISTING_DAYS_15_30",
+      "matched_window_id": "PLTRUSDT-nyse_20260227T210000Z",
+      "month": "2026-02",
+      "seed": 97,
+      "split": "DESCRIPTIVE_ONLY",
+      "status": "READY",
+      "symbol": "PLTRUSDT",
+      "window_id": "PLTRUSDT-R-PLTRUSDT-nyse_20260227T210000Z-s97"
     },
     {
       "calendar_key": "R:PLTRUSDT:2026-03:3",
@@ -14072,7 +14324,7 @@
     {
       "calendar_key": "NYSE:2026-02-27T21:00:00+00:00:2026-03-02T07:00:00+00:00",
       "group": "W",
-      "listing_stage": "LISTING_DAYS_15_30",
+      "listing_stage": "LISTING_AFTER_30_DAYS",
       "matched_window_id": "",
       "month": "2026-02",
       "seed": "",
@@ -14344,30 +14596,6 @@
       "status": "READY",
       "symbol": "TSLAUSDT",
       "window_id": "TSLAUSDT-O-20260129T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-02-05T21:00:00+00:00:2026-02-06T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_1_14",
-      "matched_window_id": "",
-      "month": "2026-02",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "TSLAUSDT",
-      "window_id": "TSLAUSDT-O-20260205T210000Z"
-    },
-    {
-      "calendar_key": "NYSE:2026-02-12T21:00:00+00:00:2026-02-13T07:00:00+00:00",
-      "group": "O",
-      "listing_stage": "LISTING_DAYS_15_30",
-      "matched_window_id": "",
-      "month": "2026-02",
-      "seed": "",
-      "split": "RESEARCH_DEVELOPMENT",
-      "status": "READY",
-      "symbol": "TSLAUSDT",
-      "window_id": "TSLAUSDT-O-20260212T210000Z"
     },
     {
       "calendar_key": "NYSE:2026-07-23T20:00:00+00:00:2026-07-24T06:00:00+00:00",
@@ -15966,9 +16194,9 @@
       "window_id": "TSLAUSDT-R-TSLAUSDT-nyse_20260717T200000Z-s97"
     }
   ],
-  "generated_at": "2026-07-24T20:01:35.900037+00:00",
+  "generated_at": "2026-07-24T19:32:40.179762+00:00",
   "git_branch": "codex/profit-protection-backtest-v2.3",
-  "git_commit": "a359981caecaa1bd7163904d71a2e9b69b2a59e4",
+  "git_commit": "1cec0efe54947d5f6a18314b669c2db808f1a21c",
   "h1": {
     "advantage_not_one_symbol": false,
     "best_window_concentration": 1.0,
@@ -15976,17 +16204,17 @@
     "block_bootstrap": {
       "cycle_capacity": {
         "favorable_direction": "W>=CONTROL",
-        "observed_delta": -0.23814999999999997,
+        "observed_delta": -0.24722500000000003,
         "p_value": 1.0,
-        "sample_control": 151,
+        "sample_control": 148,
         "sample_w": 17,
         "support_probability": 0.0
       },
       "volatility": {
         "favorable_direction": "W<=CONTROL",
-        "observed_delta": -0.03218012246293208,
+        "observed_delta": -0.033001388879519616,
         "p_value": 0.0,
-        "sample_control": 151,
+        "sample_control": 148,
         "sample_w": 17,
         "support_probability": 1.0
       }
@@ -15995,21 +16223,21 @@
     "cycle_capacity_not_lower": false,
     "cycle_capacity_strictly_positive": true,
     "development_calendar_window_counts": {
-      "O": 7,
+      "O": 4,
       "R": 144,
       "W": 17
     },
     "development_window_counts": {
-      "O": 20,
+      "O": 8,
       "R": 570,
       "W": 103
     },
     "directional_efficiency_not_higher": false,
     "execution_quality": {
-      "not_significantly_worse": false,
+      "not_significantly_worse": true,
       "zero_trade_ratio": {
-        "O": 0.05119047619047619,
-        "R": 0.010606060606060605,
+        "O": 0.09940476190476191,
+        "R": 0.010833333333333334,
         "W": 0.08206751054852321
       }
     },
@@ -16021,29 +16249,28 @@
       "advantage_not_one_symbol",
       "best_window_contribution_le_35pct",
       "bootstrap_supports_non_noise",
-      "mature_stage_direction",
-      "execution_quality"
+      "mature_stage_direction"
     ],
     "mature_stage_direction": {
-      "O": 0.022275000000000003,
-      "R": 0.3245,
-      "W": 0.077,
+      "O": 0.028875000000000005,
+      "R": 0.32450000000000007,
+      "W": 0.07535,
       "same_direction": false
     },
     "medians": {
       "directional_efficiency": {
-        "O": 0.043341213553979054,
-        "R": 0.01693816670757381,
+        "O": 0.05953099351666316,
+        "R": 0.016036645089871508,
         "W": 0.018600398983874805
       },
       "fee_adjusted_cycle_capacity": {
-        "O": 0.025300000000000003,
-        "R": 0.32230000000000003,
+        "O": 0.031075000000000005,
+        "R": 0.32284999999999997,
         "W": 0.07150000000000001
       },
       "realized_volatility": {
-        "O": 0.012646791911822532,
-        "R": 0.05551298260342722,
+        "O": 0.014062010843014928,
+        "R": 0.05599161714908124,
         "W": 0.02164982170394055
       }
     },
@@ -16083,7 +16310,7 @@
   },
   "leverage": 1,
   "market_features_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\market-features.csv",
-  "market_features_sha256": "417847e627fa1e30eab93a1566422aa7af5cf1f0f5c7a1701ea9a9ed5b732411",
+  "market_features_sha256": "7a78ce7efbb95c54e4d9bd7b462be9bf034cf04c92b0caf4dc276a86ace7f29f",
   "master_modified": false,
   "notes": [
     "统计抽样单位按 calendar_key 聚合，避免同一周末的多个股票被当作完全独立样本。",
@@ -16121,8 +16348,8 @@
       ],
       "validation": [],
       "window_counts": {
-        "O": 4,
-        "R": 126,
+        "O": 1,
+        "R": 132,
         "W": 23
       }
     },
@@ -16143,8 +16370,8 @@
       ],
       "validation": [],
       "window_counts": {
-        "O": 4,
-        "R": 126,
+        "O": 1,
+        "R": 132,
         "W": 23
       }
     },
@@ -16165,8 +16392,8 @@
       ],
       "validation": [],
       "window_counts": {
-        "O": 4,
-        "R": 126,
+        "O": 1,
+        "R": 132,
         "W": 23
       }
     },
@@ -16187,8 +16414,8 @@
       ],
       "validation": [],
       "window_counts": {
-        "O": 6,
-        "R": 134,
+        "O": 5,
+        "R": 138,
         "W": 24
       }
     },
@@ -16209,8 +16436,8 @@
       ],
       "validation": [],
       "window_counts": {
-        "O": 6,
-        "R": 134,
+        "O": 5,
+        "R": 138,
         "W": 24
       }
     },
@@ -16231,8 +16458,8 @@
       ],
       "validation": [],
       "window_counts": {
-        "O": 4,
-        "R": 126,
+        "O": 1,
+        "R": 132,
         "W": 23
       }
     },
@@ -16253,8 +16480,8 @@
       ],
       "validation": [],
       "window_counts": {
-        "O": 4,
-        "R": 126,
+        "O": 1,
+        "R": 132,
         "W": 23
       }
     },
@@ -16278,7 +16505,7 @@
         "2026-05"
       ],
       "window_counts": {
-        "O": 5,
+        "O": 3,
         "R": 132,
         "W": 25
       }
@@ -16844,13 +17071,13 @@
     "status": "NOT_RUN_H1_FAILED"
   },
   "validation_opened": false,
-  "window_manifest_sha256": "8f90c7789bc024d0ec52c0e0ef30b83051b832f91ae13b40e371f19690eb5d1c",
+  "window_manifest_sha256": "949455c1c756d47d2ef2d33cf644efbad981b32d9e64d174dff8233eb442a5a6",
   "window_overlap_audit": {
     "overlap_count": 0,
     "overlaps": [],
     "passed": true,
-    "ready_window_count": 1255,
-    "replicate_overlap_count": 2378,
+    "ready_window_count": 1274,
+    "replicate_overlap_count": 2521,
     "replicate_overlaps": [
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260213T210000Z-s3",
@@ -16914,6 +17141,26 @@
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s10"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s17"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s31"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s59"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s97"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s10",
         "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s17"
       ],
       [
@@ -16929,6 +17176,18 @@
         "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s97"
       ],
       [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s17",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s31"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s17",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s59"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s17",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s97"
+      ],
+      [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s31",
         "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s59"
       ],
@@ -16941,6 +17200,66 @@
         "AMZNUSDT-R-AMZNUSDT-nyse_20260220T210000Z-s97"
       ],
       [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s10"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s17"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s31"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s59"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s97"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s10",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s17"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s10",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s31"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s10",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s59"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s10",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s97"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s17",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s31"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s17",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s59"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s17",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s97"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s31",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s59"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s31",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s97"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s59",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260227T210000Z-s97"
+      ],
+      [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s3",
         "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s17"
       ],
@@ -16950,11 +17269,11 @@
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s3",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s59"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s97"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s10",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s97"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s59"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s17",
@@ -16962,23 +17281,11 @@
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s17",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s59"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s97"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s31",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s59"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s3",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s59"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s3",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s97"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s3",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s17"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260306T210000Z-s97"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s3",
@@ -16986,7 +17293,23 @@
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s59"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s3",
         "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s10"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s17"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s3",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s97"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s10",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s17"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s10",
@@ -16994,55 +17317,43 @@
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s10",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s97"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s59"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s10",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s3"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s97"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s10",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s17"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s3"
       ],
       [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s10",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s59"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s17",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s31"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s17",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s59"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s17",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s97"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s17",
         "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s3"
       ],
       [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s17",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s10"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s17",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s59"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s17",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s31"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s17",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s97"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s31",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s59"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s31",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s97"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s97"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s31",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s3"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s31",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s17"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s31",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s59"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s3"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s59",
@@ -17050,47 +17361,23 @@
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s59",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s17"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s59",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s31"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s59",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s10"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s3"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s97",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s17"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s97",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s31"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260313T200000Z-s97",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s10"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s3",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s10"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s3",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s59"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s3",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s31"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s3",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s97"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s3"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s10",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s59"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s17"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s10",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s97"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s10",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s3"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s10",
@@ -17098,23 +17385,47 @@
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s10",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s97"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s59"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s17",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s31"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s97"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s17",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s10"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s3"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s17",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s31"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s17",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s59"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s31",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s59"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s31",
         "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s10"
       ],
       [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s31",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s17"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s31",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s97"
+      ],
+      [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s59",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s31"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s10"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s59",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s17"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s59",
@@ -17126,7 +17437,7 @@
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s97",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s17"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s31"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260320T200000Z-s97",
@@ -17134,19 +17445,27 @@
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s3",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s17"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s31"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s3",
         "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s59"
       ],
       [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s10",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s17"
+      ],
+      [
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s10",
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s97"
+      ],
+      [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s17",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s59"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s97"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s31",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s97"
+        "AMZNUSDT-R-AMZNUSDT-nyse_20260327T200000Z-s59"
       ],
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s3",
@@ -17159,100 +17478,8 @@
       [
         "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s3",
         "AMZNUSDT-R-AMZNUSDT-nyse_20260410T200000Z-s31"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s3",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260410T200000Z-s59"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s3",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260424T200000Z-s97"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s10",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s17"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s10",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260410T200000Z-s31"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s10",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260410T200000Z-s59"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s10",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260424T200000Z-s97"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s17",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260410T200000Z-s31"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s17",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260410T200000Z-s59"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s17",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260424T200000Z-s97"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s31",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260410T200000Z-s3"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s31",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260417T200000Z-s10"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s31",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260417T200000Z-s97"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s31",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260424T200000Z-s17"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s31",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260424T200000Z-s59"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s59",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260410T200000Z-s10"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s59",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260410T200000Z-s17"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s59",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260410T200000Z-s97"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s59",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260424T200000Z-s3"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s59",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260424T200000Z-s31"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s97",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260417T200000Z-s3"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s97",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260417T200000Z-s17"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s97",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260417T200000Z-s31"
-      ],
-      [
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260402T200000Z-s97",
-        "AMZNUSDT-R-AMZNUSDT-nyse_20260417T200000Z-s59"
       ]
     ],
-    "skipped_window_count": 803
+    "skipped_window_count": 784
   }
 }

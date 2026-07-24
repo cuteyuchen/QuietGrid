@@ -1,22 +1,12 @@
-# Stock Perpetual 数据冻结审计
+# Stock Perpetual 数据冻结摘要
 
 - 协议：`docs/codex-stock-perp-weekend-grid-backtest-v2.5.md`
-- 冻结时间：`2026-07-24T18:00:16.019000+00:00`
-- Git：`1cec0efe54947d5f6a18314b669c2db808f1a21c`
-- 分支：`codex/profit-protection-backtest-v2.3`
-- `data_previously_viewed`：`True`
+- 边界：`FIRST_COMPLETE_UTC_DAY`
+- `data_previously_viewed`：`true`
+- Tier A-Core：`8`
+- 数据审计：`PASS`
+- W/O/R 重叠审计：`PASS`
 
-所有官方 ZIP 均在写入前校验相邻 `.CHECKSUM`；缺失归档被记录为缺口，未做插值。
+每个标的的 1m、Funding、Mark、Premium 和 aggTrades 均保留本地 SHA-256；上线日的零散分钟被排除，数据从首个完整 UTC 日开始。裁剪过程只使用此前已完成官方 CHECKSUM 校验的本地文件，不插值、不新增市场数据。
 
-| Symbol | Tier | 1m rows | Funding events | Mark rows | Premium rows | Agg rows | Gaps |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `AMZNUSDT` | TIER_A_CORE | 236720 | 493 | 235280 | 228080 | 2758342 | 0 |
-| `COINUSDT` | TIER_A_CORE | 236700 | 493 | 235260 | 230940 | 9957111 | 0 |
-| `CRCLUSDT` | TIER_A_CORE | 236710 | 493 | 235270 | 232390 | 14933692 | 0 |
-| `HOODUSDT` | TIER_A_CORE | 246795 | 514 | 245355 | 242475 | 5520978 | 0 |
-| `INTCUSDT` | TIER_A_CORE | 246810 | 514 | 245370 | 241050 | 12988085 | 0 |
-| `MSTRUSDT` | TIER_A_CORE | 236730 | 493 | 235290 | 229530 | 13035657 | 0 |
-| `PLTRUSDT` | TIER_A_CORE | 236690 | 493 | 235250 | 230930 | 3440727 | 0 |
-| `TSLAUSDT` | TIER_A_CORE | 254010 | 535 | 252570 | 248250 | 14037852 | 0 |
-
-冻结资产数：`8`；跳过的短样本：`123`。
+正式 H1 结论：`STOCK_PERP_WEEKEND_LOW_VOLATILITY_HYPOTHESIS_NOT_SUPPORTED`。H1 失败后未运行 B0–B5、任何参数搜索、Validation 或 Short OOS。

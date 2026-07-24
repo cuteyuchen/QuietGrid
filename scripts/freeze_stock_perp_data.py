@@ -169,7 +169,14 @@ def _symbol_start_end(row: Mapping[str, Any], global_end_ms: int) -> tuple[int, 
     )
     first = row.get("first_valid_1m") or {}
     first_ms = int(first.get("open_time") or onboard)
-    start_ms = max(onboard, first_ms)
+    candidate_ms = max(onboard, first_ms)
+    candidate = datetime.fromtimestamp(candidate_ms / 1000, tz=UTC)
+    # A partial listing day cannot be used as a complete UTC-day boundary.
+    first_complete_day = candidate.date()
+    if candidate.time() != datetime.min.time():
+        first_complete_day += timedelta(days=1)
+    day_start = datetime.combine(first_complete_day, datetime.min.time(), tzinfo=UTC)
+    start_ms = max(candidate_ms, int(day_start.timestamp() * 1000))
     return start_ms, global_end_ms
 
 

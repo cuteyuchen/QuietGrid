@@ -1,7 +1,7 @@
 # Stock Perpetual 数据质量审计
 
-- Manifest：`E:\project\QuietGrid\reports\stock-perp-weekend-grid-v1\asset-data-manifest.json`
-- 审计时间：`2026-07-24T20:00:11.748181+00:00`
+- Manifest：`E:\project\QuietGrid\reports\stock-perp-weekend-grid-v1\boundary-test-manifest.json`
+- 审计时间：`2026-07-24T19:54:11.641347+00:00`
 - 缺口处理：观察期/交易期缺口标记为不可交易，未做线性插值。
 
 | Symbol | Tier | Status | 1m rows | 1m gaps | Missing minutes | Future/unclosed | Funding | Mark | Premium | AggTrades |

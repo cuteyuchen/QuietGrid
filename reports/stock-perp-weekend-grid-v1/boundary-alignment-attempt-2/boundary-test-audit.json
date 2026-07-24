@@ -9,7 +9,7 @@
         "last_transact_time": 1784851155120,
         "non_increasing_ids": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-agg-trades.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\AMZNUSDT-agg-trades.csv",
         "row_count": 2728784,
         "status": "PASS"
       },
@@ -24,7 +24,7 @@
         "last_funding_time": 1784822400001,
         "non_increasing_times": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-funding.json",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\AMZNUSDT-funding.json",
         "status": "PASS"
       },
       "klines": {
@@ -39,7 +39,7 @@
         "max_gap_minutes": 0,
         "missing_minutes": 0,
         "non_increasing_timestamps": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-1m.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\AMZNUSDT-1m.csv",
         "row_count": 236160,
         "status": "PASS",
         "total_trade_count": 4598317,
@@ -56,7 +56,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-mark-price.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\AMZNUSDT-mark-price.csv",
         "row_count": 234720,
         "status": "PASS"
       },
@@ -68,7 +68,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-premium-index.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\AMZNUSDT-premium-index.csv",
         "row_count": 227520,
         "status": "PASS"
       },
@@ -86,7 +86,7 @@
         "last_transact_time": 1784851140535,
         "non_increasing_ids": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-agg-trades.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\COINUSDT-agg-trades.csv",
         "row_count": 9942285,
         "status": "PASS"
       },
@@ -101,7 +101,7 @@
         "last_funding_time": 1784822400001,
         "non_increasing_times": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-funding.json",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\COINUSDT-funding.json",
         "status": "PASS"
       },
       "klines": {
@@ -116,7 +116,7 @@
         "max_gap_minutes": 0,
         "missing_minutes": 0,
         "non_increasing_timestamps": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-1m.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\COINUSDT-1m.csv",
         "row_count": 236160,
         "status": "PASS",
         "total_trade_count": 19104666,
@@ -133,7 +133,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-mark-price.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\COINUSDT-mark-price.csv",
         "row_count": 234720,
         "status": "PASS"
       },
@@ -145,7 +145,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-premium-index.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\COINUSDT-premium-index.csv",
         "row_count": 230400,
         "status": "PASS"
       },
@@ -163,7 +163,7 @@
         "last_transact_time": 1784851196882,
         "non_increasing_ids": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-agg-trades.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\CRCLUSDT-agg-trades.csv",
         "row_count": 14908330,
         "status": "PASS"
       },
@@ -178,7 +178,7 @@
         "last_funding_time": 1784822400001,
         "non_increasing_times": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-funding.json",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\CRCLUSDT-funding.json",
         "status": "PASS"
       },
       "klines": {
@@ -193,7 +193,7 @@
         "max_gap_minutes": 0,
         "missing_minutes": 0,
         "non_increasing_timestamps": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-1m.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\CRCLUSDT-1m.csv",
         "row_count": 236160,
         "status": "PASS",
         "total_trade_count": 45451619,
@@ -210,7 +210,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-mark-price.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\CRCLUSDT-mark-price.csv",
         "row_count": 234720,
         "status": "PASS"
       },
@@ -222,7 +222,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-premium-index.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\CRCLUSDT-premium-index.csv",
         "row_count": 231840,
         "status": "PASS"
       },
@@ -240,7 +240,7 @@
         "last_transact_time": 1784851141078,
         "non_increasing_ids": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-agg-trades.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\HOODUSDT-agg-trades.csv",
         "row_count": 5498686,
         "status": "PASS"
       },
@@ -255,7 +255,7 @@
         "last_funding_time": 1784822400001,
         "non_increasing_times": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-funding.json",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\HOODUSDT-funding.json",
         "status": "PASS"
       },
       "klines": {
@@ -270,7 +270,7 @@
         "max_gap_minutes": 0,
         "missing_minutes": 0,
         "non_increasing_timestamps": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-1m.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\HOODUSDT-1m.csv",
         "row_count": 246240,
         "status": "PASS",
         "total_trade_count": 12390923,
@@ -287,7 +287,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-mark-price.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\HOODUSDT-mark-price.csv",
         "row_count": 244800,
         "status": "PASS"
       },
@@ -299,7 +299,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-premium-index.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\HOODUSDT-premium-index.csv",
         "row_count": 241920,
         "status": "PASS"
       },
@@ -317,7 +317,7 @@
         "last_transact_time": 1784851199994,
         "non_increasing_ids": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-agg-trades.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\INTCUSDT-agg-trades.csv",
         "row_count": 12940897,
         "status": "PASS"
       },
@@ -332,7 +332,7 @@
         "last_funding_time": 1784822400001,
         "non_increasing_times": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-funding.json",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\INTCUSDT-funding.json",
         "status": "PASS"
       },
       "klines": {
@@ -347,7 +347,7 @@
         "max_gap_minutes": 0,
         "missing_minutes": 0,
         "non_increasing_timestamps": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-1m.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\INTCUSDT-1m.csv",
         "row_count": 246240,
         "status": "PASS",
         "total_trade_count": 38195759,
@@ -364,7 +364,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-mark-price.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\INTCUSDT-mark-price.csv",
         "row_count": 244800,
         "status": "PASS"
       },
@@ -376,7 +376,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-premium-index.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\INTCUSDT-premium-index.csv",
         "row_count": 240480,
         "status": "PASS"
       },
@@ -394,7 +394,7 @@
         "last_transact_time": 1784851199881,
         "non_increasing_ids": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-agg-trades.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\MSTRUSDT-agg-trades.csv",
         "row_count": 12981346,
         "status": "PASS"
       },
@@ -409,7 +409,7 @@
         "last_funding_time": 1784822400001,
         "non_increasing_times": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-funding.json",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\MSTRUSDT-funding.json",
         "status": "PASS"
       },
       "klines": {
@@ -424,7 +424,7 @@
         "max_gap_minutes": 0,
         "missing_minutes": 0,
         "non_increasing_timestamps": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-1m.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\MSTRUSDT-1m.csv",
         "row_count": 236160,
         "status": "PASS",
         "total_trade_count": 32618129,
@@ -441,7 +441,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-mark-price.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\MSTRUSDT-mark-price.csv",
         "row_count": 234720,
         "status": "PASS"
       },
@@ -453,7 +453,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-premium-index.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\MSTRUSDT-premium-index.csv",
         "row_count": 228960,
         "status": "PASS"
       },
@@ -471,7 +471,7 @@
         "last_transact_time": 1784851178520,
         "non_increasing_ids": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-agg-trades.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\PLTRUSDT-agg-trades.csv",
         "row_count": 3425931,
         "status": "PASS"
       },
@@ -486,7 +486,7 @@
         "last_funding_time": 1784822400001,
         "non_increasing_times": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-funding.json",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\PLTRUSDT-funding.json",
         "status": "PASS"
       },
       "klines": {
@@ -501,7 +501,7 @@
         "max_gap_minutes": 0,
         "missing_minutes": 0,
         "non_increasing_timestamps": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-1m.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\PLTRUSDT-1m.csv",
         "row_count": 236160,
         "status": "PASS",
         "total_trade_count": 6944972,
@@ -518,7 +518,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-mark-price.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\PLTRUSDT-mark-price.csv",
         "row_count": 234720,
         "status": "PASS"
       },
@@ -530,7 +530,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-premium-index.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\PLTRUSDT-premium-index.csv",
         "row_count": 230400,
         "status": "PASS"
       },
@@ -548,7 +548,7 @@
         "last_transact_time": 1784851199993,
         "non_increasing_ids": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-agg-trades.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\TSLAUSDT-agg-trades.csv",
         "row_count": 13884513,
         "status": "PASS"
       },
@@ -563,7 +563,7 @@
         "last_funding_time": 1784822400001,
         "non_increasing_times": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-funding.json",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\TSLAUSDT-funding.json",
         "status": "PASS"
       },
       "klines": {
@@ -578,7 +578,7 @@
         "max_gap_minutes": 0,
         "missing_minutes": 0,
         "non_increasing_timestamps": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-1m.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\TSLAUSDT-1m.csv",
         "row_count": 253440,
         "status": "PASS",
         "total_trade_count": 27552485,
@@ -595,7 +595,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-mark-price.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\TSLAUSDT-mark-price.csv",
         "row_count": 252000,
         "status": "PASS"
       },
@@ -607,7 +607,7 @@
         "last_open_time": 1784851140000,
         "non_increasing_timestamps": 0,
         "out_of_range": 0,
-        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-premium-index.csv",
+        "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\TSLAUSDT-premium-index.csv",
         "row_count": 247680,
         "status": "PASS"
       },
@@ -618,9 +618,9 @@
     }
   ],
   "data_previously_viewed": true,
-  "generated_at": "2026-07-24T20:00:11.748181+00:00",
-  "manifest_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\asset-data-manifest.json",
-  "manifest_sha256": "e840aed59a9f4b2f4c3f694ab60bd669eafa340046377c89d534f8148bdc5266",
+  "generated_at": "2026-07-24T19:54:11.641347+00:00",
+  "manifest_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\boundary-test-manifest.json",
+  "manifest_sha256": "87edab0c1d22bce9e03ada23fb4b742600d06e9a3837145fe7fd9468720caaf1",
   "passed": true,
   "protocol": "docs/codex-stock-perp-weekend-grid-backtest-v2.5.md",
   "schema_version": 1

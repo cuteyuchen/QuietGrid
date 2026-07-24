@@ -1,10 +1,10 @@
 {
-  "audit_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\asset-data-audit.json",
+  "audit_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\boundary-test-audit.json",
   "calendar": "core.scheduler.Scheduler / NYSE",
   "force_close_minutes": 120,
-  "generated_at": "2026-07-24T20:01:03.014760+00:00",
-  "manifest_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\asset-data-manifest.json",
-  "manifest_sha256": "e840aed59a9f4b2f4c3f694ab60bd669eafa340046377c89d534f8148bdc5266",
+  "generated_at": "2026-07-24T19:55:03.904958+00:00",
+  "manifest_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\boundary-test-manifest.json",
+  "manifest_sha256": "87edab0c1d22bce9e03ada23fb4b742600d06e9a3837145fe7fd9468720caaf1",
   "minimum_tradable_rows": 30,
   "observation_rows": 180,
   "overlap_audit": {

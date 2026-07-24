@@ -1,5 +1,5 @@
 {
-  "asset_manifest_sha256": "e840aed59a9f4b2f4c3f694ab60bd669eafa340046377c89d534f8148bdc5266",
+  "asset_manifest_sha256": "87edab0c1d22bce9e03ada23fb4b742600d06e9a3837145fe7fd9468720caaf1",
   "baselines": {
     "B0": {
       "reason": "H1_FAILED_STOP_RULE",
@@ -565,12 +565,12 @@
     "h1_maker_fee_rate": 0.0002
   },
   "data_audit_passed": true,
-  "data_audit_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\asset-data-audit.json",
-  "data_audit_sha256": "a34235d555ba6f1bd53b9047dbf552062dde2b5f115d3b86553f7c2090806ae6",
+  "data_audit_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\boundary-test-audit.json",
+  "data_audit_sha256": "8f3daecf6bed5897a8302ca154dd6b2a936d2655e86c01dc8f0b3cbb7232ea9a",
   "data_files": [
     {
       "kind": "agg_trades",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-agg-trades.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\AMZNUSDT-agg-trades.csv",
       "row_count": 2728784,
       "sha256": "1586fb4eb6235534eac5574dc733676e54eb71feba23ef4bd8d7c584e7712a8b",
       "size_bytes": 149677738,
@@ -578,7 +578,7 @@
     },
     {
       "kind": "funding",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-funding.json",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\AMZNUSDT-funding.json",
       "row_count": 492,
       "sha256": "ff563d02a838a846cbc83592e495054613e665d5804f84cf79af8f88d95aca17",
       "size_bytes": 53866,
@@ -586,7 +586,7 @@
     },
     {
       "kind": "klines",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-1m.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\AMZNUSDT-1m.csv",
       "row_count": 236160,
       "sha256": "0086e0bfdba9dbb8955ddd6f239f6f08b95e96090f9c274efe058728f2deda47",
       "size_bytes": 16787523,
@@ -594,7 +594,7 @@
     },
     {
       "kind": "mark_price",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-mark-price.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\AMZNUSDT-mark-price.csv",
       "row_count": 234720,
       "sha256": "e329ebea29ecc715a15ba6f1b789c2925dedacd736aa871a92bfd6a100b850c7",
       "size_bytes": 17005357,
@@ -602,7 +602,7 @@
     },
     {
       "kind": "premium_index",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\AMZNUSDT-premium-index.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\AMZNUSDT-premium-index.csv",
       "row_count": 227520,
       "sha256": "0c47d266ab517d44277642e240b2fddb5eee4e6f1b9ccb961451441795880873",
       "size_bytes": 15253578,
@@ -610,7 +610,7 @@
     },
     {
       "kind": "agg_trades",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-agg-trades.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\COINUSDT-agg-trades.csv",
       "row_count": 9942285,
       "sha256": "252b4ac95b5bb098abfd97d16f22df1e6a2d34f03c963e7c6f2163e05e025786",
       "size_bytes": 560988314,
@@ -618,7 +618,7 @@
     },
     {
       "kind": "funding",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-funding.json",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\COINUSDT-funding.json",
       "row_count": 492,
       "sha256": "9f13847a62f4ee5b4225c252b3bc4aa052de10af8754bf5f08732cd3f5970900",
       "size_bytes": 53975,
@@ -626,7 +626,7 @@
     },
     {
       "kind": "klines",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-1m.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\COINUSDT-1m.csv",
       "row_count": 236160,
       "sha256": "cb3aef6659a9f499864d1c89c493eb46aee1e294d46ce6a84538b974f4c3ea26",
       "size_bytes": 17503731,
@@ -634,7 +634,7 @@
     },
     {
       "kind": "mark_price",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-mark-price.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\COINUSDT-mark-price.csv",
       "row_count": 234720,
       "sha256": "d83822b370804b9fda75a4ec20142765386496a1cf6f2c7a516ce2b615db1394",
       "size_bytes": 17101828,
@@ -642,7 +642,7 @@
     },
     {
       "kind": "premium_index",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\COINUSDT-premium-index.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\COINUSDT-premium-index.csv",
       "row_count": 230400,
       "sha256": "136826708ca9cb7c5c1bd37a9cf259378e689bb285667aadb3624733c1b61f7d",
       "size_bytes": 15441324,
@@ -650,7 +650,7 @@
     },
     {
       "kind": "agg_trades",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-agg-trades.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\CRCLUSDT-agg-trades.csv",
       "row_count": 14908330,
       "sha256": "add0b68a2b3c6e3d08b3efd416ca8ab01fe274cea08929442a7d9cff7ed3f2bc",
       "size_bytes": 877996672,
@@ -658,7 +658,7 @@
     },
     {
       "kind": "funding",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-funding.json",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\CRCLUSDT-funding.json",
       "row_count": 492,
       "sha256": "0a077738fec2ebccf8c85f0e2661722fb3cadc7621ce95d6dbb9aab3b3992ad7",
       "size_bytes": 55436,
@@ -666,7 +666,7 @@
     },
     {
       "kind": "klines",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-1m.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\CRCLUSDT-1m.csv",
       "row_count": 236160,
       "sha256": "0e02ec13b70a67933452cc3ff11e478e92733eeb2689590688b3586c047ff501",
       "size_bytes": 19115111,
@@ -674,7 +674,7 @@
     },
     {
       "kind": "mark_price",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-mark-price.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\CRCLUSDT-mark-price.csv",
       "row_count": 234720,
       "sha256": "38dba4f521f956a028dcca54564963855765b7e8c6d4d52b4248afcf84b5f776",
       "size_bytes": 17631506,
@@ -682,7 +682,7 @@
     },
     {
       "kind": "premium_index",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\CRCLUSDT-premium-index.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\CRCLUSDT-premium-index.csv",
       "row_count": 231840,
       "sha256": "4444b97db11e8bca04490405a1bf840863e52bc03ed0bf3ad6b9609010cacf7b",
       "size_bytes": 16697208,
@@ -690,7 +690,7 @@
     },
     {
       "kind": "agg_trades",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-agg-trades.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\HOODUSDT-agg-trades.csv",
       "row_count": 5498686,
       "sha256": "34c0a4a8e3c723aa0a841fedd88a65c61d785a2ce5e5288732edabbaa5e8d5e3",
       "size_bytes": 321479936,
@@ -698,7 +698,7 @@
     },
     {
       "kind": "funding",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-funding.json",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\HOODUSDT-funding.json",
       "row_count": 513,
       "sha256": "5216cdcbdf53bef29be0453e8235ca80458308cda52b0e15d6cbc24f61ed1006",
       "size_bytes": 56379,
@@ -706,7 +706,7 @@
     },
     {
       "kind": "klines",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-1m.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\HOODUSDT-1m.csv",
       "row_count": 246240,
       "sha256": "317cef3fee1be1041881be5c205cc887c89556f4976cdd07e8293ed3e9cd23f4",
       "size_bytes": 20452602,
@@ -714,7 +714,7 @@
     },
     {
       "kind": "mark_price",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-mark-price.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\HOODUSDT-mark-price.csv",
       "row_count": 244800,
       "sha256": "14875fb876eda2a991c849df3753e8d6a1cf760d99f7cec6601d9157d26fa3c5",
       "size_bytes": 19035994,
@@ -722,7 +722,7 @@
     },
     {
       "kind": "premium_index",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\HOODUSDT-premium-index.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\HOODUSDT-premium-index.csv",
       "row_count": 241920,
       "sha256": "88b3f55f910a33de6625824b8aa1c8b104ccecf4fa9e0ba70515d304d8937da3",
       "size_bytes": 16315436,
@@ -730,7 +730,7 @@
     },
     {
       "kind": "agg_trades",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-agg-trades.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\INTCUSDT-agg-trades.csv",
       "row_count": 12940897,
       "sha256": "6d029f36b7c7437504e435e46bc79826caca384b0b37a1dddc5be5e3f8537904",
       "size_bytes": 746420367,
@@ -738,7 +738,7 @@
     },
     {
       "kind": "funding",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-funding.json",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\INTCUSDT-funding.json",
       "row_count": 513,
       "sha256": "c5810682a6363907fdc4d37d88db42616126e04ea7fc1b194307f2fc1fb85e4d",
       "size_bytes": 56709,
@@ -746,7 +746,7 @@
     },
     {
       "kind": "klines",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-1m.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\INTCUSDT-1m.csv",
       "row_count": 246240,
       "sha256": "8c849be147e78d08bec2374bbe6fc258693cc63acdd13ad5a2d94e44386c8830",
       "size_bytes": 18434489,
@@ -754,7 +754,7 @@
     },
     {
       "kind": "mark_price",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-mark-price.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\INTCUSDT-mark-price.csv",
       "row_count": 244800,
       "sha256": "2e6b7a6f959b9537265dabce335e7963141ea9ec774223374d57d9c960a3aeaa",
       "size_bytes": 17638872,
@@ -762,7 +762,7 @@
     },
     {
       "kind": "premium_index",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\INTCUSDT-premium-index.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\INTCUSDT-premium-index.csv",
       "row_count": 240480,
       "sha256": "6ad4e56ef175e8e2fca48cbb5ea17f81c51d4f0d5236353a7c7a3f95fa229e72",
       "size_bytes": 16712755,
@@ -770,7 +770,7 @@
     },
     {
       "kind": "agg_trades",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-agg-trades.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\MSTRUSDT-agg-trades.csv",
       "row_count": 12981346,
       "sha256": "5c67225c2a844ba8674db11ea3ce09f4bcef4e211fc12861fa0d08b351503ccf",
       "size_bytes": 750859292,
@@ -778,7 +778,7 @@
     },
     {
       "kind": "funding",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-funding.json",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\MSTRUSDT-funding.json",
       "row_count": 492,
       "sha256": "b14a84d03978278f5aed4ed0672fbb133790abef5a43dd9c977b523b766bfc83",
       "size_bytes": 54678,
@@ -786,7 +786,7 @@
     },
     {
       "kind": "klines",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-1m.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\MSTRUSDT-1m.csv",
       "row_count": 236160,
       "sha256": "520519bc59326510b79ae1ad47a66d69a4f62ef3431d8f3e248a2030e832856a",
       "size_bytes": 18274574,
@@ -794,7 +794,7 @@
     },
     {
       "kind": "mark_price",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-mark-price.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\MSTRUSDT-mark-price.csv",
       "row_count": 234720,
       "sha256": "a7f7bc1ad411552a10bc8d658105274f3d04b617c6170624c830fc448227f8a7",
       "size_bytes": 17315006,
@@ -802,7 +802,7 @@
     },
     {
       "kind": "premium_index",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\MSTRUSDT-premium-index.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\MSTRUSDT-premium-index.csv",
       "row_count": 228960,
       "sha256": "f596f53066163f7b2c978949d4566fb311790ec79033f2bbb5512795e39fddb5",
       "size_bytes": 16435106,
@@ -810,7 +810,7 @@
     },
     {
       "kind": "agg_trades",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-agg-trades.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\PLTRUSDT-agg-trades.csv",
       "row_count": 3425931,
       "sha256": "0648804db006ea9320d6dc6f5a5b957d6261623fea0de50189d4205921b609a1",
       "size_bytes": 188642264,
@@ -818,7 +818,7 @@
     },
     {
       "kind": "funding",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-funding.json",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\PLTRUSDT-funding.json",
       "row_count": 492,
       "sha256": "d8cae35d912c0d76e9326391ec2d048a93ef05f6e00670993f8bccf2c521a58e",
       "size_bytes": 53131,
@@ -826,7 +826,7 @@
     },
     {
       "kind": "klines",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-1m.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\PLTRUSDT-1m.csv",
       "row_count": 236160,
       "sha256": "99a8da2ff4df8730714fd313394a23cf1623faaf81a5be5453bf55aaf5be48a7",
       "size_bytes": 17019194,
@@ -834,7 +834,7 @@
     },
     {
       "kind": "mark_price",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-mark-price.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\PLTRUSDT-mark-price.csv",
       "row_count": 234720,
       "sha256": "363510cd998e4ccd27d4c9cb4785d43cf264624f80f4e02664172dff5ceff051",
       "size_bytes": 17143386,
@@ -842,7 +842,7 @@
     },
     {
       "kind": "premium_index",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\PLTRUSDT-premium-index.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\PLTRUSDT-premium-index.csv",
       "row_count": 230400,
       "sha256": "00fa81a917118269af565dc369145cc85d1bd0a6c0dd1f32d9954a37562a591e",
       "size_bytes": 14277504,
@@ -850,7 +850,7 @@
     },
     {
       "kind": "agg_trades",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-agg-trades.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\TSLAUSDT-agg-trades.csv",
       "row_count": 13884513,
       "sha256": "c56c9e03e1c58c3a41662a1e6cc273305cdec65cd6ffdcea7b821e756307a399",
       "size_bytes": 792369277,
@@ -858,7 +858,7 @@
     },
     {
       "kind": "funding",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-funding.json",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\TSLAUSDT-funding.json",
       "row_count": 533,
       "sha256": "5a0855f0c54e5c6c3fab8c8d3876b7876a41cc3f7e02125cc001d9e858ea7c4c",
       "size_bytes": 58944,
@@ -866,7 +866,7 @@
     },
     {
       "kind": "klines",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-1m.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\TSLAUSDT-1m.csv",
       "row_count": 253440,
       "sha256": "8f40fb8806f3d9a8b102d53464962036c66af53bc637e6a2c7110f93aefe9ee9",
       "size_bytes": 19056430,
@@ -874,7 +874,7 @@
     },
     {
       "kind": "mark_price",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-mark-price.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\TSLAUSDT-mark-price.csv",
       "row_count": 252000,
       "sha256": "6d3aa2aca0c34ca94c8faffe8815126a75e55ebb459d3da112f07ffb4b721358",
       "size_bytes": 18247637,
@@ -882,7 +882,7 @@
     },
     {
       "kind": "premium_index",
-      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1\\TSLAUSDT-premium-index.csv",
+      "path": "E:\\project\\QuietGrid\\data\\backtests\\stock-perp-weekend-grid-v1-boundary-test\\TSLAUSDT-premium-index.csv",
       "row_count": 247680,
       "sha256": "2bb4ad931359ac045552753a82623a5e954358fd9229c7c795848563d417ffe8",
       "size_bytes": 18105329,
@@ -15966,7 +15966,7 @@
       "window_id": "TSLAUSDT-R-TSLAUSDT-nyse_20260717T200000Z-s97"
     }
   ],
-  "generated_at": "2026-07-24T20:01:35.900037+00:00",
+  "generated_at": "2026-07-24T19:55:35.393202+00:00",
   "git_branch": "codex/profit-protection-backtest-v2.3",
   "git_commit": "a359981caecaa1bd7163904d71a2e9b69b2a59e4",
   "h1": {
@@ -16082,7 +16082,7 @@
     "status": "NOT_RUN_H1_FAILED"
   },
   "leverage": 1,
-  "market_features_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\market-features.csv",
+  "market_features_path": "E:\\project\\QuietGrid\\reports\\stock-perp-weekend-grid-v1\\boundary-test-h1\\market-features.csv",
   "market_features_sha256": "417847e627fa1e30eab93a1566422aa7af5cf1f0f5c7a1701ea9a9ed5b732411",
   "master_modified": false,
   "notes": [
@@ -16844,7 +16844,7 @@
     "status": "NOT_RUN_H1_FAILED"
   },
   "validation_opened": false,
-  "window_manifest_sha256": "8f90c7789bc024d0ec52c0e0ef30b83051b832f91ae13b40e371f19690eb5d1c",
+  "window_manifest_sha256": "e87f792143d0ca8de870b54d728c9eb14ef27e559a464c7d0b3cf52e70f40c85",
   "window_overlap_audit": {
     "overlap_count": 0,
     "overlaps": [],

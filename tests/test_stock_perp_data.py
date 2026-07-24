@@ -6,6 +6,7 @@ import json
 import pytest
 
 from scripts.discover_stock_perpetuals import _classify
+from scripts.freeze_stock_perp_data import _symbol_start_end
 from scripts.stock_perp_common import PublicDataError, immutable_write
 from scripts.stock_perp_data_audit import audit_funding, audit_klines
 
@@ -127,3 +128,15 @@ def test_funding_audit_keeps_real_settlement_intervals(tmp_path) -> None:
     assert audit["status"] == "PASS"
     assert audit["event_count"] == 2
     assert audit["interval_hours"] == 8.0
+
+
+def test_freeze_start_is_the_first_complete_utc_day() -> None:
+    row = {
+        "onboard_date": "2026-02-09T14:40:00+00:00",
+        "first_valid_1m": {"open_time": 1770648000000},
+    }
+
+    start_ms, end_ms = _symbol_start_end(row, 1_800_000_000_000)
+
+    assert start_ms == 1_770_681_600_000  # 2026-02-10 00:00:00 UTC
+    assert end_ms == 1_800_000_000_000

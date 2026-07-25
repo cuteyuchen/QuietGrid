@@ -1,0 +1,2 @@
+comparison,scope,seed,metric,observed_delta,ci_2_5,ci_97_5,favorable_support_probability,favorable_direction,w_block_count,control_block_count,effective_month_count,effective_traditional_symbol_count,status
+NOT_RUN,ALL_CORE,,,,,,,,,,,,NOT_RUN_TECHNICAL_GATE_FAILED

@@ -5,6 +5,11 @@ reports/stock-perp-weekend-grid-v1/*.csv -text
 reports/stock-perp-weekend-grid-v1/**/*.csv -text
 reports/stock-perp-weekend-grid-v1-smoke/*.csv -text
 reports/stock-perp-weekend-grid-v1-smoke/**/*.csv -text
+reports/stock-perp-weekend-grid-h1-1-v2.6/** text eol=lf
+reports/stock-perp-weekend-grid-h1-1-v2.6/*.csv -text
+reports/stock-perp-weekend-grid-h1-1-v2.6/**/*.csv -text
+reports/stock-perp-weekend-grid-h1-1-v2.6/*.log -text
+reports/stock-perp-weekend-grid-h1-1-v2.6/**/*.log -text
 scripts/build_stock_perp_windows.py text eol=lf
 scripts/discover_stock_perpetuals.py text eol=lf
 scripts/freeze_stock_perp_data.py text eol=lf

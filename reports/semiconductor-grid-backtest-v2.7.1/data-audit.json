@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-25T15:20:38.838552+00:00",
+  "symbols": [
+    {
+      "symbol": "SNDKUSDT",
+      "csv": "data\\backtests\\semiconductor-v2.7\\SNDKUSDT-1m.csv",
+      "ok": true,
+      "rows": 156655,
+      "duplicate_count": 0,
+      "gap_count": 0,
+      "conflict_count": 0,
+      "open_time_start": 1775569200000,
+      "open_time_end": 1784968440000,
+      "funding_events": 327,
+      "funding_coverage_ratio": 1.001946953603135,
+      "funding_interval_hours_median": 8.0,
+      "funding_ok": true,
+      "notes": []
+    },
+    {
+      "symbol": "MUUSDT",
+      "csv": "data\\backtests\\semiconductor-v2.7\\MUUSDT-1m.csv",
+      "ok": true,
+      "rows": 156665,
+      "duplicate_count": 0,
+      "gap_count": 0,
+      "conflict_count": 0,
+      "open_time_start": 1775568600000,
+      "open_time_end": 1784968440000,
+      "funding_events": 332,
+      "funding_coverage_ratio": 1.0172023107710935,
+      "funding_interval_hours_median": 8.0,
+      "funding_ok": true,
+      "notes": []
+    },
+    {
+      "symbol": "SOXLUSDT",
+      "csv": "data\\backtests\\semiconductor-v2.7\\SOXLUSDT-1m.csv",
+      "ok": true,
+      "rows": 101915,
+      "duplicate_count": 0,
+      "gap_count": 0,
+      "conflict_count": 0,
+      "open_time_start": 1778853600000,
+      "open_time_end": 1784968440000,
+      "funding_events": 213,
+      "funding_coverage_ratio": 1.0031889321171545,
+      "funding_interval_hours_median": 8.0,
+      "funding_ok": true,
+      "notes": []
+    },
+    {
+      "symbol": "SKHYNIXUSDT",
+      "csv": "data\\backtests\\semiconductor-v2.7\\SKHYNIXUSDT-1m.csv",
+      "ok": true,
+      "rows": 76655,
+      "duplicate_count": 0,
+      "gap_count": 0,
+      "conflict_count": 0,
+      "open_time_start": 1780369200000,
+      "open_time_end": 1784968440000,
+      "funding_events": 192,
+      "funding_coverage_ratio": 1.2022699108999781,
+      "funding_interval_hours_median": 8.0,
+      "funding_ok": true,
+      "notes": []
+    }
+  ],
+  "ok": true,
+  "reasons": []
+}

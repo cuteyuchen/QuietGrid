@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "strategy_version": "semiconductor-grid-v2.7.1",
+  "base_branch": "master",
+  "base_commit_sha": "55e4a1116c9e4d4814d6d0c4a8cc5a0a1c871e47",
+  "research_branch": "codex/semiconductor-grid-backtest-run-v2.7.1",
+  "run_started_at_utc": "2026-07-25T15:19:11.038256+00:00",
+  "run_finished_at_utc": "2026-07-25T15:20:38.838552+00:00",
+  "python_version": "3.13.14",
+  "symbols": [
+    "SNDKUSDT",
+    "MUUSDT",
+    "SOXLUSDT",
+    "SKHYNIXUSDT"
+  ],
+  "seeds": [
+    3,
+    10,
+    17,
+    31,
+    59,
+    97
+  ],
+  "profiles": [
+    "N20",
+    "N100",
+    "L20",
+    "L100"
+  ],
+  "scenarios": [
+    "PRIMARY_ZERO_MAKER",
+    "EXECUTION_STRESS",
+    "MAKER_PROMO_OFF"
+  ],
+  "data_dir": "data\\backtests\\semiconductor-v2.7",
+  "rules_json": "reports\\semiconductor-grid-backtest-v2.7.1\\exchange-rules.json",
+  "output_dir": "reports\\semiconductor-grid-backtest-v2.7.1",
+  "observation_rows": 180,
+  "minimum_trade_rows": 120,
+  "force_close_minutes": 120,
+  "minimum_trade_minutes": 120,
+  "total_unique_windows": 51,
+  "run_count": 942,
+  "blocked_count": 197,
+  "conclusion_code": "FAIL_NO_ROBUST_EDGE"
+}

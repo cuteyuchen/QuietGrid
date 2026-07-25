@@ -1,0 +1,124 @@
+{
+  "generated_at": "2026-07-25T08:28:30.383553+00:00",
+  "schema_version": 1,
+  "source_sha256": "9e1ff7a62d4a946aa4d8f47e9923faf010a59e342c053adcb3c86c2e9350c719",
+  "source_url": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+  "symbols": {
+    "MUUSDT": {
+      "base_asset": "MU",
+      "contract_type": "TRADIFI_PERPETUAL",
+      "min_notional": 5.0,
+      "min_qty": 0.01,
+      "onboard_date": 1775568600000,
+      "order_types": [
+        "LIMIT",
+        "MARKET",
+        "STOP",
+        "STOP_MARKET",
+        "TAKE_PROFIT",
+        "TAKE_PROFIT_MARKET",
+        "TRAILING_STOP_MARKET"
+      ],
+      "price_precision": 5,
+      "quantity_precision": 2,
+      "quote_asset": "USDT",
+      "status": "TRADING",
+      "step_size": 0.01,
+      "tick_size": 0.01,
+      "time_in_force": [
+        "GTC",
+        "IOC",
+        "FOK",
+        "GTX",
+        "GTD"
+      ]
+    },
+    "SKHYNIXUSDT": {
+      "base_asset": "SKHYNIX",
+      "contract_type": "TRADIFI_PERPETUAL",
+      "min_notional": 5.0,
+      "min_qty": 0.01,
+      "onboard_date": 1780369200000,
+      "order_types": [
+        "LIMIT",
+        "MARKET",
+        "STOP",
+        "STOP_MARKET",
+        "TAKE_PROFIT",
+        "TAKE_PROFIT_MARKET",
+        "TRAILING_STOP_MARKET"
+      ],
+      "price_precision": 5,
+      "quantity_precision": 2,
+      "quote_asset": "USDT",
+      "status": "TRADING",
+      "step_size": 0.01,
+      "tick_size": 0.01,
+      "time_in_force": [
+        "GTC",
+        "IOC",
+        "FOK",
+        "GTX",
+        "GTD"
+      ]
+    },
+    "SNDKUSDT": {
+      "base_asset": "SNDK",
+      "contract_type": "TRADIFI_PERPETUAL",
+      "min_notional": 5.0,
+      "min_qty": 0.01,
+      "onboard_date": 1775569200000,
+      "order_types": [
+        "LIMIT",
+        "MARKET",
+        "STOP",
+        "STOP_MARKET",
+        "TAKE_PROFIT",
+        "TAKE_PROFIT_MARKET",
+        "TRAILING_STOP_MARKET"
+      ],
+      "price_precision": 5,
+      "quantity_precision": 2,
+      "quote_asset": "USDT",
+      "status": "TRADING",
+      "step_size": 0.01,
+      "tick_size": 0.01,
+      "time_in_force": [
+        "GTC",
+        "IOC",
+        "FOK",
+        "GTX",
+        "GTD"
+      ]
+    },
+    "SOXLUSDT": {
+      "base_asset": "SOXL",
+      "contract_type": "TRADIFI_PERPETUAL",
+      "min_notional": 5.0,
+      "min_qty": 0.01,
+      "onboard_date": 1778853600000,
+      "order_types": [
+        "LIMIT",
+        "MARKET",
+        "STOP",
+        "STOP_MARKET",
+        "TAKE_PROFIT",
+        "TAKE_PROFIT_MARKET",
+        "TRAILING_STOP_MARKET"
+      ],
+      "price_precision": 5,
+      "quantity_precision": 2,
+      "quote_asset": "USDT",
+      "status": "TRADING",
+      "step_size": 0.01,
+      "tick_size": 0.01,
+      "time_in_force": [
+        "GTC",
+        "IOC",
+        "FOK",
+        "GTX",
+        "GTD"
+      ]
+    }
+  }
+}

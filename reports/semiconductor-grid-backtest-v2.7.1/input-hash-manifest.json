@@ -1,0 +1,14 @@
+{
+  "files": {
+    "data\\backtests\\semiconductor-v2.7\\SNDKUSDT-1m.csv": "110fc052ec831e5f1d6b45989d1c7ba1e87a6d5e5b32e97c3045ff38aecc5385",
+    "data\\backtests\\semiconductor-v2.7\\SNDKUSDT-1m.funding.json": "73a213c7d6a7191e97f524770dd15bfd7a70e9e8047c55264675e6e278309f6f",
+    "data\\backtests\\semiconductor-v2.7\\MUUSDT-1m.csv": "0604ef8ebc7168f74b00d5b4879f603bfb7f86a7471d4aa237ed17cc2ad9fe0a",
+    "data\\backtests\\semiconductor-v2.7\\MUUSDT-1m.funding.json": "2aacb315d3002e87ee8b08a2273b69fb74ad00ffbff44bc8329d4fdf3f00cd76",
+    "data\\backtests\\semiconductor-v2.7\\SOXLUSDT-1m.csv": "55641b858bf1bd1cca88d143c7079117dfc3fb6862759fdb4941107829fa69e5",
+    "data\\backtests\\semiconductor-v2.7\\SOXLUSDT-1m.funding.json": "4e27180a976986b652f50e1a601483e6853ca6fce1b0582964f28d557e62c010",
+    "data\\backtests\\semiconductor-v2.7\\SKHYNIXUSDT-1m.csv": "c9b182463ca265f4caf567b80a4bac7f98c76158f61368cd2a4b1d02449d987a",
+    "data\\backtests\\semiconductor-v2.7\\SKHYNIXUSDT-1m.funding.json": "a870812c13c34096c8462c5787ebe59bc34c5954ab89f4dc178d399eda13f9a4",
+    "reports\\semiconductor-grid-backtest-v2.7.1\\exchange-rules.json": "6d6348ddd35f9319f5782b1b82acc7848ddad042583266c06cc4caa8ce361543"
+  },
+  "generated_at": "2026-07-25T15:20:38.838552+00:00"
+}

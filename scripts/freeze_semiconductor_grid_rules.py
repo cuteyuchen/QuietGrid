@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,7 +60,15 @@ def main() -> None:
         "headers": {"User-Agent": "QuietGrid/semiconductor-grid-v2.7"},
     }
     if proxy:
-        client_kwargs["proxy"] = proxy
+        # httpx renamed the constructor argument from ``proxies`` to
+        # ``proxy``.  Keep the public-data freezer usable with the project's
+        # pinned runtime as well as newer supported versions.
+        proxy_argument = (
+            "proxy"
+            if "proxy" in inspect.signature(httpx.Client).parameters
+            else "proxies"
+        )
+        client_kwargs[proxy_argument] = proxy
     with httpx.Client(**client_kwargs) as client:
         response = client.get(args.exchange_info_url)
         response.raise_for_status()

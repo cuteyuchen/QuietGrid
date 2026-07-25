@@ -1,0 +1,317 @@
+....................                                                     [100%]
+============================== warnings summary ===============================
+tests/test_scheduler_markets.py::test_krx_uses_regular_open_when_no_premarket_is_configured
+  C:\Users\Windows\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas_market_calendars\market_calendar.py:145: UserWarning: ['break_start', 'break_end'] are discontinued, the dictionary `.discontinued_market_times` has the dates on which these were discontinued. The times as of those dates are incorrect, use .remove_time(market_time) to ignore a market_time.
+    self._prepare_regular_market_times()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+20 passed, 1 warning in 5.98s
+
+
+===== FULL SUITE (python -m pytest -q) =====
+........................................................................ [  9%]
+........................................................................ [ 19%]
+........................................................................ [ 28%]
+.............................................................F.......... [ 38%]
+............................F..................................F........ [ 47%]
+........................................................................ [ 57%]
+........................................................................ [ 66%]
+........................................................................ [ 76%]
+........................................................................ [ 85%]
+........................................................................ [ 95%]
+....................................                                     [100%]
+================================== FAILURES ===================================
+_______ test_controller_startup_check_rejects_invalid_trade_parameters ________
+
+tmp_path = WindowsPath('C:/Users/Windows/AppData/Local/Temp/pytest-of-Windows/pytest-1081/test_controller_startup_check_5')
+
+    def test_controller_startup_check_rejects_invalid_trade_parameters(tmp_path) -> None:
+        async def run() -> None:
+            invalid_configs = [
+                {"leverage": 0},
+                {"take_profit_usdt": float("nan")},
+                {"max_maker_fee_rate": float("nan")},
+                {"max_maker_fee_rate": -0.001},
+                {"maker_fee_check_interval_seconds": float("nan")},
+                {"maker_fee_check_interval_seconds": -1},
+            ]
+            for index, overrides in enumerate(invalid_configs):
+                db_path = tmp_path / f"controller-{index}.db"
+                init_db(db_path)
+                config_values = {
+                    "capital_per_symbol": 200,
+                    "leverage": 10,
+                    "max_concurrent": 1,
+                    "take_profit_usdt": 10,
+                    "total_capital_limit": 1000,
+                    "max_maker_fee_rate": 0.0,
+                    "maker_fee_check_interval_seconds": 300,
+                }
+                config_values.update(overrides)
+                controller = TradingController(
+                    exchange=MockExchangeClient(),
+                    scheduler=FakeScheduler(),  # type: ignore[arg-type]
+                    repository=Repository(db_path),
+                    selector_config=SelectionConfig(max_concurrent=1),
+                    observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+                    grid_config=GridConfig(),
+                    controller_config=ControllerConfig(**config_values),
+                )
+
+                result = await controller.validate_startup()
+
+                log = Repository(db_path).recent_rows("system_logs", limit=1)[0]
+
+                assert result.ok is False
+                assert "���ײ���" in result.reason
+                assert log["level"] == "ERROR"
+
+>       asyncio.run(run())
+
+tests\test_controller.py:1769:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py:196: in run
+    return runner.run(main)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py:119: in run
+    return self._loop.run_until_complete(task)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+tests\test_controller.py:1751: in run
+    controller = TradingController(
+strategy\controller.py:204: in __init__
+    self.risk = RiskManager(
+strategy\risk.py:41: in __init__
+    ProfitProtectionConfig(
+<string>:10: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = ProfitProtectionConfig(activation_profit_usdt=nan, enabled=True, minimum_locked_profit_ratio=0.25, suppress_drawdown_pct=0.25, reduce_drawdown_pct=0.35, close_drawdown_pct=0.5, estimated_exit_cost_rate=0.0007)
+
+    def __post_init__(self) -> None:
+        if not _is_non_negative_finite(self.activation_profit_usdt):
+>           raise ValueError("activation_profit_usdt ����Ϊ�Ǹ���������")
+E           ValueError: activation_profit_usdt ����Ϊ�Ǹ���������
+
+strategy\profit_protection.py:27: ValueError
+_______________ test_controller_poll_closes_take_profit_session _______________
+
+tmp_path = WindowsPath('C:/Users/Windows/AppData/Local/Temp/pytest-of-Windows/pytest-1081/test_controller_poll_closes_ta0')
+
+    def test_controller_poll_closes_take_profit_session(tmp_path) -> None:
+        async def run() -> None:
+            db_path = tmp_path / "controller.db"
+            init_db(db_path)
+            exchange = MockExchangeClient()
+            controller = TradingController(
+                exchange=exchange,
+                scheduler=FakeScheduler(),  # type: ignore[arg-type]
+                repository=Repository(db_path),
+                selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+                observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+                grid_config=GridConfig(),
+                controller_config=ControllerConfig(
+                    capital_per_symbol=200,
+                    leverage=10,
+                    max_concurrent=1,
+                    take_profit_usdt=10,
+                    total_capital_limit=1000,
+                ),
+            )
+
+            await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+            controller.active_sessions["AAPLUSDT"].realized_pnl = 10
+            actions = await controller.poll_active_sessions_once(datetime(2026, 7, 4, 10, 1, tzinfo=NY))
+
+            repo = Repository(db_path)
+            session_row = repo.recent_rows("sessions", limit=1)[0]
+            window_row = repo.recent_rows("windows", limit=1)[0]
+
+            assert actions == [("AAPLUSDT", "close")]
+            assert "AAPLUSDT" not in controller.active_sessions
+            assert exchange.orders["AAPLUSDT"] == []
+            assert session_row["state"] == "STOPPED"
+            assert session_row["close_reason"] == "�����ֹӯ��ꡣ"
+            assert window_row["status"] == "closed"
+            assert window_row["window_end"] is not None
+            assert {row["status"] for row in repo.recent_rows("orders", limit=50)} == {"cancelled"}
+
+>       asyncio.run(run())
+
+tests\test_controller.py:3832:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py:196: in run
+    return runner.run(main)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py:119: in run
+    return self._loop.run_until_complete(task)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        exchange = MockExchangeClient()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=Repository(db_path),
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+
+        await controller.run_once(datetime(2026, 7, 4, 10, 0, tzinfo=NY))
+        controller.active_sessions["AAPLUSDT"].realized_pnl = 10
+        actions = await controller.poll_active_sessions_once(datetime(2026, 7, 4, 10, 1, tzinfo=NY))
+
+        repo = Repository(db_path)
+        session_row = repo.recent_rows("sessions", limit=1)[0]
+        window_row = repo.recent_rows("windows", limit=1)[0]
+
+>       assert actions == [("AAPLUSDT", "close")]
+E       AssertionError: assert [] == [('AAPLUSDT', 'close')]
+E
+E         Right contains one more item: ('AAPLUSDT', 'close')
+E         Use -v to get more diff
+
+tests\test_controller.py:3823: AssertionError
+___________ test_controller_poll_applies_runtime_take_profit_draft ____________
+
+tmp_path = WindowsPath('C:/Users/Windows/AppData/Local/Temp/pytest-of-Windows/pytest-1081/test_controller_poll_applies_r0')
+
+    def test_controller_poll_applies_runtime_take_profit_draft(tmp_path) -> None:
+        async def run() -> None:
+            db_path = tmp_path / "controller.db"
+            init_db(db_path)
+            repo = Repository(db_path)
+            exchange = MockExchangeClient()
+            controller = TradingController(
+                exchange=exchange,
+                scheduler=FakeScheduler(),  # type: ignore[arg-type]
+                repository=repo,
+                selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+                observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+                grid_config=GridConfig(),
+                controller_config=ControllerConfig(
+                    capital_per_symbol=200,
+                    leverage=10,
+                    max_concurrent=1,
+                    take_profit_usdt=10,
+                    total_capital_limit=1000,
+                ),
+            )
+            start_at = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+
+            await controller.run_once(start_at)
+            session = controller.active_sessions["AAPLUSDT"]
+            session.realized_pnl = 5
+            repo.set_strategy_config_draft(
+                {
+                    "volatility_method": "std",
+                    "max_concurrent": 1,
+                    "observe_hours": 1,
+                    "min_step_pct": 0.0015,
+                    "max_grid_num": 20,
+                    "take_profit_usdt": 4,
+                    "total_capital_limit": 1000,
+                    "max_maker_fee_rate": 0,
+                },
+                start_at,
+            )
+
+            actions = await controller.poll_active_sessions_once(start_at + timedelta(seconds=10))
+
+            session_row = repo.get_session(session.session_id)
+            log = next(row for row in repo.recent_rows("system_logs", limit=10) if row["message"] == "Runtime strategy config draft applied.")
+
+            assert controller.config.take_profit_usdt == 4
+            assert controller.risk.config.take_profit_usdt == 4
+            assert actions == [("AAPLUSDT", "close")]
+            assert session_row is not None
+            assert session_row["close_reason"] == "�����ֹӯ��ꡣ"
+            assert log["level"] == "INFO"
+
+>       asyncio.run(run())
+
+tests\test_controller.py:5392:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py:196: in run
+    return runner.run(main)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py:119: in run
+    return self._loop.run_until_complete(task)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    async def run() -> None:
+        db_path = tmp_path / "controller.db"
+        init_db(db_path)
+        repo = Repository(db_path)
+        exchange = MockExchangeClient()
+        controller = TradingController(
+            exchange=exchange,
+            scheduler=FakeScheduler(),  # type: ignore[arg-type]
+            repository=repo,
+            selector_config=SelectionConfig(max_concurrent=1, symbol_blacklist=("TSLAPREUSDT",)),
+            observer_config=ObserverConfig(observe_hours=1, min_samples=30),
+            grid_config=GridConfig(),
+            controller_config=ControllerConfig(
+                capital_per_symbol=200,
+                leverage=10,
+                max_concurrent=1,
+                take_profit_usdt=10,
+                total_capital_limit=1000,
+            ),
+        )
+        start_at = datetime(2026, 7, 4, 10, 0, tzinfo=NY)
+
+        await controller.run_once(start_at)
+        session = controller.active_sessions["AAPLUSDT"]
+        session.realized_pnl = 5
+        repo.set_strategy_config_draft(
+            {
+                "volatility_method": "std",
+                "max_concurrent": 1,
+                "observe_hours": 1,
+                "min_step_pct": 0.0015,
+                "max_grid_num": 20,
+                "take_profit_usdt": 4,
+                "total_capital_limit": 1000,
+                "max_maker_fee_rate": 0,
+            },
+            start_at,
+        )
+
+        actions = await controller.poll_active_sessions_once(start_at + timedelta(seconds=10))
+
+        session_row = repo.get_session(session.session_id)
+        log = next(row for row in repo.recent_rows("system_logs", limit=10) if row["message"] == "Runtime strategy config draft applied.")
+
+        assert controller.config.take_profit_usdt == 4
+        assert controller.risk.config.take_profit_usdt == 4
+>       assert actions == [("AAPLUSDT", "close")]
+E       AssertionError: assert [] == [('AAPLUSDT', 'close')]
+E
+E         Right contains one more item: ('AAPLUSDT', 'close')
+E         Use -v to get more diff
+
+tests\test_controller.py:5387: AssertionError
+============================== warnings summary ===============================
+tests/test_scheduler_markets.py::test_krx_uses_regular_open_when_no_premarket_is_configured
+  C:\Users\Windows\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas_market_calendars\market_calendar.py:145: UserWarning: ['break_start', 'break_end'] are discontinued, the dictionary `.discontinued_market_times` has the dates on which these were discontinued. The times as of those dates are incorrect, use .remove_time(market_time) to ignore a market_time.
+    self._prepare_regular_market_times()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_controller.py::test_controller_startup_check_rejects_invalid_trade_parameters
+FAILED tests/test_controller.py::test_controller_poll_closes_take_profit_session
+FAILED tests/test_controller.py::test_controller_poll_applies_runtime_take_profit_draft
+3 failed, 753 passed, 1 warning in 90.90s (0:01:30)

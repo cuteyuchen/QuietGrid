@@ -1,0 +1,968 @@
+{
+  "conclusion_code": "FAIL_NO_ROBUST_EDGE",
+  "passed": false,
+  "limits": {
+    "minimum_unique_windows": 8,
+    "minimum_positive_ratio": 0.55,
+    "minimum_profit_factor": 1.05,
+    "maximum_drawdown_pct_of_capital": 0.05,
+    "maximum_mean_inventory_drag_ratio": 0.35,
+    "maximum_best_window_concentration": 0.35
+  },
+  "gates": [
+    {
+      "gate": "minimum_unique_windows",
+      "threshold": 8,
+      "actual": 9,
+      "status": "PASS"
+    },
+    {
+      "gate": "positive_window_ratio",
+      "threshold": 0.55,
+      "actual": 0.5555555555555556,
+      "status": "PASS"
+    },
+    {
+      "gate": "profit_factor",
+      "threshold": 1.05,
+      "actual": 2.8608592761360985,
+      "status": "PASS"
+    },
+    {
+      "gate": "max_drawdown_pct_of_capital",
+      "threshold": 0.05,
+      "actual": 0.0129540342091238,
+      "status": "PASS"
+    },
+    {
+      "gate": "mean_inventory_drag_ratio",
+      "threshold": 0.35,
+      "actual": 0.0,
+      "status": "PASS"
+    },
+    {
+      "gate": "best_window_concentration",
+      "threshold": 0.35,
+      "actual": 0.40777771230686527,
+      "status": "FAIL"
+    },
+    {
+      "gate": "PRIMARY_ZERO_MAKER_net_pnl",
+      "threshold": 0.0,
+      "actual": 11.74360926114569,
+      "status": "PASS"
+    },
+    {
+      "gate": "EXECUTION_STRESS_net_pnl",
+      "threshold": 0.0,
+      "actual": 7.6165802774560944,
+      "status": "PASS"
+    },
+    {
+      "gate": "validation_positive",
+      "threshold": 0.0,
+      "actual": -1.2498158863890336,
+      "status": "FAIL"
+    },
+    {
+      "gate": "final_oos_positive",
+      "threshold": 0.0,
+      "actual": -0.16956252846693676,
+      "status": "FAIL"
+    },
+    {
+      "gate": "positive_seed_count",
+      "threshold": 4,
+      "actual": 6,
+      "status": "PASS"
+    }
+  ],
+  "best_candidate": {
+    "market_group": "US_LEVERAGED_ETF",
+    "profile": "N20",
+    "passed": false,
+    "maker_dependent": false,
+    "primary_total_pnl": 11.74360926114569,
+    "stress_total_pnl": 7.6165802774560944,
+    "maker_off_total_pnl": 7.930730924740238,
+    "final_oos_net_pnl": -0.16956252846693676,
+    "validation_net_pnl": -1.2498158863890336,
+    "development_net_pnl": 13.16298767600166,
+    "positive_seed_count": 6,
+    "gates": [
+      {
+        "gate": "minimum_unique_windows",
+        "threshold": 8,
+        "actual": 9,
+        "status": "PASS"
+      },
+      {
+        "gate": "positive_window_ratio",
+        "threshold": 0.55,
+        "actual": 0.5555555555555556,
+        "status": "PASS"
+      },
+      {
+        "gate": "profit_factor",
+        "threshold": 1.05,
+        "actual": 2.8608592761360985,
+        "status": "PASS"
+      },
+      {
+        "gate": "max_drawdown_pct_of_capital",
+        "threshold": 0.05,
+        "actual": 0.0129540342091238,
+        "status": "PASS"
+      },
+      {
+        "gate": "mean_inventory_drag_ratio",
+        "threshold": 0.35,
+        "actual": 0.0,
+        "status": "PASS"
+      },
+      {
+        "gate": "best_window_concentration",
+        "threshold": 0.35,
+        "actual": 0.40777771230686527,
+        "status": "FAIL"
+      },
+      {
+        "gate": "PRIMARY_ZERO_MAKER_net_pnl",
+        "threshold": 0.0,
+        "actual": 11.74360926114569,
+        "status": "PASS"
+      },
+      {
+        "gate": "EXECUTION_STRESS_net_pnl",
+        "threshold": 0.0,
+        "actual": 7.6165802774560944,
+        "status": "PASS"
+      },
+      {
+        "gate": "validation_positive",
+        "threshold": 0.0,
+        "actual": -1.2498158863890336,
+        "status": "FAIL"
+      },
+      {
+        "gate": "final_oos_positive",
+        "threshold": 0.0,
+        "actual": -0.16956252846693676,
+        "status": "FAIL"
+      },
+      {
+        "gate": "positive_seed_count",
+        "threshold": 4,
+        "actual": 6,
+        "status": "PASS"
+      }
+    ],
+    "hard_fail_reasons": [
+      "best_window_concentration",
+      "validation_positive",
+      "final_oos_positive"
+    ],
+    "inventory_fail": false,
+    "stress_fail": false,
+    "assessment_passed": false
+  },
+  "reasons": [
+    "best_window_concentration",
+    "validation_positive",
+    "final_oos_positive"
+  ],
+  "assessments": [
+    {
+      "market_group": "KR_STOCK",
+      "profile": "L100",
+      "passed": false,
+      "conclusion": "SEMICONDUCTOR_GRID_NOT_VALIDATED",
+      "reasons": "insufficient_windows;window_concentration_too_high"
+    },
+    {
+      "market_group": "KR_STOCK",
+      "profile": "L20",
+      "passed": false,
+      "conclusion": "SEMICONDUCTOR_GRID_NOT_VALIDATED",
+      "reasons": "insufficient_windows;window_concentration_too_high;execution_stress_not_positive"
+    },
+    {
+      "market_group": "KR_STOCK",
+      "profile": "N100",
+      "passed": false,
+      "conclusion": "SEMICONDUCTOR_GRID_NOT_VALIDATED",
+      "reasons": "insufficient_windows;low_positive_ratio;window_concentration_too_high;execution_stress_not_positive"
+    },
+    {
+      "market_group": "KR_STOCK",
+      "profile": "N20",
+      "passed": false,
+      "conclusion": "SEMICONDUCTOR_GRID_NOT_VALIDATED",
+      "reasons": "low_positive_ratio;window_concentration_too_high;execution_stress_not_positive"
+    },
+    {
+      "market_group": "US_LEVERAGED_ETF",
+      "profile": "N100",
+      "passed": false,
+      "conclusion": "SEMICONDUCTOR_GRID_NOT_VALIDATED",
+      "reasons": "insufficient_windows;primary_not_positive;low_positive_ratio;low_profit_factor;window_concentration_too_high;execution_stress_not_positive"
+    },
+    {
+      "market_group": "US_LEVERAGED_ETF",
+      "profile": "N20",
+      "passed": false,
+      "conclusion": "SEMICONDUCTOR_GRID_NOT_VALIDATED",
+      "reasons": "window_concentration_too_high"
+    },
+    {
+      "market_group": "US_STOCK",
+      "profile": "N100",
+      "passed": false,
+      "conclusion": "SEMICONDUCTOR_GRID_NOT_VALIDATED",
+      "reasons": "insufficient_windows;primary_not_positive;low_positive_ratio;low_profit_factor;window_concentration_too_high;execution_stress_not_positive"
+    },
+    {
+      "market_group": "US_STOCK",
+      "profile": "N20",
+      "passed": false,
+      "conclusion": "SEMICONDUCTOR_GRID_NOT_VALIDATED",
+      "reasons": "primary_not_positive;low_positive_ratio;low_profit_factor;window_concentration_too_high;execution_stress_not_positive"
+    }
+  ],
+  "candidates": [
+    {
+      "market_group": "US_LEVERAGED_ETF",
+      "profile": "N20",
+      "passed": false,
+      "maker_dependent": false,
+      "primary_total_pnl": 11.74360926114569,
+      "stress_total_pnl": 7.6165802774560944,
+      "maker_off_total_pnl": 7.930730924740238,
+      "final_oos_net_pnl": -0.16956252846693676,
+      "validation_net_pnl": -1.2498158863890336,
+      "development_net_pnl": 13.16298767600166,
+      "positive_seed_count": 6,
+      "gates": [
+        {
+          "gate": "minimum_unique_windows",
+          "threshold": 8,
+          "actual": 9,
+          "status": "PASS"
+        },
+        {
+          "gate": "positive_window_ratio",
+          "threshold": 0.55,
+          "actual": 0.5555555555555556,
+          "status": "PASS"
+        },
+        {
+          "gate": "profit_factor",
+          "threshold": 1.05,
+          "actual": 2.8608592761360985,
+          "status": "PASS"
+        },
+        {
+          "gate": "max_drawdown_pct_of_capital",
+          "threshold": 0.05,
+          "actual": 0.0129540342091238,
+          "status": "PASS"
+        },
+        {
+          "gate": "mean_inventory_drag_ratio",
+          "threshold": 0.35,
+          "actual": 0.0,
+          "status": "PASS"
+        },
+        {
+          "gate": "best_window_concentration",
+          "threshold": 0.35,
+          "actual": 0.40777771230686527,
+          "status": "FAIL"
+        },
+        {
+          "gate": "PRIMARY_ZERO_MAKER_net_pnl",
+          "threshold": 0.0,
+          "actual": 11.74360926114569,
+          "status": "PASS"
+        },
+        {
+          "gate": "EXECUTION_STRESS_net_pnl",
+          "threshold": 0.0,
+          "actual": 7.6165802774560944,
+          "status": "PASS"
+        },
+        {
+          "gate": "validation_positive",
+          "threshold": 0.0,
+          "actual": -1.2498158863890336,
+          "status": "FAIL"
+        },
+        {
+          "gate": "final_oos_positive",
+          "threshold": 0.0,
+          "actual": -0.16956252846693676,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_seed_count",
+          "threshold": 4,
+          "actual": 6,
+          "status": "PASS"
+        }
+      ],
+      "hard_fail_reasons": [
+        "best_window_concentration",
+        "validation_positive",
+        "final_oos_positive"
+      ],
+      "inventory_fail": false,
+      "stress_fail": false,
+      "assessment_passed": false
+    },
+    {
+      "market_group": "KR_STOCK",
+      "profile": "N20",
+      "passed": false,
+      "maker_dependent": false,
+      "primary_total_pnl": 5.457185768906004,
+      "stress_total_pnl": -3.346814822942176,
+      "maker_off_total_pnl": 2.4890058886513637,
+      "final_oos_net_pnl": -6.150705990613986,
+      "validation_net_pnl": 6.661707098153985,
+      "development_net_pnl": 4.946184661366004,
+      "positive_seed_count": 6,
+      "gates": [
+        {
+          "gate": "minimum_unique_windows",
+          "threshold": 8,
+          "actual": 8,
+          "status": "PASS"
+        },
+        {
+          "gate": "positive_window_ratio",
+          "threshold": 0.55,
+          "actual": 0.5,
+          "status": "FAIL"
+        },
+        {
+          "gate": "profit_factor",
+          "threshold": 1.05,
+          "actual": 1.4338421285223286,
+          "status": "PASS"
+        },
+        {
+          "gate": "max_drawdown_pct_of_capital",
+          "threshold": 0.05,
+          "actual": 0.01718671704975771,
+          "status": "PASS"
+        },
+        {
+          "gate": "mean_inventory_drag_ratio",
+          "threshold": 0.35,
+          "actual": 0.0,
+          "status": "PASS"
+        },
+        {
+          "gate": "best_window_concentration",
+          "threshold": 0.35,
+          "actual": 0.5690270247448518,
+          "status": "FAIL"
+        },
+        {
+          "gate": "PRIMARY_ZERO_MAKER_net_pnl",
+          "threshold": 0.0,
+          "actual": 5.457185768906004,
+          "status": "PASS"
+        },
+        {
+          "gate": "EXECUTION_STRESS_net_pnl",
+          "threshold": 0.0,
+          "actual": -3.346814822942176,
+          "status": "FAIL"
+        },
+        {
+          "gate": "validation_positive",
+          "threshold": 0.0,
+          "actual": 6.661707098153985,
+          "status": "PASS"
+        },
+        {
+          "gate": "final_oos_positive",
+          "threshold": 0.0,
+          "actual": -6.150705990613986,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_seed_count",
+          "threshold": 4,
+          "actual": 6,
+          "status": "PASS"
+        }
+      ],
+      "hard_fail_reasons": [
+        "positive_window_ratio",
+        "best_window_concentration",
+        "EXECUTION_STRESS_net_pnl",
+        "final_oos_positive"
+      ],
+      "inventory_fail": false,
+      "stress_fail": true,
+      "assessment_passed": false
+    },
+    {
+      "market_group": "KR_STOCK",
+      "profile": "L100",
+      "passed": false,
+      "maker_dependent": false,
+      "primary_total_pnl": 3.8193418477050356,
+      "stress_total_pnl": 3.2254310178572734,
+      "maker_off_total_pnl": 3.937858765384875,
+      "final_oos_net_pnl": null,
+      "validation_net_pnl": 3.8193418477050356,
+      "development_net_pnl": null,
+      "positive_seed_count": 6,
+      "gates": [
+        {
+          "gate": "minimum_unique_windows",
+          "threshold": 8,
+          "actual": 2,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_window_ratio",
+          "threshold": 0.55,
+          "actual": 1.0,
+          "status": "PASS"
+        },
+        {
+          "gate": "profit_factor",
+          "threshold": 1.05,
+          "actual": 3.8193418477050356,
+          "status": "PASS"
+        },
+        {
+          "gate": "max_drawdown_pct_of_capital",
+          "threshold": 0.05,
+          "actual": 0.0031231714270138445,
+          "status": "PASS"
+        },
+        {
+          "gate": "mean_inventory_drag_ratio",
+          "threshold": 0.35,
+          "actual": 0.0,
+          "status": "PASS"
+        },
+        {
+          "gate": "best_window_concentration",
+          "threshold": 0.35,
+          "actual": 0.8638871071663297,
+          "status": "FAIL"
+        },
+        {
+          "gate": "PRIMARY_ZERO_MAKER_net_pnl",
+          "threshold": 0.0,
+          "actual": 3.8193418477050356,
+          "status": "PASS"
+        },
+        {
+          "gate": "EXECUTION_STRESS_net_pnl",
+          "threshold": 0.0,
+          "actual": 3.2254310178572734,
+          "status": "PASS"
+        },
+        {
+          "gate": "validation_positive",
+          "threshold": 0.0,
+          "actual": 3.8193418477050356,
+          "status": "PASS"
+        },
+        {
+          "gate": "final_oos_positive",
+          "threshold": 0.0,
+          "actual": null,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_seed_count",
+          "threshold": 4,
+          "actual": 6,
+          "status": "PASS"
+        }
+      ],
+      "hard_fail_reasons": [
+        "minimum_unique_windows",
+        "best_window_concentration",
+        "final_oos_positive"
+      ],
+      "inventory_fail": false,
+      "stress_fail": false,
+      "assessment_passed": false
+    },
+    {
+      "market_group": "KR_STOCK",
+      "profile": "L20",
+      "passed": false,
+      "maker_dependent": false,
+      "primary_total_pnl": 1.3387951350508902,
+      "stress_total_pnl": -4.026027803674039,
+      "maker_off_total_pnl": 0.5785241008977868,
+      "final_oos_net_pnl": null,
+      "validation_net_pnl": 11.592939603958587,
+      "development_net_pnl": -10.254144468907697,
+      "positive_seed_count": 5,
+      "gates": [
+        {
+          "gate": "minimum_unique_windows",
+          "threshold": 8,
+          "actual": 3,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_window_ratio",
+          "threshold": 0.55,
+          "actual": 0.6666666666666666,
+          "status": "PASS"
+        },
+        {
+          "gate": "profit_factor",
+          "threshold": 1.05,
+          "actual": 1.1305613685383842,
+          "status": "PASS"
+        },
+        {
+          "gate": "max_drawdown_pct_of_capital",
+          "threshold": 0.05,
+          "actual": 0.025472091075879832,
+          "status": "PASS"
+        },
+        {
+          "gate": "mean_inventory_drag_ratio",
+          "threshold": 0.35,
+          "actual": 0.0,
+          "status": "PASS"
+        },
+        {
+          "gate": "best_window_concentration",
+          "threshold": 0.35,
+          "actual": 0.769160380614208,
+          "status": "FAIL"
+        },
+        {
+          "gate": "PRIMARY_ZERO_MAKER_net_pnl",
+          "threshold": 0.0,
+          "actual": 1.3387951350508902,
+          "status": "PASS"
+        },
+        {
+          "gate": "EXECUTION_STRESS_net_pnl",
+          "threshold": 0.0,
+          "actual": -4.026027803674039,
+          "status": "FAIL"
+        },
+        {
+          "gate": "validation_positive",
+          "threshold": 0.0,
+          "actual": 11.592939603958587,
+          "status": "PASS"
+        },
+        {
+          "gate": "final_oos_positive",
+          "threshold": 0.0,
+          "actual": null,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_seed_count",
+          "threshold": 4,
+          "actual": 5,
+          "status": "PASS"
+        }
+      ],
+      "hard_fail_reasons": [
+        "minimum_unique_windows",
+        "best_window_concentration",
+        "EXECUTION_STRESS_net_pnl",
+        "final_oos_positive"
+      ],
+      "inventory_fail": false,
+      "stress_fail": true,
+      "assessment_passed": false
+    },
+    {
+      "market_group": "KR_STOCK",
+      "profile": "N100",
+      "passed": false,
+      "maker_dependent": true,
+      "primary_total_pnl": 0.8502763271555994,
+      "stress_total_pnl": -2.450292936142894,
+      "maker_off_total_pnl": -0.6893738687832758,
+      "final_oos_net_pnl": null,
+      "validation_net_pnl": -0.5959993111884034,
+      "development_net_pnl": 1.446275638344003,
+      "positive_seed_count": 6,
+      "gates": [
+        {
+          "gate": "minimum_unique_windows",
+          "threshold": 8,
+          "actual": 4,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_window_ratio",
+          "threshold": 0.55,
+          "actual": 0.5,
+          "status": "FAIL"
+        },
+        {
+          "gate": "profit_factor",
+          "threshold": 1.05,
+          "actual": 1.301306992149627,
+          "status": "PASS"
+        },
+        {
+          "gate": "max_drawdown_pct_of_capital",
+          "threshold": 0.05,
+          "actual": 0.007804571695006406,
+          "status": "PASS"
+        },
+        {
+          "gate": "mean_inventory_drag_ratio",
+          "threshold": 0.35,
+          "actual": 0.0,
+          "status": "PASS"
+        },
+        {
+          "gate": "best_window_concentration",
+          "threshold": 0.35,
+          "actual": 0.6379878784837921,
+          "status": "FAIL"
+        },
+        {
+          "gate": "PRIMARY_ZERO_MAKER_net_pnl",
+          "threshold": 0.0,
+          "actual": 0.8502763271555994,
+          "status": "PASS"
+        },
+        {
+          "gate": "EXECUTION_STRESS_net_pnl",
+          "threshold": 0.0,
+          "actual": -2.450292936142894,
+          "status": "FAIL"
+        },
+        {
+          "gate": "validation_positive",
+          "threshold": 0.0,
+          "actual": -0.5959993111884034,
+          "status": "FAIL"
+        },
+        {
+          "gate": "final_oos_positive",
+          "threshold": 0.0,
+          "actual": null,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_seed_count",
+          "threshold": 4,
+          "actual": 6,
+          "status": "PASS"
+        }
+      ],
+      "hard_fail_reasons": [
+        "minimum_unique_windows",
+        "positive_window_ratio",
+        "best_window_concentration",
+        "EXECUTION_STRESS_net_pnl",
+        "validation_positive",
+        "final_oos_positive"
+      ],
+      "inventory_fail": false,
+      "stress_fail": true,
+      "assessment_passed": false
+    },
+    {
+      "market_group": "US_LEVERAGED_ETF",
+      "profile": "N100",
+      "passed": false,
+      "maker_dependent": true,
+      "primary_total_pnl": -0.23179641113173166,
+      "stress_total_pnl": -0.5780149561846973,
+      "maker_off_total_pnl": -0.5239834982077648,
+      "final_oos_net_pnl": -0.23179641113173166,
+      "validation_net_pnl": null,
+      "development_net_pnl": null,
+      "positive_seed_count": 0,
+      "gates": [
+        {
+          "gate": "minimum_unique_windows",
+          "threshold": 8,
+          "actual": 1,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_window_ratio",
+          "threshold": 0.55,
+          "actual": 0.0,
+          "status": "FAIL"
+        },
+        {
+          "gate": "profit_factor",
+          "threshold": 1.05,
+          "actual": 0.0,
+          "status": "FAIL"
+        },
+        {
+          "gate": "max_drawdown_pct_of_capital",
+          "threshold": 0.05,
+          "actual": 0.003584455567016555,
+          "status": "PASS"
+        },
+        {
+          "gate": "mean_inventory_drag_ratio",
+          "threshold": 0.35,
+          "actual": 0.0,
+          "status": "PASS"
+        },
+        {
+          "gate": "best_window_concentration",
+          "threshold": 0.35,
+          "actual": 1.0,
+          "status": "FAIL"
+        },
+        {
+          "gate": "PRIMARY_ZERO_MAKER_net_pnl",
+          "threshold": 0.0,
+          "actual": -0.23179641113173166,
+          "status": "FAIL"
+        },
+        {
+          "gate": "EXECUTION_STRESS_net_pnl",
+          "threshold": 0.0,
+          "actual": -0.5780149561846973,
+          "status": "FAIL"
+        },
+        {
+          "gate": "validation_positive",
+          "threshold": 0.0,
+          "actual": null,
+          "status": "FAIL"
+        },
+        {
+          "gate": "final_oos_positive",
+          "threshold": 0.0,
+          "actual": -0.23179641113173166,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_seed_count",
+          "threshold": 4,
+          "actual": 0,
+          "status": "FAIL"
+        }
+      ],
+      "hard_fail_reasons": [
+        "minimum_unique_windows",
+        "positive_window_ratio",
+        "profit_factor",
+        "best_window_concentration",
+        "PRIMARY_ZERO_MAKER_net_pnl",
+        "EXECUTION_STRESS_net_pnl",
+        "validation_positive",
+        "final_oos_positive",
+        "positive_seed_count"
+      ],
+      "inventory_fail": false,
+      "stress_fail": true,
+      "assessment_passed": false
+    },
+    {
+      "market_group": "US_STOCK",
+      "profile": "N100",
+      "passed": false,
+      "maker_dependent": true,
+      "primary_total_pnl": -6.409663229788366,
+      "stress_total_pnl": -6.81232394539449,
+      "maker_off_total_pnl": -5.141775068323876,
+      "final_oos_net_pnl": -5.570204616150155,
+      "validation_net_pnl": -1.4373250652577008,
+      "development_net_pnl": 0.5978664516194905,
+      "positive_seed_count": 0,
+      "gates": [
+        {
+          "gate": "minimum_unique_windows",
+          "threshold": 8,
+          "actual": 5,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_window_ratio",
+          "threshold": 0.55,
+          "actual": 0.2,
+          "status": "FAIL"
+        },
+        {
+          "gate": "profit_factor",
+          "threshold": 1.05,
+          "actual": 0.0853177194819067,
+          "status": "FAIL"
+        },
+        {
+          "gate": "max_drawdown_pct_of_capital",
+          "threshold": 0.05,
+          "actual": 0.009455768375573737,
+          "status": "PASS"
+        },
+        {
+          "gate": "mean_inventory_drag_ratio",
+          "threshold": 0.35,
+          "actual": 0.0,
+          "status": "PASS"
+        },
+        {
+          "gate": "best_window_concentration",
+          "threshold": 0.35,
+          "actual": 1.0,
+          "status": "FAIL"
+        },
+        {
+          "gate": "PRIMARY_ZERO_MAKER_net_pnl",
+          "threshold": 0.0,
+          "actual": -6.409663229788366,
+          "status": "FAIL"
+        },
+        {
+          "gate": "EXECUTION_STRESS_net_pnl",
+          "threshold": 0.0,
+          "actual": -6.81232394539449,
+          "status": "FAIL"
+        },
+        {
+          "gate": "validation_positive",
+          "threshold": 0.0,
+          "actual": -1.4373250652577008,
+          "status": "FAIL"
+        },
+        {
+          "gate": "final_oos_positive",
+          "threshold": 0.0,
+          "actual": -5.570204616150155,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_seed_count",
+          "threshold": 4,
+          "actual": 0,
+          "status": "FAIL"
+        }
+      ],
+      "hard_fail_reasons": [
+        "minimum_unique_windows",
+        "positive_window_ratio",
+        "profit_factor",
+        "best_window_concentration",
+        "PRIMARY_ZERO_MAKER_net_pnl",
+        "EXECUTION_STRESS_net_pnl",
+        "validation_positive",
+        "final_oos_positive",
+        "positive_seed_count"
+      ],
+      "inventory_fail": false,
+      "stress_fail": true,
+      "assessment_passed": false
+    },
+    {
+      "market_group": "US_STOCK",
+      "profile": "N20",
+      "passed": false,
+      "maker_dependent": true,
+      "primary_total_pnl": -11.36408800947093,
+      "stress_total_pnl": -29.37224775042851,
+      "maker_off_total_pnl": -10.442560919984668,
+      "final_oos_net_pnl": -10.207344306550853,
+      "validation_net_pnl": -4.698149446764006,
+      "development_net_pnl": 3.5414057438439306,
+      "positive_seed_count": 0,
+      "gates": [
+        {
+          "gate": "minimum_unique_windows",
+          "threshold": 8,
+          "actual": 13,
+          "status": "PASS"
+        },
+        {
+          "gate": "positive_window_ratio",
+          "threshold": 0.55,
+          "actual": 0.38461538461538464,
+          "status": "FAIL"
+        },
+        {
+          "gate": "profit_factor",
+          "threshold": 1.05,
+          "actual": 0.6921305684378302,
+          "status": "FAIL"
+        },
+        {
+          "gate": "max_drawdown_pct_of_capital",
+          "threshold": 0.05,
+          "actual": 0.012971929752017048,
+          "status": "PASS"
+        },
+        {
+          "gate": "mean_inventory_drag_ratio",
+          "threshold": 0.35,
+          "actual": 0.0,
+          "status": "PASS"
+        },
+        {
+          "gate": "best_window_concentration",
+          "threshold": 0.35,
+          "actual": 0.41386097414790773,
+          "status": "FAIL"
+        },
+        {
+          "gate": "PRIMARY_ZERO_MAKER_net_pnl",
+          "threshold": 0.0,
+          "actual": -11.36408800947093,
+          "status": "FAIL"
+        },
+        {
+          "gate": "EXECUTION_STRESS_net_pnl",
+          "threshold": 0.0,
+          "actual": -29.37224775042851,
+          "status": "FAIL"
+        },
+        {
+          "gate": "validation_positive",
+          "threshold": 0.0,
+          "actual": -4.698149446764006,
+          "status": "FAIL"
+        },
+        {
+          "gate": "final_oos_positive",
+          "threshold": 0.0,
+          "actual": -10.207344306550853,
+          "status": "FAIL"
+        },
+        {
+          "gate": "positive_seed_count",
+          "threshold": 4,
+          "actual": 0,
+          "status": "FAIL"
+        }
+      ],
+      "hard_fail_reasons": [
+        "positive_window_ratio",
+        "profit_factor",
+        "best_window_concentration",
+        "PRIMARY_ZERO_MAKER_net_pnl",
+        "EXECUTION_STRESS_net_pnl",
+        "validation_positive",
+        "final_oos_positive",
+        "positive_seed_count"
+      ],
+      "inventory_fail": false,
+      "stress_fail": true,
+      "assessment_passed": false
+    }
+  ]
+}

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import inspect
+
+import httpx
+
 from scripts.freeze_semiconductor_grid_rules import extract_rule_snapshots
 
 
@@ -10,3 +14,12 @@ def test_exchange_info_rules_are_normalized() -> None:
     assert result["SNDKUSDT"]["step_size"] == 0.001
     assert result["SNDKUSDT"]["min_notional"] == 5.0
     assert "GTX" in result["SNDKUSDT"]["time_in_force"]
+
+
+def test_httpx_proxy_keyword_matches_installed_client_signature() -> None:
+    keyword = (
+        "proxy"
+        if "proxy" in inspect.signature(httpx.Client).parameters
+        else "proxies"
+    )
+    assert keyword in inspect.signature(httpx.Client).parameters

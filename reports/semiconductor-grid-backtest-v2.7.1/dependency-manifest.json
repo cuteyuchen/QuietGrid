@@ -1,0 +1,12 @@
+{
+  "python_version": "3.13.14",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "packages": {
+    "pandas": "3.0.3",
+    "pandas_market_calendars": "5.4.0",
+    "PyYAML": "6.0.3",
+    "httpx": "0.25.2",
+    "numpy": "2.2.0"
+  },
+  "generated_at": "2026-07-25T15:20:38.838552+00:00"
+}

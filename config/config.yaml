@@ -1,5 +1,4 @@
 trading:
-  # v2 默认使用 1 倍有效杠杆；提高风险只能在下一窗口并经验证后生效。
   leverage: 1
   capital_per_symbol: 500
   total_capital_limit: 2000
@@ -8,7 +7,8 @@ trading:
   take_profit_usdt: 10
   stop_buffer_pct: 0.015
   max_concurrent: 3
-  max_maker_fee_rate: 0.0002
+  # 当前 Binance TradFi 挂单优惠：Maker 为 0。启动时仍从交易所核验。
+  max_maker_fee_rate: 0.0
   maker_fee_check_interval_seconds: 300
 
 entry:
@@ -28,15 +28,16 @@ timing:
   observe_hours: 3
   observe_kline_interval: "1m"
   live_observation: false
-  startup_auto_entry: true
+  # 新策略先合入研究与配置，不在进程启动时自动开仓。
+  startup_auto_entry: false
   startup_observation_mode: "historical_prefill"
   required_closed_bars: 180
   kline_fetch_buffer_bars: 2
   allowed_window_kinds:
     - "WEEKEND"
     - "HOLIDAY"
-  testnet_force_window: true
-  testnet_fast_observation: true
+  testnet_force_window: false
+  testnet_fast_observation: false
   observe_check_seconds: 60
   force_close_minutes: 120
   minimum_trade_minutes: 120
@@ -58,11 +59,20 @@ grid:
   quantile_upper: 0.95
   quantile_lower: 0.05
   min_step_pct: 0.0015
-  range_multiplier_by_symbol: {}
-  min_step_pct_by_symbol: {}
-  min_tradable_range_pct: 0.0015
+  range_multiplier_by_symbol:
+    SOXLUSDT: 1.25
+  min_step_pct_by_symbol:
+    SNDKUSDT: 0.0006
+    MUUSDT: 0.0008
+    SOXLUSDT: 0.0010
+  reduce_target_step_fraction_by_symbol:
+    SNDKUSDT: 0.75
+    MUUSDT: 0.75
+    SOXLUSDT: 1.0
+  min_tradable_range_pct: 0.0006
   safety_multiplier: 3.5
-  max_grid_num: 20
+  # v2.7 允许密集候选；AdaptiveGrid 仍按成本、穿越和库存目标选择实际格数。
+  max_grid_num: 100
   min_grid_num: 3
   max_step_pct: 0.01
   max_range_pct: 0.03
@@ -72,7 +82,6 @@ grid:
   k_atr_step: 0.50
   k_sigma_step: 0.80
   expansion_rate: 0.08
-  # 区间与格距共用同一波动率预测尺度（§9.2）。
   horizon_bars: 60
   volatility_estimator: "ewma"
   volatility_refresh_seconds: 60
@@ -88,21 +97,31 @@ cooldown:
 regime:
   short_window: 15
   long_window: 60
-  entry_filters_by_symbol: {}
-  enter_threshold: 75
-  stay_threshold: 65
+  entry_filters_by_symbol:
+    SNDKUSDT:
+      max_directional_efficiency: 0.55
+      max_volatility_expansion: 2.0
+      min_reversal_ratio: 0.25
+    MUUSDT:
+      max_directional_efficiency: 0.55
+      max_volatility_expansion: 2.0
+      min_reversal_ratio: 0.25
+    SOXLUSDT:
+      max_directional_efficiency: 0.50
+      max_volatility_expansion: 1.8
+      min_reversal_ratio: 0.28
+  enter_threshold: 80
+  stay_threshold: 68
   soft_breach_limit: 3
   max_data_age_seconds: 90
   recovery_confirm_minutes: 15
-  # event 权重默认 0：当前无事件 Provider，避免"无事件数据即加分"。
-  # 接入事件源后再上调 event 并置 event_source_available: true（§9.1）。
   event_source_available: false
   weights:
-    volatility: 0.25
+    volatility: 0.20
     trend: 0.20
-    liquidity: 0.25
-    mean_reversion: 0.15
-    cost: 0.15
+    liquidity: 0.30
+    mean_reversion: 0.20
+    cost: 0.10
     event: 0.00
   hard_limits:
     max_spread_pct: 0.0010
@@ -126,33 +145,175 @@ inventory:
   critical_utilization: 0.80
   suppress_same_side_orders: true
   passive_reduce_first: true
+  max_unpaired_lots_per_side_by_symbol:
+    SNDKUSDT: 8
+    MUUSDT: 8
+    SOXLUSDT: 5
 
 costs:
   verify_maker_fee_at_startup: true
-  adverse_selection_buffer_pct: 0.0005
-  slippage_buffer_pct: 0.0005
-  safety_margin_pct: 0.0005
+  adverse_selection_buffer_pct: 0.0002
+  slippage_buffer_pct: 0.0003
+  safety_margin_pct: 0.0002
 
 selection:
-  scan_candidate_count: 10
+  scan_candidate_count: 4
   volume_weight: 0.7
   depth_weight: 0.3
   depth_levels: 5
-  # Binance futures testnet does not expose TradFi token contracts.
-  # BTC/ETH/BCH are for testnet connectivity only; remove them before any future real-market deployment.
+  # 生产 NYSE 调度器只启用美国市场标的。SKHYNIX 仅在 v2.7 KRX 回测中使用。
   symbol_allowlist:
-    - BTCUSDT
-    - ETHUSDT
-    - BCHUSDT
-    - AAPLUSDT
-    - MSFTUSDT
-    - TSLAPREUSDT
-    - TSLAUSDT
-    - NVDAUSDT
-    - METAUSDT
-    - AMZNUSDT
-    - GOOGLUSDT
+    - SNDKUSDT
+    - MUUSDT
+    - SOXLUSDT
   symbol_blacklist: []
+
+# v2.7 回测与策略注册表。四标的分别使用其基础证券的参考市场日历。
+semiconductor_grid:
+  version: "v2.7"
+  research_symbols:
+    - SNDKUSDT
+    - MUUSDT
+    - SOXLUSDT
+    - SKHYNIXUSDT
+  live_symbols:
+    - SNDKUSDT
+    - MUUSDT
+    - SOXLUSDT
+  observation_rows: 180
+  minimum_trade_rows: 120
+  force_close_minutes: 120
+  minimum_trade_minutes: 120
+  capital_per_symbol: 500
+  economic_leverage: 1
+  seed_slippage_bps: 10
+  inventory_caution_utilization: 0.40
+  inventory_critical_utilization: 0.80
+  max_unpaired_lots_per_side: 8
+
+  profiles:
+    N20:
+      direction_mode: "NEUTRAL"
+      min_grid_num: 3
+      max_grid_num: 20
+      min_step_pct: 0.0015
+      requires_long_signal: false
+    N100:
+      direction_mode: "NEUTRAL"
+      min_grid_num: 20
+      max_grid_num: 100
+      min_step_pct: 0.0006
+      requires_long_signal: false
+    L20:
+      direction_mode: "LONG"
+      min_grid_num: 3
+      max_grid_num: 20
+      min_step_pct: 0.0015
+      requires_long_signal: true
+    L100:
+      direction_mode: "LONG"
+      min_grid_num: 20
+      max_grid_num: 100
+      min_step_pct: 0.0006
+      requires_long_signal: true
+
+  symbol_profiles:
+    SNDKUSDT:
+      market_group: "US_STOCK"
+      calendar_name: "NYSE"
+      market_timezone: "America/New_York"
+      reference_open_time: "04:00"
+      capital_multiplier: 1.0
+      allow_neutral: true
+      allow_long: false
+      assumed_spread_pct: 0.0002
+      normal_min_step_pct: 0.0015
+      dense_min_step_pct: 0.0006
+    MUUSDT:
+      market_group: "US_STOCK"
+      calendar_name: "NYSE"
+      market_timezone: "America/New_York"
+      reference_open_time: "04:00"
+      capital_multiplier: 1.0
+      allow_neutral: true
+      allow_long: false
+      assumed_spread_pct: 0.0002
+      normal_min_step_pct: 0.0015
+      dense_min_step_pct: 0.0008
+    SOXLUSDT:
+      market_group: "US_LEVERAGED_ETF"
+      calendar_name: "NYSE"
+      market_timezone: "America/New_York"
+      reference_open_time: "04:00"
+      capital_multiplier: 0.5
+      allow_neutral: true
+      allow_long: false
+      assumed_spread_pct: 0.0003
+      normal_min_step_pct: 0.0018
+      dense_min_step_pct: 0.0010
+    SKHYNIXUSDT:
+      market_group: "KR_STOCK"
+      calendar_name: "XKRX"
+      market_timezone: "Asia/Seoul"
+      reference_open_time: null
+      capital_multiplier: 1.0
+      allow_neutral: true
+      allow_long: true
+      assumed_spread_pct: 0.0002
+      normal_min_step_pct: 0.0015
+      dense_min_step_pct: 0.0006
+
+  viability:
+    lookback_bars: 60
+    bars_per_hour: 60
+    min_crossings_per_hour: 1.0
+    min_reversal_ratio: 0.25
+    max_zero_activity_ratio: 0.20
+    min_trade_count_per_hour: 60
+    min_quote_volume_per_hour: 10000
+    max_spread_to_step_ratio: 0.50
+    min_net_capacity_per_hour: 0.00025
+
+  long_signal:
+    short_window: 15
+    long_window: 60
+    minimum_long_return_pct: 0.001
+    minimum_short_return_pct: 0.0
+    minimum_directional_efficiency: 0.10
+    maximum_directional_efficiency: 0.65
+    minimum_reversal_ratio: 0.20
+    maximum_short_move_sigma: 3.0
+
+  acceptance:
+    minimum_unique_windows: 8
+    minimum_positive_ratio: 0.55
+    minimum_profit_factor: 1.05
+    maximum_drawdown_pct_of_capital: 0.05
+    maximum_mean_inventory_drag_ratio: 0.35
+    maximum_best_window_concentration: 0.35
+    require_primary_positive: true
+    require_execution_stress_positive: true
+
+  execution:
+    scenarios:
+      PRIMARY_ZERO_MAKER:
+        maker_fee_rate: 0.0
+        taker_fee_rate: 0.0005
+        maker_fill_probability: 0.65
+        max_fills_per_bar: 2
+        stop_slippage_bps: 10
+      EXECUTION_STRESS:
+        maker_fee_rate: 0.0
+        taker_fee_rate: 0.00075
+        maker_fill_probability: 0.45
+        max_fills_per_bar: 1
+        stop_slippage_bps: 25
+      MAKER_PROMO_OFF:
+        maker_fee_rate: 0.0002
+        taker_fee_rate: 0.0005
+        maker_fill_probability: 0.65
+        max_fills_per_bar: 2
+        stop_slippage_bps: 15
 
 proxy:
   enabled: true
@@ -161,16 +322,10 @@ proxy:
 
 web:
   port: 8080
-  # P0-2：默认仅监听本机；若改为非 loopback 地址，必须提供 auth_token 或
-  # auth_token_env 指向的环境变量，否则服务拒绝启动（见 core.config.validate_web_binding）。
   address: "127.0.0.1"
   auth_token: ""
   auth_token_env: "QUIETGRID_WEB_TOKEN"
 
-# Vue 控制台的交易 loop 进程控制。
-# mode=auto：Windows 使用 local 本地启动；Linux 使用 systemd。
-# mode=local：网页可直接启动 trader.py。
-# mode=command：自定义 status/start/stop/restart 命令。
 process_control:
   mode: "local"
   service: "quietgrid-trader"
@@ -182,10 +337,6 @@ process_control:
   pid_directory: "data/runtime"
   log_directory: "logs"
   timeout_seconds: 15
-  # mode: "command"
-  # status_command: ["powershell", "-NoProfile", "-Command", "Get-Service quietgrid-trader"]
-  # stop_command: ["powershell", "-NoProfile", "-Command", "Stop-Service quietgrid-trader"]
-  # restart_command: ["powershell", "-NoProfile", "-Command", "Restart-Service quietgrid-trader"]
 
 notifications:
   enabled: false
@@ -199,15 +350,11 @@ database:
   path: "data/trading.db"
 
 backtest:
-  # 在线下载完成后写入不可变冻结数据集；旧 CSV 仍可放入该目录兼容使用。
   dataset_dir: "data/backtests/datasets"
   legacy_dataset_dir: "data"
   staging_dir: "data/backtests/staging"
   report_dir: "reports/backtests"
   storage_format: "csv"
-  # 数据集格式版本由代码唯一掌管（data_sources.dataset_service.SCHEMA_VERSION），
-  # 不在配置中重复声明，避免 §5.6 的双重来源隐患。
-  # 归档优先的混合数据源：官方月/日归档为主，REST 仅补未归档的最新尾部。
   default_provider: "binance_hybrid"
   providers:
     binance_archive:
@@ -230,7 +377,6 @@ backtest:
       tolerate_missing_latest_tail: true
   online_data:
     enabled: true
-    # 允许冻结最多约两年的 1m 数据；下载仍按官方月/日归档分段并逐段校验。
     max_range_days_1m: 800
     max_concurrent_jobs: 1
     page_limit: 1500
@@ -264,24 +410,6 @@ backtest:
   monte_carlo_missing_fill_probability: 0.10
   monte_carlo_loss_multiplier: 1.25
   monte_carlo_cost_per_event: 0.0
-
-# 可选多账户配置。未配置 accounts 时继续使用 .env 中的 BINANCE_API_KEY / BINANCE_API_SECRET。
-# default_account_id: main
-# accounts:
-#   - id: main
-#     label: 主账户
-#     testnet: false
-#     api_key_env: BINANCE_MAIN_API_KEY
-#     api_secret_env: BINANCE_MAIN_API_SECRET
-#     database_path: data/trading-main.db
-#   - id: hedge
-#     label: 对冲账户
-#     testnet: true
-#     # 或使用独立环境变量：
-#     # testnet_env: BINANCE_HEDGE_TESTNET
-#     api_key_env: BINANCE_HEDGE_API_KEY
-#     api_secret_env: BINANCE_HEDGE_API_SECRET
-#     database_path: data/trading-hedge.db
 
 logging:
   level: "INFO"

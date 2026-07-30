@@ -4,6 +4,7 @@ trading:
   total_capital_limit: 2000
   direction_mode: "NEUTRAL"
   direction_overrides: {}
+  # 扣除库存浮盈亏与预计退出成本后的净利润峰值保护启动线；达到后不立即全平。
   take_profit_usdt: 10
   stop_buffer_pct: 0.015
   max_concurrent: 3

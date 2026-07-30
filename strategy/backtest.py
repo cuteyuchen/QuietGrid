@@ -118,6 +118,27 @@ class BacktestResult:
     exit_long_qty: float = 0.0
     exit_short_qty: float = 0.0
     exit_hedged_fraction: float = 0.0
+    paired_grid_pnl: float = 0.0
+    inventory_realized_pnl: float = 0.0
+    maker_fees: float = 0.0
+    taker_fees: float = 0.0
+    funding_received: float = 0.0
+    seed_cost: float = 0.0
+    stop_exit_slippage_cost: float = 0.0
+    force_exit_fees: float = 0.0
+    force_exit_slippage_cost: float = 0.0
+    force_exit_cost: float = 0.0
+    pre_exit_position_qty: float = 0.0
+    pre_exit_inventory_notional: float = 0.0
+    pre_exit_unrealized_pnl: float = 0.0
+    pre_exit_mark_price: float | None = None
+    pre_exit_timestamp: Any = None
+    peak_negative_unrealized_pnl: float = 0.0
+    peak_inventory_drag_ratio: float = 0.0
+    mean_inventory_utilization: float = 0.0
+    max_unpaired_lots: int = 0
+    accepted_fill_count: int = 0
+    force_close_count: int = 0
 
 
 @dataclass
@@ -240,8 +261,12 @@ def run_grid_backtest(
     short_lots: list[_PositionLot] = []
     gross_grid_pnl = 0.0
     fees_paid = 0.0
+    paired_grid_pnl = 0.0
+    maker_fees = 0.0
+    taker_fees = 0.0
     seed_qty = sum(order.qty for order in open_orders if order.order_intent == OrderIntent.REDUCE)
     seed_fee = 0.0
+    seed_cost = 0.0
     if mode == GridDirectionMode.LONG and seed_qty > 0:
         long_lots.append(_PositionLot(seed_entry_price, seed_qty, -1))
     elif mode == GridDirectionMode.SHORT and seed_qty > 0:
@@ -249,6 +274,8 @@ def run_grid_backtest(
     if seed_qty > 0:
         seed_fee = seed_entry_price * seed_qty * config.taker_fee_rate
         fees_paid += seed_fee
+        taker_fees += seed_fee
+        seed_cost = seed_fee + abs(seed_entry_price - current_price) * seed_qty
         seed_side = OrderSide.BUY if mode == GridDirectionMode.LONG else OrderSide.SELL
         fills.append(
             BacktestFill(
@@ -270,8 +297,15 @@ def run_grid_backtest(
     max_drawdown = 0.0
     max_inventory_utilization = 0.0
     funding_paid = 0.0
+    funding_received = 0.0
+    funding_net_cost = 0.0
     stop_exit_cost = 0.0
+    stop_exit_slippage_cost = 0.0
     stop_exit_pnl = 0.0
+    force_exit_fees = 0.0
+    force_exit_slippage_cost = 0.0
+    force_exit_cost = 0.0
+    inventory_realized_pnl = 0.0
     attempted_fill_count = 0
     pair_completion_count = 0
     stopped_reason: str | None = None
@@ -295,12 +329,35 @@ def run_grid_backtest(
     exit_long_qty = 0.0
     exit_short_qty = 0.0
     exit_hedged_fraction = 0.0
+    pre_exit_position_qty = 0.0
+    pre_exit_inventory_notional = 0.0
+    pre_exit_unrealized_pnl = 0.0
+    pre_exit_mark_price: float | None = None
+    pre_exit_timestamp: Any = None
+    peak_negative_unrealized_pnl = 0.0
+    peak_inventory_drag_ratio = 0.0
+    max_unpaired_lots = 0
+    force_close_count = 0
     conservative = config.fill_model.upper() == "L0_CONSERVATIVE"
     min_tick_size = (
         config.min_tick_size
         if config.min_tick_size > 0
         else max(min(params.grid_prices) * 1e-8, 1e-12)
     )
+
+    def capture_pre_exit(mark_price: float, timestamp: Any) -> None:
+        nonlocal pre_exit_position_qty
+        nonlocal pre_exit_inventory_notional
+        nonlocal pre_exit_unrealized_pnl
+        nonlocal pre_exit_mark_price
+        nonlocal pre_exit_timestamp
+        long_qty = sum(lot.qty for lot in long_lots)
+        short_qty = sum(lot.qty for lot in short_lots)
+        pre_exit_position_qty = long_qty - short_qty
+        pre_exit_inventory_notional = abs(pre_exit_position_qty) * mark_price
+        pre_exit_unrealized_pnl = _unrealized_pnl(long_lots, short_lots, mark_price)
+        pre_exit_mark_price = mark_price
+        pre_exit_timestamp = timestamp
 
     for bar_index, row in enumerate(klines):
         previous_event_time = _validate_bar_time(row, previous_event_time)
@@ -310,6 +367,17 @@ def run_grid_backtest(
             max_unpaired_lot_age_bars,
             _oldest_lot_age_bars(long_lots, short_lots, bar_index),
         )
+        max_unpaired_lots = max(max_unpaired_lots, len(long_lots), len(short_lots))
+        bar_start_unrealized = _unrealized_pnl(long_lots, short_lots, close)
+        peak_negative_unrealized_pnl = max(
+            peak_negative_unrealized_pnl,
+            max(0.0, -bar_start_unrealized),
+        )
+        if paired_grid_pnl > 1e-12:
+            peak_inventory_drag_ratio = max(
+                peak_inventory_drag_ratio,
+                max(0.0, -bar_start_unrealized) / paired_grid_pnl,
+            )
         bar_start_long_lot_count = len(long_lots)
         bar_start_short_lot_count = len(short_lots)
 
@@ -359,6 +427,7 @@ def run_grid_backtest(
 
         risk_reason, risk_price = _risk_stop(params, high, low, config)
         if risk_reason is not None:
+            capture_pre_exit(float(risk_price), _bar_timestamp(row))
             (
                 exit_oldest_lot_age_bars,
                 exit_long_qty,
@@ -374,6 +443,12 @@ def run_grid_backtest(
                     else 1 + slippage
                 )
             if conservative:
+                stop_exit_slippage_cost = _market_exit_slippage_cost(
+                    long_lots,
+                    short_lots,
+                    float(risk_price),
+                    config.stop_slippage_bps,
+                )
                 stop_exit_pnl, stop_exit_cost = _close_all_lots(
                     long_lots,
                     short_lots,
@@ -382,6 +457,8 @@ def run_grid_backtest(
                 )
                 gross_grid_pnl += stop_exit_pnl
                 fees_paid += stop_exit_cost
+                taker_fees += stop_exit_cost
+                inventory_realized_pnl += stop_exit_pnl
             stopped_reason = risk_reason
             stopped_at_index = bar_index
             stopped_at_price = exit_price
@@ -396,7 +473,7 @@ def run_grid_backtest(
                 bar_index,
                 _bar_timestamp(row),
                 last_price,
-                gross_grid_pnl - fees_paid - funding_paid,
+                gross_grid_pnl - fees_paid - funding_net_cost,
                 long_lots,
                 short_lots,
                 max_equity,
@@ -452,9 +529,11 @@ def run_grid_backtest(
             open_orders.remove(order)
             fee = order.price * order.qty * config.maker_fee_rate
             fees_paid += fee
+            maker_fees += fee
             grid_pnl = _grid_pnl(order)
             if grid_pnl is not None:
                 gross_grid_pnl += grid_pnl
+                paired_grid_pnl += grid_pnl
                 pair_completion_count += 1
                 if order.wind_down_reduce:
                     wind_down_maker_fill_count += 1
@@ -492,6 +571,18 @@ def run_grid_backtest(
                 else:
                     open_orders.append(next_order)
 
+        max_unpaired_lots = max(max_unpaired_lots, len(long_lots), len(short_lots))
+        post_fill_unrealized = _unrealized_pnl(long_lots, short_lots, close)
+        peak_negative_unrealized_pnl = max(
+            peak_negative_unrealized_pnl,
+            max(0.0, -post_fill_unrealized),
+        )
+        if paired_grid_pnl > 1e-12:
+            peak_inventory_drag_ratio = max(
+                peak_inventory_drag_ratio,
+                max(0.0, -post_fill_unrealized) / paired_grid_pnl,
+            )
+
         if config.max_inventory_notional > 0:
             inventory_utilization = _inventory_utilization(
                 long_lots,
@@ -509,6 +600,7 @@ def run_grid_backtest(
                 inventory_utilization,
             )
             if inventory_utilization >= config.inventory_critical_utilization:
+                capture_pre_exit(close, _bar_timestamp(row))
                 (
                     exit_oldest_lot_age_bars,
                     exit_long_qty,
@@ -524,6 +616,14 @@ def run_grid_backtest(
                 )
                 gross_grid_pnl += stop_exit_pnl
                 fees_paid += stop_exit_cost
+                taker_fees += stop_exit_cost
+                stop_exit_slippage_cost = _market_exit_slippage_cost_from_snapshot(
+                    exit_long_qty,
+                    exit_short_qty,
+                    close,
+                    config.stop_slippage_bps,
+                )
+                inventory_realized_pnl += stop_exit_pnl
                 stopped_reason = "inventory_critical"
                 stopped_at_index = bar_index
                 stopped_at_price = close
@@ -539,7 +639,7 @@ def run_grid_backtest(
                     bar_index,
                     _bar_timestamp(row),
                     close,
-                    gross_grid_pnl - fees_paid - funding_paid,
+                    gross_grid_pnl - fees_paid - funding_net_cost,
                     long_lots,
                     short_lots,
                     max_equity,
@@ -610,14 +710,23 @@ def run_grid_backtest(
                     short_lots,
                     close,
                 )
-                funding_paid += funding_delta
+                if funding_delta >= 0:
+                    funding_paid += funding_delta
+                else:
+                    funding_received += -funding_delta
+                funding_net_cost += funding_delta
         elif conservative and config.funding_rate_per_bar != 0:
-            funding_paid += _funding_cost(
+            funding_delta = _funding_cost(
                 long_lots,
                 short_lots,
                 close,
                 config.funding_rate_per_bar,
             )
+            if funding_delta >= 0:
+                funding_paid += funding_delta
+            else:
+                funding_received += -funding_delta
+            funding_net_cost += funding_delta
         (
             _equity,
             max_equity,
@@ -628,7 +737,7 @@ def run_grid_backtest(
             bar_index,
             _bar_timestamp(row),
             close,
-            gross_grid_pnl - fees_paid - funding_paid,
+            gross_grid_pnl - fees_paid - funding_net_cost,
             long_lots,
             short_lots,
             max_equity,
@@ -638,6 +747,7 @@ def run_grid_backtest(
         )
 
     if config.force_close_at_end and stopped_reason is None:
+        capture_pre_exit(last_price, _bar_timestamp(klines[-1]))
         (
             exit_oldest_lot_age_bars,
             exit_long_qty,
@@ -653,6 +763,17 @@ def run_grid_backtest(
         )
         gross_grid_pnl += stop_exit_pnl
         fees_paid += stop_exit_cost
+        taker_fees += stop_exit_cost
+        force_exit_fees = stop_exit_cost
+        force_exit_slippage_cost = _market_exit_slippage_cost_from_snapshot(
+            exit_long_qty,
+            exit_short_qty,
+            last_price,
+            config.stop_slippage_bps,
+        )
+        force_exit_cost = force_exit_fees + force_exit_slippage_cost
+        inventory_realized_pnl += stop_exit_pnl
+        force_close_count = 1
         stopped_reason = "window_force_close"
         stopped_at_index = len(klines)
         stopped_at_price = last_price
@@ -667,7 +788,7 @@ def run_grid_backtest(
             len(klines),
             _bar_timestamp(klines[-1]),
             last_price,
-            gross_grid_pnl - fees_paid - funding_paid,
+            gross_grid_pnl - fees_paid - funding_net_cost,
             long_lots,
             short_lots,
             max_equity,
@@ -677,7 +798,12 @@ def run_grid_backtest(
         )
 
     unrealized_pnl = _unrealized_pnl(long_lots, short_lots, last_price)
-    realized_pnl = gross_grid_pnl - fees_paid - funding_paid
+    realized_pnl = gross_grid_pnl - fees_paid - funding_net_cost
+    mean_inventory_utilization = (
+        sum(point.inventory_utilization for point in equity_curve) / len(equity_curve)
+        if equity_curve
+        else 0.0
+    )
     return BacktestResult(
         symbol=params.symbol,
         fills=fills,
@@ -718,6 +844,27 @@ def run_grid_backtest(
         exit_long_qty=exit_long_qty,
         exit_short_qty=exit_short_qty,
         exit_hedged_fraction=exit_hedged_fraction,
+        paired_grid_pnl=paired_grid_pnl,
+        inventory_realized_pnl=inventory_realized_pnl,
+        maker_fees=maker_fees,
+        taker_fees=taker_fees,
+        funding_received=funding_received,
+        seed_cost=seed_cost,
+        stop_exit_slippage_cost=stop_exit_slippage_cost,
+        force_exit_fees=force_exit_fees,
+        force_exit_slippage_cost=force_exit_slippage_cost,
+        force_exit_cost=force_exit_cost,
+        pre_exit_position_qty=pre_exit_position_qty,
+        pre_exit_inventory_notional=pre_exit_inventory_notional,
+        pre_exit_unrealized_pnl=pre_exit_unrealized_pnl,
+        pre_exit_mark_price=pre_exit_mark_price,
+        pre_exit_timestamp=pre_exit_timestamp,
+        peak_negative_unrealized_pnl=peak_negative_unrealized_pnl,
+        peak_inventory_drag_ratio=peak_inventory_drag_ratio,
+        mean_inventory_utilization=mean_inventory_utilization,
+        max_unpaired_lots=max_unpaired_lots,
+        accepted_fill_count=len([fill for fill in fills if fill.order_intent != OrderIntent.SEED.value]),
+        force_close_count=force_close_count,
     )
 
 
@@ -1335,6 +1482,31 @@ def _close_all_lots_at_market(
     long_lots.clear()
     short_lots.clear()
     return pnl, fee
+
+
+def _market_exit_slippage_cost(
+    long_lots: list[_PositionLot],
+    short_lots: list[_PositionLot],
+    mark_price: float,
+    slippage_bps: float,
+) -> float:
+    return _market_exit_slippage_cost_from_snapshot(
+        sum(lot.qty for lot in long_lots),
+        sum(lot.qty for lot in short_lots),
+        mark_price,
+        slippage_bps,
+    )
+
+
+def _market_exit_slippage_cost_from_snapshot(
+    long_qty: float,
+    short_qty: float,
+    mark_price: float,
+    slippage_bps: float,
+) -> float:
+    return (
+        max(0.0, long_qty) + max(0.0, short_qty)
+    ) * mark_price * max(0.0, slippage_bps) / 10_000
 
 
 def _funding_cost(

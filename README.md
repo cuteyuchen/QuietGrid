@@ -43,7 +43,7 @@
         ├─ 观察期：空跑采集 1 分钟 K 线，不交易
         ├─ 区间计算：动态算区间上下沿、ATR 基准、等比间距、网格数量
         └─ 网格引擎：多标的并发，挂满等比 POST_ONLY 限价单，成交后补挂对侧单
-             ├─ 止盈（已实现盈利 ≥ 阈值）──► 平仓退出
+             ├─ 利润保护（净利润达到启动线后按峰值回撤）──► 抑制 / 减仓 / 平仓
              ├─ 击穿（价格超出区间）──► 冷静期──► 达标后回到观察期
              ├─ 动态止损（跌破止损线）──► 强制平仓
              └─ 临近开盘（盘前 2h）──► 全局强制清仓，窗口结束
@@ -93,7 +93,7 @@ v1.0 规划的 M1–M9 九个模块已经落地；v2 核心、控制台、回测
 | M4 | 观察期 + 动态区间计算（区间/ATR/间距/网格数） | ✅ | `strategy/observer.py`、`strategy/grid_calculator.py`、`strategy/volatility.py` |
 | M5 | 网格执行引擎（等比挂单、成交补挂、并发） | ✅ | `strategy/grid_engine.py` |
 | M6 | 击穿-冷静期状态机 | ✅ | `strategy/state_machine.py`、`strategy/cooldown.py` |
-| M7 | 风控（止盈、动态止损、资金/并发上限、交易所端止损） | ✅ | `strategy/risk.py`、`strategy/grid_engine.py` |
+| M7 | 风控（利润保护、动态止损、资金/并发上限、交易所端止损） | ✅ | `strategy/risk.py`、`strategy/grid_engine.py` |
 | M8 | SQLite 数据持久化 | ✅ | `db/database.py`、`db/repository.py` |
 | M9 | Web 监控 / 控制台 | ✅ | `api.py`（FastAPI）、`frontend/`（Vue 3） |
 
@@ -177,7 +177,7 @@ QuietGrid/
 
 **M6 状态机**（`state_machine.py` + `cooldown.py`）：`ALLOWED_TRANSITIONS` 守卫合法状态迁移并记录审计历史，状态含 IDLE / OBSERVING / RUNNING / COOLDOWN / CLOSING / STOPPED，另加运维用 `PAUSED`。冷静期评估独立于状态机：需同时满足静默时长达标、当前 ATR < `基准×atr_recovery_ratio`（0.80）、近窗振幅 < `min_step_pct×amplitude_multiplier` 才允许重新观察。
 
-**M7 风控**（`strategy/risk.py` 决策 + `grid_engine.py` 交易所端执行）：止盈（已实现盈利 ≥ `take_profit_usdt`）、动态止损（价格触及 `stop_loss_price`）、区间击穿（转 COOLDOWN）、强制离场（委托调度器判定）、资金上限（`total_capital_limit`）与并发上限（`max_concurrent`）。所有阈值走配置，非硬编码。
+**M7 风控**（`strategy/risk.py` 决策 + `grid_engine.py` 交易所端执行）：`take_profit_usdt` 是扣除库存浮盈亏与预计退出成本后的净利润峰值保护启动线，不是达到后立即全平的固定止盈线；保护启动后按峰值回撤依次抑制新增库存、减仓或平仓。另含动态止损（价格触及 `stop_loss_price`）、区间击穿（转 COOLDOWN）、强制离场（委托调度器判定）、资金上限（`total_capital_limit`）与并发上限（`max_concurrent`）。所有阈值走配置，非硬编码。
 
 **回测**（`strategy/backtest.py` + `api.py`）：提供 Binance 在线历史数据、CSV 导入、冻结 Dataset ID、质量校验、NYSE 休市窗口切分，以及 `L0_CONSERVATIVE` 保守成交模型、穿透 tick、同 Bar 风控优先、成交折扣、成交层数限制、手续费/滑点/资金费、未来数据校验、Walk-Forward、Monte Carlo、样本冻结、独立窗口分布和成本敏感性。当前不伪装支持缺少历史盘口数据的 L1/L2 回测。
 
@@ -221,7 +221,7 @@ Vue 3 + FastAPI，读取交易进程数据库并提供受控操作。控制台�
 
 实时更新：默认连 `/api/events` SSE 状态流，检测到会话/挂单/成交/控制状态/日志变化后复用 REST 刷新；SSE 断开时自动回退到 10 秒轮询。
 
-参数热加载：草稿中的 `capital_per_symbol`、`leverage`、`max_concurrent`、`take_profit_usdt`、`total_capital_limit`、`max_maker_fee_rate` 在下一轮 `run_once` 时生效；波动率算法、K 线周期、观察窗口、止损缓冲、资金费安全倍数、网格参数用于下一轮新建网格。
+参数热加载：草稿中的 `capital_per_symbol`、`leverage`、`max_concurrent`、利润保护启动线 `take_profit_usdt`、`total_capital_limit`、`max_maker_fee_rate` 在下一轮 `run_once` 时生效；波动率算法、K 线周期、观察窗口、止损缓冲、资金费安全倍数、网格参数用于下一轮新建网格。
 
 > 安全提示：`config.yaml` 中 `web.auth_token` 默认为空，且 CORS 仅放行本地开发端口。仅限本机使用尚可；对外暴露前必须配置鉴权并收紧网络访问，否则控制台操作接口是敞开的。
 
@@ -231,7 +231,7 @@ Vue 3 + FastAPI，读取交易进程数据库并提供受控操作。控制台�
 
 主配置 `config/config.yaml`，密钥走 `.env`。关键分组：
 
-- `trading`：默认 1 倍杠杆、单标的本金、总资金上限、止盈阈值、止损缓冲、最大并发、Maker 费率上限与检查周期。
+- `trading`：默认 1 倍杠杆、单标的本金、总资金上限、利润保护启动线、止损缓冲、最大并发、Maker 费率上限与检查周期。
 - `risk`：有效杠杆上限、会话/窗口损失预算、库存与相关性组上限、连续亏损和窗口止损次数、风险热更新锁。
 - `regime` / `inventory` / `costs`：市场状态阈值、库存分级和成本地板。
 - `backtest`：数据目录、保守成交、成交折扣、滑点/资金费、Walk-Forward 与 Monte Carlo。

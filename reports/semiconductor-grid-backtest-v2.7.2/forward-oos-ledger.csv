@@ -1,0 +1,2 @@
+complete_window_count,forward_oos_start,immutable_append_only,record_type,status
+0,2026-07-26T04:32:00+00:00,True,LEDGER_METADATA,INSUFFICIENT_FORWARD_OOS

@@ -296,6 +296,11 @@ def test_conservative_stop_liquidates_inventory_with_slippage_and_taker_fee() ->
     assert result.stopped_at_price < 98.0
     assert result.stop_exit_pnl < 0
     assert result.stop_exit_cost > 0
+    assert result.stop_exit_slippage_cost > 0
+    assert result.pre_exit_position_qty > 0
+    assert result.pre_exit_inventory_notional > 0
+    assert result.pre_exit_unrealized_pnl < 0
+    assert result.peak_negative_unrealized_pnl > 0
     assert result.net_position_qty == 0
     assert result.unrealized_pnl == 0
 
@@ -327,6 +332,19 @@ def test_window_force_close_liquidates_inventory_and_clears_orders() -> None:
     assert result.unrealized_pnl == 0
     assert result.stop_exit_pnl < 0
     assert result.stop_exit_cost > 0
+    assert result.force_close_count == 1
+    assert result.pre_exit_position_qty > 0
+    assert result.pre_exit_inventory_notional > 0
+    assert result.pre_exit_unrealized_pnl < 0
+    assert result.peak_negative_unrealized_pnl > 0
+    assert result.max_unpaired_lots == 1
+    assert result.pre_exit_timestamp == "window-end"
+    assert result.inventory_realized_pnl == result.stop_exit_pnl
+    assert result.force_exit_fees == result.stop_exit_cost
+    assert result.force_exit_slippage_cost > 0
+    assert result.force_exit_cost == (
+        result.force_exit_fees + result.force_exit_slippage_cost
+    )
     assert result.equity_curve[-1].inventory_utilization == 0
 
 

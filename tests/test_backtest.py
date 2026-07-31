@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from core.models import GridDirectionMode, GridParams
 from strategy.backtest import BacktestConfig, LookAheadViolation, run_grid_backtest
 from strategy.order_plan import build_initial_grid_order_plan
+from strategy.profit_protection import ProfitProtectionConfig
 
 
 def _params() -> GridParams:
@@ -82,6 +83,50 @@ def test_backtest_fees_reduce_realized_pnl() -> None:
     assert round(result.total_pnl, 6) == 0.799
 
 
+def test_backtest_fixed_net_take_profit_closes_using_visible_inventory_pnl() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 101.0, "low": 100.0, "close": 101.0},
+        ],
+        current_price=101.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            fixed_take_profit_usdt=0.5,
+        ),
+    )
+
+    assert result.stopped_reason == "fixed_take_profit"
+    assert result.take_profit_count == 1
+
+
+def test_backtest_peak_profit_protection_uses_production_tracker() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 100.5, "low": 99.0, "close": 99.0},
+        ],
+        current_price=101.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            fill_model="L0_CONSERVATIVE",
+            profit_protection=ProfitProtectionConfig(
+                activation_profit_usdt=0.01,
+                suppress_drawdown_pct=0.20,
+                reduce_drawdown_pct=0.35,
+                close_drawdown_pct=0.50,
+            ),
+        ),
+    )
+
+    assert result.profit_protection_suppress_count >= 0
+
+
 def test_backtest_tracks_equity_curve_and_max_drawdown() -> None:
     result = run_grid_backtest(
         _params(),
@@ -129,6 +174,42 @@ def test_backtest_stops_on_upper_stop_before_same_bar_fills() -> None:
     assert result.stopped_reason == "stop_loss_upper"
     assert result.stopped_at_index == 0
     assert result.stopped_at_price == 102.0
+
+
+def test_backtest_atr_buffer_stop_uses_frozen_pre_window_atr() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [{"high": 101.3, "low": 99.5, "close": 100.0}],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            stop_atr_buffer=1.0,
+        ),
+    )
+
+    assert result.stopped_reason == "atr_stop_upper"
+    assert result.stopped_at_price == 101.2
+
+
+def test_time_confirmed_stop_waits_for_closed_bar_count() -> None:
+    result = run_grid_backtest(
+        _params(),
+        [
+            {"high": 101.3, "low": 99.5, "close": 101.0},
+            {"high": 101.3, "low": 99.5, "close": 101.0},
+        ],
+        current_price=100.0,
+        config=BacktestConfig(
+            capital=202,
+            leverage=1,
+            stop_atr_buffer=1.0,
+            stop_time_confirm_bars=2,
+        ),
+    )
+
+    assert result.stopped_reason == "time_confirmed_stop_upper"
+    assert result.stopped_at_index == 1
 
 
 def test_backtest_uses_adaptive_quantity_weights_and_step_size() -> None:

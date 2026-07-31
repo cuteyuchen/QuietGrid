@@ -1569,6 +1569,10 @@ def _run_controller_faithful(
                     else "OBSERVING>RUNNING>DEFENSIVE>COOLDOWN"
                 ),
                 "stopped_reason": result.stopped_reason or "",
+                "stopped_at_price": result.stopped_at_price,
+                "grid_lower": active_candidate.params.lower,
+                "grid_upper": active_candidate.params.upper,
+                "baseline_atr": active_candidate.params.baseline_atr,
                 "session_pnl": result.total_pnl,
                 "paired_grid_pnl": result.paired_grid_pnl,
                 "inventory_realized_pnl": result.inventory_realized_pnl,
@@ -1651,7 +1655,12 @@ def _combine_backtest_results(
     peak = 0.0
     max_drawdown = 0.0
     for result in results:
-        cumulative += result.total_pnl
+        session_base = cumulative
+        for point in result.equity_curve:
+            window_equity = session_base + point.equity
+            peak = max(peak, window_equity)
+            max_drawdown = max(max_drawdown, peak - window_equity)
+        cumulative = session_base + result.total_pnl
         peak = max(peak, cumulative)
         max_drawdown = max(max_drawdown, peak - cumulative)
     drag = sum(max(0.0, -item.pre_exit_unrealized_pnl) for item in results)
@@ -1730,6 +1739,16 @@ def _combine_backtest_results(
         max_unpaired_lots=max(item.max_unpaired_lots for item in results),
         accepted_fill_count=sum(item.accepted_fill_count for item in results),
         force_close_count=sum(item.force_close_count for item in results),
+        take_profit_count=sum(item.take_profit_count for item in results),
+        profit_protection_suppress_count=sum(
+            item.profit_protection_suppress_count for item in results
+        ),
+        profit_protection_reduce_count=sum(
+            item.profit_protection_reduce_count for item in results
+        ),
+        profit_protection_close_count=sum(
+            item.profit_protection_close_count for item in results
+        ),
     )
 
 

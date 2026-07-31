@@ -1,0 +1,1 @@
+{"protocol": "v2.8", "phase": "PHASE_3_LOCAL_COMPLETE_FACTORIAL", "official": true, "started_at_utc": "2026-07-31T02:12:00.903643+00:00", "finished_at_utc": "2026-07-31T02:22:20.004107+00:00", "candidate_catalog_sha256": "5e051977010bc96095da97608df938337d101793de3e3dc481ea3b738aa0a8c6", "candidate_profile_count": 32, "run_count": 7344, "blocked_count": 3288}

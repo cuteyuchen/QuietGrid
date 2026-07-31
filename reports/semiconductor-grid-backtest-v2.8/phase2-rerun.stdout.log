@@ -1,0 +1,1 @@
+{"protocol": "v2.8", "phase": "PHASE_2_R1_CONTROLLER_FAITHFUL", "official": true, "started_at_utc": "2026-07-31T02:00:40.990879+00:00", "finished_at_utc": "2026-07-31T02:07:50.737494+00:00", "candidate_catalog_sha256": "41512d4fd05e6d060b83519eb49f29e7db9c9be4a18be7db2db993963e8812e5", "candidate_profile_count": 46, "run_count": 5520, "blocked_count": 2806}

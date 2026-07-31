@@ -1,0 +1,2 @@
+combination_id,grid,inventory,profit,range,stop
+11111,"{'level': 1, 'min_grid_num': 5, 'max_grid_num': 10, 'step_multiplier': 1.5}","{'level': 1, 'caution': 0.4, 'reduce_only': 0.8}","{'level': 1, 'mode': 'NONE'}","{'level': 1, 'multiplier': 1.0, 'adaptive': False}","{'level': 1, 'mode': 'BASELINE', 'atr_buffer': 0.0}"

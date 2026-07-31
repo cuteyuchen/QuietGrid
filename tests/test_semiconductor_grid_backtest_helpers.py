@@ -5,12 +5,14 @@ from datetime import datetime, timedelta, timezone
 import pandas_market_calendars as mcal
 
 from scripts.semiconductor_grid_backtest import (
+    _combine_backtest_results,
     _aggregate,
     assess_profiles,
     assign_time_splits,
     build_calendar_closed_windows,
     build_closed_windows,
 )
+from strategy.backtest import BacktestEquityPoint, BacktestResult
 from strategy.window_models import TradingWindow, WindowKind
 
 
@@ -35,6 +37,54 @@ def test_aggregate_averages_seeds_before_counting_windows() -> None:
     assert summary["unique_windows"] == 1
     assert summary["total_pnl"] == 2.0
     assert summary["positive_ratio"] == 1.0
+
+
+def _session_result(total: float, equities: list[float]) -> BacktestResult:
+    peak = 0.0
+    points: list[BacktestEquityPoint] = []
+    for index, equity in enumerate(equities):
+        peak = max(peak, equity)
+        points.append(
+            BacktestEquityPoint(
+                bar_index=index,
+                equity=equity,
+                realized_pnl=equity,
+                unrealized_pnl=0.0,
+                drawdown=peak - equity,
+                close=100.0,
+            )
+        )
+    return BacktestResult(
+        symbol="SNDKUSDT",
+        fills=[],
+        equity_curve=points,
+        gross_grid_pnl=total,
+        fees_paid=0.0,
+        realized_pnl=total,
+        unrealized_pnl=0.0,
+        total_pnl=total,
+        max_equity=max(equities),
+        max_drawdown=max(point.drawdown for point in points),
+        open_order_count=0,
+        net_position_qty=0.0,
+        stopped_reason="window_force_close",
+        stopped_at_index=None,
+        stopped_at_price=100.0,
+        last_price=100.0,
+    )
+
+
+def test_r1_combiner_includes_drawdown_inside_each_session() -> None:
+    combined = _combine_backtest_results(
+        "SNDKUSDT",
+        [
+            _session_result(2.0, [5.0, 2.0]),
+            _session_result(3.0, [4.0, 3.0]),
+        ],
+    )
+
+    assert combined.total_pnl == 5.0
+    assert combined.max_drawdown == 3.0
 
 
 def test_assessment_requires_primary_and_stress() -> None:

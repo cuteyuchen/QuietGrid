@@ -1,0 +1,20 @@
+........................................................................ [  9%]
+........................................................................ [ 18%]
+........................................................................ [ 28%]
+........................................................................ [ 37%]
+........................................................................ [ 46%]
+........................................................................ [ 56%]
+........................................................................ [ 65%]
+........................................................................ [ 75%]
+........................................................................ [ 84%]
+........................................................................ [ 93%]
+...............................................                          [100%]
+============================== warnings summary ===============================
+tests/test_scheduler_markets.py::test_krx_uses_regular_open_when_no_premarket_is_configured
+tests/test_semiconductor_grid_backtest_helpers.py::test_xkrx_window_uses_regular_open_and_incomplete_window_is_excluded
+tests/test_semiconductor_grid_backtest_helpers.py::test_xkrx_window_uses_regular_open_and_incomplete_window_is_excluded
+  C:\Users\Windows\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas_market_calendars\market_calendar.py:145: UserWarning: ['break_start', 'break_end'] are discontinued, the dictionary `.discontinued_market_times` has the dates on which these were discontinued. The times as of those dates are incorrect, use .remove_time(market_time) to ignore a market_time.
+    self._prepare_regular_market_times()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+767 passed, 3 warnings in 93.01s (0:01:33)

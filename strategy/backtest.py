@@ -9,6 +9,11 @@ from typing import Any
 from core.models import GridDirectionMode, GridParams, OrderIntent, OrderSide
 from data_sources.models import FundingEvent
 from strategy.order_plan import InitialGridOrderPlan, build_initial_grid_order_plan
+from strategy.profit_protection import (
+    ProfitProtectionAction,
+    ProfitProtectionConfig,
+    ProfitProtectionTracker,
+)
 
 
 class LookAheadViolation(RuntimeError):
@@ -46,6 +51,21 @@ class BacktestConfig:
     max_unpaired_lots_per_side: int = 0
     reduce_target_step_fraction: float = 1.0
     unpaired_lot_cap_enforcement: str = "INTRABAR"
+    # v2.8 research controls.  They are opt-in so legacy backtests retain
+    # their frozen v2.7 behaviour.
+    fixed_take_profit_usdt: float = 0.0
+    profit_protection: ProfitProtectionConfig | None = None
+    inventory_reduce_only_utilization: float = 0.0
+    inventory_drag_suppress_ratio: float = 0.0
+    inventory_drag_reduce_ratio: float = 0.0
+    inventory_drag_close_ratio: float = 0.0
+    profit_inventory_activation_usdt: float = 0.0
+    profit_inventory_drag_suppress_ratio: float = 0.0
+    profit_inventory_drag_reduce_ratio: float = 0.0
+    profit_inventory_drag_close_ratio: float = 0.0
+    profit_peak_close_drawdown_pct: float = 0.0
+    stop_atr_buffer: float = 0.0
+    stop_time_confirm_bars: int = 0
 
 
 @dataclass(frozen=True)
@@ -139,6 +159,10 @@ class BacktestResult:
     max_unpaired_lots: int = 0
     accepted_fill_count: int = 0
     force_close_count: int = 0
+    take_profit_count: int = 0
+    profit_protection_suppress_count: int = 0
+    profit_protection_reduce_count: int = 0
+    profit_protection_close_count: int = 0
 
 
 @dataclass
@@ -338,6 +362,18 @@ def run_grid_backtest(
     peak_inventory_drag_ratio = 0.0
     max_unpaired_lots = 0
     force_close_count = 0
+    take_profit_count = 0
+    profit_protection_suppress_count = 0
+    profit_protection_reduce_count = 0
+    profit_protection_close_count = 0
+    profit_tracker = (
+        ProfitProtectionTracker(config.profit_protection)
+        if config.profit_protection is not None
+        else None
+    )
+    profit_suppressed = False
+    profit_reduce_only = False
+    time_confirmed_stop_count = 0
     conservative = config.fill_model.upper() == "L0_CONSERVATIVE"
     min_tick_size = (
         config.min_tick_size
@@ -380,6 +416,116 @@ def run_grid_backtest(
             )
         bar_start_long_lot_count = len(long_lots)
         bar_start_short_lot_count = len(short_lots)
+
+        # Profit protection is evaluated from the state visible at this closed
+        # bar only.  This deliberately shares the production tracker rather
+        # than reconstructing profit from realized fills alone.
+        protection_close_reason: str | None = None
+        gross_inventory_notional = (
+            sum(lot.qty for lot in long_lots) + sum(lot.qty for lot in short_lots)
+        ) * close
+        realized_before_actions = gross_grid_pnl - fees_paid - funding_net_cost
+        current_net_pnl = realized_before_actions + bar_start_unrealized
+        if (
+            config.fixed_take_profit_usdt > 0
+            and current_net_pnl >= config.fixed_take_profit_usdt
+        ):
+            protection_close_reason = "fixed_take_profit"
+            take_profit_count += 1
+        if profit_tracker is not None and protection_close_reason is None:
+            decision = profit_tracker.evaluate(
+                0,
+                realized_pnl=realized_before_actions,
+                unrealized_pnl=bar_start_unrealized,
+                gross_inventory_notional=gross_inventory_notional,
+            )
+            if decision.action == ProfitProtectionAction.CLOSE:
+                protection_close_reason = "profit_protection_close"
+                profit_protection_close_count += 1
+            elif decision.action == ProfitProtectionAction.REDUCE:
+                profit_reduce_only = True
+                profit_protection_reduce_count += 1
+            elif decision.action == ProfitProtectionAction.SUPPRESS:
+                profit_suppressed = True
+                profit_protection_suppress_count += 1
+            if (
+                config.profit_peak_close_drawdown_pct > 0
+                and decision.snapshot.activated
+                and decision.snapshot.drawdown_pct
+                >= config.profit_peak_close_drawdown_pct
+            ):
+                protection_close_reason = "profit_peak_drawdown_close"
+                profit_protection_close_count += 1
+
+        inventory_drag_ratio = (
+            max(0.0, -bar_start_unrealized) / max(paired_grid_pnl, 0.01)
+        )
+        if (
+            config.inventory_drag_close_ratio > 0
+            and inventory_drag_ratio >= config.inventory_drag_close_ratio
+        ):
+            protection_close_reason = "inventory_drag_close"
+        elif (
+            config.inventory_drag_reduce_ratio > 0
+            and inventory_drag_ratio >= config.inventory_drag_reduce_ratio
+        ):
+            profit_reduce_only = True
+        elif (
+            config.inventory_drag_suppress_ratio > 0
+            and inventory_drag_ratio >= config.inventory_drag_suppress_ratio
+        ):
+            profit_suppressed = True
+
+        profit_inventory_active = (
+            config.profit_inventory_activation_usdt > 0
+            and current_net_pnl >= config.profit_inventory_activation_usdt
+            and paired_grid_pnl > 0
+        )
+        if profit_inventory_active:
+            if (
+                config.profit_inventory_drag_close_ratio > 0
+                and inventory_drag_ratio >= config.profit_inventory_drag_close_ratio
+            ):
+                protection_close_reason = "profit_inventory_close"
+                profit_protection_close_count += 1
+            elif (
+                config.profit_inventory_drag_reduce_ratio > 0
+                and inventory_drag_ratio >= config.profit_inventory_drag_reduce_ratio
+            ):
+                profit_reduce_only = True
+                profit_protection_reduce_count += 1
+            elif (
+                config.profit_inventory_drag_suppress_ratio > 0
+                and inventory_drag_ratio >= config.profit_inventory_drag_suppress_ratio
+            ):
+                profit_suppressed = True
+                profit_protection_suppress_count += 1
+
+        if profit_reduce_only:
+            open_orders = [
+                order for order in open_orders
+                if order.order_intent == OrderIntent.REDUCE
+            ]
+        elif profit_suppressed:
+            net_qty = sum(lot.qty for lot in long_lots) - sum(
+                lot.qty for lot in short_lots
+            )
+            increasing_side = (
+                OrderSide.BUY if net_qty > 1e-12
+                else OrderSide.SELL if net_qty < -1e-12
+                else None
+            )
+            open_orders = [
+                order for order in open_orders
+                if not (
+                    order.order_intent == OrderIntent.OPEN
+                    and order.entry_price is None
+                    and (
+                        mode != GridDirectionMode.NEUTRAL
+                        or order.side == increasing_side
+                    )
+                )
+            ]
 
         remaining_bars = len(klines) - bar_index
         if (
@@ -426,6 +572,20 @@ def run_grid_backtest(
                     defensive = False
 
         risk_reason, risk_price = _risk_stop(params, high, low, config)
+        if config.stop_time_confirm_bars > 0:
+            lower, upper = _atr_stop_boundaries(params, config)
+            outside = low <= lower or high >= upper
+            time_confirmed_stop_count = (
+                time_confirmed_stop_count + 1 if outside else 0
+            )
+            if time_confirmed_stop_count < config.stop_time_confirm_bars:
+                risk_reason, risk_price = None, None
+            elif low <= lower:
+                risk_reason, risk_price = "time_confirmed_stop", lower
+            else:
+                risk_reason, risk_price = "time_confirmed_stop_upper", upper
+        if protection_close_reason is not None:
+            risk_reason, risk_price = protection_close_reason, close
         if risk_reason is not None:
             capture_pre_exit(float(risk_price), _bar_timestamp(row))
             (
@@ -564,7 +724,7 @@ def run_grid_backtest(
             )
             if next_order is not None:
                 if (
-                    (defensive or wind_down_active)
+                    (defensive or wind_down_active or profit_reduce_only)
                     and next_order.order_intent == OrderIntent.OPEN
                 ):
                     defensive_cancelled.append(next_order)
@@ -648,6 +808,16 @@ def run_grid_backtest(
                     max_inventory_utilization,
                 )
                 break
+            if (
+                config.inventory_reduce_only_utilization > 0
+                and inventory_utilization
+                >= config.inventory_reduce_only_utilization
+            ):
+                profit_reduce_only = True
+                open_orders = [
+                    order for order in open_orders
+                    if order.order_intent == OrderIntent.REDUCE
+                ]
             if inventory_utilization >= config.inventory_caution_utilization:
                 net_qty = sum(lot.qty for lot in long_lots) - sum(
                     lot.qty for lot in short_lots
@@ -865,6 +1035,10 @@ def run_grid_backtest(
         max_unpaired_lots=max_unpaired_lots,
         accepted_fill_count=len([fill for fill in fills if fill.order_intent != OrderIntent.SEED.value]),
         force_close_count=force_close_count,
+        take_profit_count=take_profit_count,
+        profit_protection_suppress_count=profit_protection_suppress_count,
+        profit_protection_reduce_count=profit_protection_reduce_count,
+        profit_protection_close_count=profit_protection_close_count,
     )
 
 
@@ -919,6 +1093,40 @@ def _validate_backtest_config(config: BacktestConfig) -> None:
         <= 1
     ):
         raise ValueError("库存 CAUTION/CRITICAL 阈值无效。")
+    if config.fixed_take_profit_usdt < 0:
+        raise ValueError("fixed_take_profit_usdt不能为负。")
+    if not 0 <= config.inventory_reduce_only_utilization <= 1:
+        raise ValueError("inventory_reduce_only_utilization必须在[0,1]内。")
+    drag_thresholds = (
+        config.inventory_drag_suppress_ratio,
+        config.inventory_drag_reduce_ratio,
+        config.inventory_drag_close_ratio,
+    )
+    if any(value < 0 for value in drag_thresholds):
+        raise ValueError("库存拖累阈值不能为负。")
+    enabled_drag_thresholds = [value for value in drag_thresholds if value > 0]
+    if enabled_drag_thresholds and enabled_drag_thresholds != sorted(enabled_drag_thresholds):
+        raise ValueError("库存拖累阈值必须按 suppress/reduce/close 递增。")
+    if config.profit_inventory_activation_usdt < 0:
+        raise ValueError("profit_inventory_activation_usdt不能为负。")
+    if not 0 <= config.profit_peak_close_drawdown_pct <= 1:
+        raise ValueError("profit_peak_close_drawdown_pct必须在[0,1]内。")
+    profit_drag_thresholds = (
+        config.profit_inventory_drag_suppress_ratio,
+        config.profit_inventory_drag_reduce_ratio,
+        config.profit_inventory_drag_close_ratio,
+    )
+    if any(value < 0 for value in profit_drag_thresholds):
+        raise ValueError("库存感知利润保护阈值不能为负。")
+    enabled_profit_drag = [value for value in profit_drag_thresholds if value > 0]
+    if enabled_profit_drag and enabled_profit_drag != sorted(enabled_profit_drag):
+        raise ValueError("库存感知利润保护阈值必须递增。")
+    if config.stop_atr_buffer < 0:
+        raise ValueError("stop_atr_buffer不能为负。")
+    if config.stop_time_confirm_bars < 0:
+        raise ValueError("stop_time_confirm_bars不能为负。")
+    if config.stop_time_confirm_bars > 0 and config.stop_atr_buffer <= 0:
+        raise ValueError("时间确认止损必须使用正的 ATR buffer。")
     _finite_float(config.funding_rate_per_bar, "funding_rate_per_bar")
 
 
@@ -1155,6 +1363,13 @@ def _risk_stop(
     low: float,
     config: BacktestConfig,
 ) -> tuple[str | None, float | None]:
+    if config.stop_atr_buffer > 0:
+        lower, upper = _atr_stop_boundaries(params, config)
+        if low <= lower:
+            return "atr_stop", lower
+        if high >= upper:
+            return "atr_stop_upper", upper
+        return None, None
     if config.stop_on_stop_loss and low <= params.stop_loss_price:
         return "stop_loss", params.stop_loss_price
     if (
@@ -1169,6 +1384,17 @@ def _risk_stop(
         if high > params.upper:
             return "range_break", high
     return None, None
+
+
+def _atr_stop_boundaries(
+    params: GridParams,
+    config: BacktestConfig,
+) -> tuple[float, float]:
+    # baseline_atr belongs to the pre-window frozen parameters, so this never
+    # reads a future bar to decide the current stop.
+    atr = _positive_finite(params.baseline_atr, "baseline_atr")
+    buffer = _finite_float(config.stop_atr_buffer, "stop_atr_buffer")
+    return params.lower - atr * buffer, params.upper + atr * buffer
 
 
 def _order_touched(

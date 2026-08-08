@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-08-08T20:35:53.080973+00:00",
+  "latest_research_input_timestamp": "2026-07-25T08:34:59.999000+00:00",
+  "files": {
+    "config\\config.yaml": "f6ff4fc493dc6f919f2fa2da46dbe2626433d5d1caf9858d170f6dfde1566c0d",
+    "reports\\semiconductor-grid-backtest-v2.8\\exchange-rules.json": "6d6348ddd35f9319f5782b1b82acc7848ddad042583266c06cc4caa8ce361543",
+    "data\\backtests\\semiconductor-v2.7\\SNDKUSDT-1m.csv": "110fc052ec831e5f1d6b45989d1c7ba1e87a6d5e5b32e97c3045ff38aecc5385",
+    "data\\backtests\\semiconductor-v2.7\\SNDKUSDT-1m.funding.json": "73a213c7d6a7191e97f524770dd15bfd7a70e9e8047c55264675e6e278309f6f",
+    "data\\backtests\\semiconductor-v2.7\\MUUSDT-1m.csv": "0604ef8ebc7168f74b00d5b4879f603bfb7f86a7471d4aa237ed17cc2ad9fe0a",
+    "data\\backtests\\semiconductor-v2.7\\MUUSDT-1m.funding.json": "2aacb315d3002e87ee8b08a2273b69fb74ad00ffbff44bc8329d4fdf3f00cd76",
+    "data\\backtests\\semiconductor-v2.7\\SOXLUSDT-1m.csv": "55641b858bf1bd1cca88d143c7079117dfc3fb6862759fdb4941107829fa69e5",
+    "data\\backtests\\semiconductor-v2.7\\SOXLUSDT-1m.funding.json": "4e27180a976986b652f50e1a601483e6853ca6fce1b0582964f28d557e62c010",
+    "data\\backtests\\semiconductor-v2.7\\SKHYNIXUSDT-1m.csv": "c9b182463ca265f4caf567b80a4bac7f98c76158f61368cd2a4b1d02449d987a",
+    "data\\backtests\\semiconductor-v2.7\\SKHYNIXUSDT-1m.funding.json": "a870812c13c34096c8462c5787ebe59bc34c5954ab89f4dc178d399eda13f9a4",
+    "reports\\semiconductor-grid-backtest-v2.8\\phase1-r0-results.csv": "99b6eb306e429eab362b6950f4f91a90343d4ba693eb1f3b5804fff6e08c1d5f",
+    "reports\\semiconductor-grid-backtest-v2.8\\phase2-r1-results.csv": "dc99c5ccb51a2d3a00dbcf626990ace668ac11d25e4defae250e4a398eaa08ba",
+    "reports\\semiconductor-grid-backtest-v2.8\\phase3-local-factorial-results.csv": "a5de86dc66bd328dfb1be29f96a1df9e25555543c07518489a73c053be140ffa",
+    "reports\\semiconductor-grid-backtest-v2.8\\phase4-time-validation-results.csv": "e8119f384c6113b49d7d1b2cabbed3a215fd7af47b01b372d16c27232847bb35",
+    "reports\\semiconductor-grid-backtest-v2.8\\blocked-windows.csv": "5daaab1b3d73753dbeeb28d2648377114af62af72ec962cac77240b5b6e7007e",
+    "reports\\semiconductor-grid-backtest-v2.8\\phase2-blocked.csv": "c2b74ff049f7d190e37510f259b60028e814c59e1497464a5da88b686fb61b00",
+    "reports\\semiconductor-grid-backtest-v2.8\\phase3-blocked.csv": "91f055f8fada3a72f7bcd454ad85d342f025ff23577d6cd74a032334cdeed854",
+    "reports\\semiconductor-grid-backtest-v2.8\\final-report.md": "42799f0fe1a31ac8cdd5d0883ba5580b673cb68aa173c2190453150744c993d8",
+    "reports\\semiconductor-grid-backtest-v2.8\\phase4-acceptance.json": "6a998d6fd9d96f8705b545f21feeff52cf6e6f06e1311d4011320a5f14ddace3",
+    "reports\\semiconductor-grid-forward-oos-v2.9\\candidate-31111-freeze.json": "d56eb37d35bcd6962c0d77eef1366505a126f1586f431c99fc186329dd2c8679",
+    "reports\\semiconductor-grid-forward-oos-v2.9\\candidate-31111-ex-mu-freeze.json": "ef6f5366aaa4cc67909b597b83f2ae91a667765114292db74a464cbf7b6e9cec",
+    "reports\\semiconductor-grid-forward-oos-v2.9\\config-freeze.json": "d7d8d2223b78a0e70404470163b7ec44b55460752e389680d5faaac4496222cc",
+    "reports\\semiconductor-grid-forward-oos-v2.9\\exchange-rules.json": "ac0ff63eecc9a9b285c68c5fdc48722f5e9ebd8614e6b7ddbb4ce51d59a04d58"
+  },
+  "input_audit": [
+    {
+      "symbol": "SNDKUSDT",
+      "data_path": "data\\backtests\\semiconductor-v2.7\\SNDKUSDT-1m.csv",
+      "data_sha256": "110fc052ec831e5f1d6b45989d1c7ba1e87a6d5e5b32e97c3045ff38aecc5385",
+      "funding_path": "data\\backtests\\semiconductor-v2.7\\SNDKUSDT-1m.funding.json",
+      "funding_sha256": "73a213c7d6a7191e97f524770dd15bfd7a70e9e8047c55264675e6e278309f6f",
+      "bars": {
+        "ok": true,
+        "rows": 156655,
+        "duplicate_count": 0,
+        "gap_count": 0,
+        "conflict_count": 0,
+        "open_time_start": 1775569200000,
+        "open_time_end": 1784968440000,
+        "notes": []
+      },
+      "funding": {
+        "ok": true,
+        "events": 327,
+        "coverage_ratio": 1.0,
+        "raw_coverage_ratio": 1.001946953603135,
+        "extra_event_count": 0,
+        "interval_hours_median": 8.0,
+        "strictly_increasing": true,
+        "notes": []
+      }
+    },
+    {
+      "symbol": "MUUSDT",
+      "data_path": "data\\backtests\\semiconductor-v2.7\\MUUSDT-1m.csv",
+      "data_sha256": "0604ef8ebc7168f74b00d5b4879f603bfb7f86a7471d4aa237ed17cc2ad9fe0a",
+      "funding_path": "data\\backtests\\semiconductor-v2.7\\MUUSDT-1m.funding.json",
+      "funding_sha256": "2aacb315d3002e87ee8b08a2273b69fb74ad00ffbff44bc8329d4fdf3f00cd76",
+      "bars": {
+        "ok": true,
+        "rows": 156665,
+        "duplicate_count": 0,
+        "gap_count": 0,
+        "conflict_count": 0,
+        "open_time_start": 1775568600000,
+        "open_time_end": 1784968440000,
+        "notes": []
+      },
+      "funding": {
+        "ok": true,
+        "events": 332,
+        "coverage_ratio": 1.0,
+        "raw_coverage_ratio": 1.0172023107710935,
+        "extra_event_count": 5,
+        "interval_hours_median": 8.0,
+        "strictly_increasing": true,
+        "notes": []
+      }
+    },
+    {
+      "symbol": "SOXLUSDT",
+      "data_path": "data\\backtests\\semiconductor-v2.7\\SOXLUSDT-1m.csv",
+      "data_sha256": "55641b858bf1bd1cca88d143c7079117dfc3fb6862759fdb4941107829fa69e5",
+      "funding_path": "data\\backtests\\semiconductor-v2.7\\SOXLUSDT-1m.funding.json",
+      "funding_sha256": "4e27180a976986b652f50e1a601483e6853ca6fce1b0582964f28d557e62c010",
+      "bars": {
+        "ok": true,
+        "rows": 101915,
+        "duplicate_count": 0,
+        "gap_count": 0,
+        "conflict_count": 0,
+        "open_time_start": 1778853600000,
+        "open_time_end": 1784968440000,
+        "notes": []
+      },
+      "funding": {
+        "ok": true,
+        "events": 213,
+        "coverage_ratio": 1.0,
+        "raw_coverage_ratio": 1.0031889321171545,
+        "extra_event_count": 0,
+        "interval_hours_median": 8.0,
+        "strictly_increasing": true,
+        "notes": []
+      }
+    },
+    {
+      "symbol": "SKHYNIXUSDT",
+      "data_path": "data\\backtests\\semiconductor-v2.7\\SKHYNIXUSDT-1m.csv",
+      "data_sha256": "c9b182463ca265f4caf567b80a4bac7f98c76158f61368cd2a4b1d02449d987a",
+      "funding_path": "data\\backtests\\semiconductor-v2.7\\SKHYNIXUSDT-1m.funding.json",
+      "funding_sha256": "a870812c13c34096c8462c5787ebe59bc34c5954ab89f4dc178d399eda13f9a4",
+      "bars": {
+        "ok": true,
+        "rows": 76655,
+        "duplicate_count": 0,
+        "gap_count": 0,
+        "conflict_count": 0,
+        "open_time_start": 1780369200000,
+        "open_time_end": 1784968440000,
+        "notes": []
+      },
+      "funding": {
+        "ok": true,
+        "events": 192,
+        "coverage_ratio": 1.0,
+        "raw_coverage_ratio": 1.2022699108999781,
+        "extra_event_count": 32,
+        "interval_hours_median": 8.0,
+        "strictly_increasing": true,
+        "notes": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "primary_forward_oos_candidates": [
+    {
+      "candidate_id": "31111-NEUTRAL",
+      "status": "PRIMARY_FORWARD_OOS_CANDIDATE",
+      "combination_id": "31111",
+      "direction": "NEUTRAL",
+      "forward_oos_count": 0,
+      "candidate_sha": "d56eb37d35bcd6962c0d77eef1366505a126f1586f431c99fc186329dd2c8679"
+    }
+  ],
+  "diagnostic_controls": [
+    {
+      "candidate_id": "31121-NEUTRAL",
+      "status": "DIAGNOSTIC_CONTROL_ONLY",
+      "independent_primary_candidate": false,
+      "forward_oos_count": 0,
+      "reason": "D2 did not produce an observable historical behavior difference."
+    }
+  ],
+  "post_hoc_research_candidates": [
+    {
+      "candidate_id": "31111-NEUTRAL-EX-MU",
+      "status": "NEW_POST_HOC_RESEARCH_CANDIDATE",
+      "historical_validation": "NOT_CLAIMED",
+      "forward_oos_count": 0,
+      "symbol_universe": [
+        "SNDKUSDT",
+        "SOXLUSDT",
+        "SKHYNIXUSDT"
+      ],
+      "excluded_symbols": [
+        "MUUSDT"
+      ],
+      "independent_sequence": true,
+      "candidate_sha": "ef6f5366aaa4cc67909b597b83f2ae91a667765114292db74a464cbf7b6e9cec"
+    }
+  ]
+}

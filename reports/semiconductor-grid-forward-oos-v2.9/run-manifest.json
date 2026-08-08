@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "protocol": "semiconductor-grid-forward-oos-v2.9",
+  "base_branch": "codex/semiconductor-grid-combinatorial-backtest-v2.8",
+  "base_commit_sha": "7a24b18c0f027853fcfd939e8d2cb375f2e99c59",
+  "v2_9_branch": "codex/semiconductor-grid-forward-oos-v2.9",
+  "candidate_freeze_commit": "e41dbd402dd6b1f02344000b0c2724493a70765b",
+  "candidate_freeze_time_utc": "2026-08-08T20:35:53.080973+00:00",
+  "candidate_id": "31111-NEUTRAL",
+  "candidate_sha": "d56eb37d35bcd6962c0d77eef1366505a126f1586f431c99fc186329dd2c8679",
+  "appended_oos_rows": 0,
+  "appended_ex_mu_oos_rows": 0,
+  "ex_mu_candidate_sha": "ef6f5366aaa4cc67909b597b83f2ae91a667765114292db74a464cbf7b6e9cec",
+  "ex_mu_complete_forward_oos_windows": 0,
+  "ex_mu_conclusion_code": "INSUFFICIENT_FORWARD_OOS",
+  "config_sha": "d7d8d2223b78a0e70404470163b7ec44b55460752e389680d5faaac4496222cc",
+  "code_sha": "4933632c97344c4db4d4f88162a44a06ee0ab18e3e6eab8f790b3b873cae82ee",
+  "strategy_sha": "49f705258b65fe52c9ba769d9d8214d1637df15bb29d35512af4bd82b98aa734",
+  "backtest_engine_sha": "356cdef52954d938da3bcec439877d78010b2d1e0de6eaa883ddf243ccaf34e1",
+  "calendar_engine_sha": "152c23e9a0a2043e844e249e6811c16e92623fd8a9d9d28f2b70736e99adc4a9",
+  "rules_sha": "ac0ff63eecc9a9b285c68c5fdc48722f5e9ebd8614e6b7ddbb4ce51d59a04d58",
+  "python_version": "3.13.14",
+  "dependency_versions": {
+    "pandas": "3.0.3",
+    "pandas-market-calendars": "5.4.0",
+    "PyYAML": "6.0.3",
+    "numpy": "2.2.0",
+    "pytest": "8.3.4"
+  },
+  "symbol_universe": [
+    "SNDKUSDT",
+    "MUUSDT",
+    "SOXLUSDT",
+    "SKHYNIXUSDT"
+  ],
+  "execution_scenarios": [
+    "PRIMARY_ZERO_MAKER",
+    "EXECUTION_STRESS",
+    "MAKER_PROMO_OFF"
+  ],
+  "random_seeds": [
+    3,
+    10,
+    17,
+    31,
+    59,
+    97
+  ],
+  "exposure": {
+    "latest_timestamp_present_in_any_research_input": "2026-07-25T08:34:59.999000+00:00",
+    "latest_window_seen_by_any_phase": "2026-07-13T08:00:00+00:00",
+    "latest_window_seen_by_regime_or_gate": "2026-07-20T08:00:00+00:00",
+    "candidate_freeze_time_utc": "2026-08-08T20:35:53.080973+00:00",
+    "exposure_cutoff": "2026-08-08T20:35:53.080973+00:00"
+  },
+  "first_eligible_forward_window": null,
+  "complete_forward_oos_windows": 0,
+  "conclusion_code": "INSUFFICIENT_FORWARD_OOS",
+  "candidate_registry": {
+    "primary_forward_oos_candidates": [
+      {
+        "candidate_id": "31111-NEUTRAL",
+        "status": "PRIMARY_FORWARD_OOS_CANDIDATE",
+        "combination_id": "31111",
+        "direction": "NEUTRAL",
+        "forward_oos_count": 0,
+        "candidate_sha": "d56eb37d35bcd6962c0d77eef1366505a126f1586f431c99fc186329dd2c8679"
+      }
+    ],
+    "diagnostic_controls": [
+      {
+        "candidate_id": "31121-NEUTRAL",
+        "status": "DIAGNOSTIC_CONTROL_ONLY",
+        "independent_primary_candidate": false,
+        "forward_oos_count": 0,
+        "reason": "D2 did not produce an observable historical behavior difference."
+      }
+    ],
+    "post_hoc_research_candidates": [
+      {
+        "candidate_id": "31111-NEUTRAL-EX-MU",
+        "status": "NEW_POST_HOC_RESEARCH_CANDIDATE",
+        "historical_validation": "NOT_CLAIMED",
+        "forward_oos_count": 0,
+        "symbol_universe": [
+          "SNDKUSDT",
+          "SOXLUSDT",
+          "SKHYNIXUSDT"
+        ],
+        "excluded_symbols": [
+          "MUUSDT"
+        ],
+        "independent_sequence": true,
+        "candidate_sha": "ef6f5366aaa4cc67909b597b83f2ae91a667765114292db74a464cbf7b6e9cec"
+      }
+    ]
+  },
+  "production_safety": {
+    "startup_auto_entry": false,
+    "testnet_force_window": false,
+    "testnet_fast_observation": false,
+    "trading_leverage": 1.0,
+    "economic_leverage": 1.0,
+    "effective_leverage_cap": 1.0,
+    "safe": true
+  },
+  "compileall_result": "PASS (python -m compileall core strategy scripts tests)",
+  "pytest_result": "PASS (799 passed, 0 failed)"
+}

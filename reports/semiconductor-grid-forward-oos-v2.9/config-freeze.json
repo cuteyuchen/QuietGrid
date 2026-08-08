@@ -1,0 +1,319 @@
+{
+  "schema_version": 1,
+  "protocol": "semiconductor-grid-forward-oos-v2.9",
+  "frozen_sections": {
+    "trading": {
+      "leverage": 1,
+      "capital_per_symbol": 500,
+      "total_capital_limit": 2000,
+      "direction_mode": "NEUTRAL",
+      "direction_overrides": {},
+      "take_profit_usdt": 10,
+      "stop_buffer_pct": 0.015,
+      "max_concurrent": 3,
+      "max_maker_fee_rate": 0.0,
+      "maker_fee_check_interval_seconds": 300
+    },
+    "entry": {
+      "seed_execution": "MARKET",
+      "seed_max_slippage_pct": 0.002,
+      "max_price_drift_pct": 0.002,
+      "revalidate_before_place": true
+    },
+    "timing": {
+      "observe_hours": 3,
+      "observe_kline_interval": "1m",
+      "live_observation": false,
+      "startup_auto_entry": false,
+      "startup_observation_mode": "historical_prefill",
+      "required_closed_bars": 180,
+      "kline_fetch_buffer_bars": 2,
+      "allowed_window_kinds": [
+        "WEEKEND",
+        "HOLIDAY"
+      ],
+      "testnet_force_window": false,
+      "testnet_fast_observation": false,
+      "observe_check_seconds": 60,
+      "force_close_minutes": 120,
+      "minimum_trade_minutes": 120,
+      "cooldown_re_observe_hours": 1,
+      "min_calm_minutes": 15,
+      "scheduler_check_minutes": 5,
+      "startup_scan_interval_seconds": 60,
+      "loop_interval_seconds": 10
+    },
+    "grid": {
+      "range_method": "std",
+      "std_k": 1.8,
+      "quantile_upper": 0.95,
+      "quantile_lower": 0.05,
+      "min_step_pct": 0.0015,
+      "range_multiplier_by_symbol": {
+        "SOXLUSDT": 1.25
+      },
+      "min_step_pct_by_symbol": {
+        "SNDKUSDT": 0.0006,
+        "MUUSDT": 0.0008,
+        "SOXLUSDT": 0.001
+      },
+      "reduce_target_step_fraction_by_symbol": {
+        "SNDKUSDT": 0.75,
+        "MUUSDT": 0.75,
+        "SOXLUSDT": 1.0
+      },
+      "min_tradable_range_pct": 0.0006,
+      "safety_multiplier": 3.5,
+      "max_grid_num": 100,
+      "min_grid_num": 3,
+      "max_step_pct": 0.01,
+      "max_range_pct": 0.03,
+      "center_half_life_minutes": 30,
+      "k_atr_range": 2.0,
+      "k_sigma_range": 2.0,
+      "k_atr_step": 0.5,
+      "k_sigma_step": 0.8,
+      "expansion_rate": 0.08,
+      "horizon_bars": 60,
+      "volatility_estimator": "ewma",
+      "volatility_refresh_seconds": 60,
+      "rolling_regrid_enabled": true,
+      "rolling_regrid_seconds": 7200
+    },
+    "cooldown": {
+      "atr_period": 14,
+      "calm_window_minutes": 30,
+      "atr_recovery_ratio": 0.8,
+      "amplitude_multiplier": 2.0
+    },
+    "regime": {
+      "short_window": 15,
+      "long_window": 60,
+      "entry_filters_by_symbol": {
+        "SNDKUSDT": {
+          "max_directional_efficiency": 0.55,
+          "max_volatility_expansion": 2.0,
+          "min_reversal_ratio": 0.25
+        },
+        "MUUSDT": {
+          "max_directional_efficiency": 0.55,
+          "max_volatility_expansion": 2.0,
+          "min_reversal_ratio": 0.25
+        },
+        "SOXLUSDT": {
+          "max_directional_efficiency": 0.5,
+          "max_volatility_expansion": 1.8,
+          "min_reversal_ratio": 0.28
+        }
+      },
+      "enter_threshold": 80,
+      "stay_threshold": 68,
+      "soft_breach_limit": 3,
+      "max_data_age_seconds": 90,
+      "recovery_confirm_minutes": 15,
+      "event_source_available": false,
+      "weights": {
+        "volatility": 0.2,
+        "trend": 0.2,
+        "liquidity": 0.3,
+        "mean_reversion": 0.2,
+        "cost": 0.1,
+        "event": 0.0
+      },
+      "hard_limits": {
+        "max_spread_pct": 0.001,
+        "max_vol_expansion_ratio": 2.5,
+        "min_depth_usdt": 10000
+      }
+    },
+    "risk": {
+      "effective_leverage_cap": 1.0,
+      "max_session_loss_pct": 0.005,
+      "max_weekend_loss_pct": 0.015,
+      "max_symbol_inventory_pct": 0.1,
+      "max_group_notional_pct": 0.2,
+      "max_consecutive_session_losses": 2,
+      "max_window_stop_count": 3,
+      "exchange_stop_required": true,
+      "block_risk_increase_hot_reload": true
+    },
+    "inventory": {
+      "caution_utilization": 0.4,
+      "high_utilization": 0.6,
+      "critical_utilization": 0.8,
+      "suppress_same_side_orders": true,
+      "passive_reduce_first": true,
+      "max_unpaired_lots_per_side_by_symbol": {
+        "SNDKUSDT": 8,
+        "MUUSDT": 8,
+        "SOXLUSDT": 5
+      }
+    },
+    "costs": {
+      "verify_maker_fee_at_startup": true,
+      "adverse_selection_buffer_pct": 0.0002,
+      "slippage_buffer_pct": 0.0003,
+      "safety_margin_pct": 0.0002
+    },
+    "semiconductor_grid": {
+      "version": "v2.7",
+      "research_symbols": [
+        "SNDKUSDT",
+        "MUUSDT",
+        "SOXLUSDT",
+        "SKHYNIXUSDT"
+      ],
+      "live_symbols": [
+        "SNDKUSDT",
+        "MUUSDT",
+        "SOXLUSDT"
+      ],
+      "observation_rows": 180,
+      "minimum_trade_rows": 120,
+      "force_close_minutes": 120,
+      "minimum_trade_minutes": 120,
+      "capital_per_symbol": 500,
+      "economic_leverage": 1,
+      "seed_slippage_bps": 10,
+      "inventory_caution_utilization": 0.4,
+      "inventory_critical_utilization": 0.8,
+      "max_unpaired_lots_per_side": 8,
+      "profiles": {
+        "N20": {
+          "direction_mode": "NEUTRAL",
+          "min_grid_num": 3,
+          "max_grid_num": 20,
+          "min_step_pct": 0.0015,
+          "requires_long_signal": false
+        },
+        "N100": {
+          "direction_mode": "NEUTRAL",
+          "min_grid_num": 20,
+          "max_grid_num": 100,
+          "min_step_pct": 0.0006,
+          "requires_long_signal": false
+        },
+        "L20": {
+          "direction_mode": "LONG",
+          "min_grid_num": 3,
+          "max_grid_num": 20,
+          "min_step_pct": 0.0015,
+          "requires_long_signal": true
+        },
+        "L100": {
+          "direction_mode": "LONG",
+          "min_grid_num": 20,
+          "max_grid_num": 100,
+          "min_step_pct": 0.0006,
+          "requires_long_signal": true
+        }
+      },
+      "symbol_profiles": {
+        "SNDKUSDT": {
+          "market_group": "US_STOCK",
+          "calendar_name": "NYSE",
+          "market_timezone": "America/New_York",
+          "reference_open_time": "04:00",
+          "capital_multiplier": 1.0,
+          "allow_neutral": true,
+          "allow_long": false,
+          "assumed_spread_pct": 0.0002,
+          "normal_min_step_pct": 0.0015,
+          "dense_min_step_pct": 0.0006
+        },
+        "MUUSDT": {
+          "market_group": "US_STOCK",
+          "calendar_name": "NYSE",
+          "market_timezone": "America/New_York",
+          "reference_open_time": "04:00",
+          "capital_multiplier": 1.0,
+          "allow_neutral": true,
+          "allow_long": false,
+          "assumed_spread_pct": 0.0002,
+          "normal_min_step_pct": 0.0015,
+          "dense_min_step_pct": 0.0008
+        },
+        "SOXLUSDT": {
+          "market_group": "US_LEVERAGED_ETF",
+          "calendar_name": "NYSE",
+          "market_timezone": "America/New_York",
+          "reference_open_time": "04:00",
+          "capital_multiplier": 0.5,
+          "allow_neutral": true,
+          "allow_long": false,
+          "assumed_spread_pct": 0.0003,
+          "normal_min_step_pct": 0.0018,
+          "dense_min_step_pct": 0.001
+        },
+        "SKHYNIXUSDT": {
+          "market_group": "KR_STOCK",
+          "calendar_name": "XKRX",
+          "market_timezone": "Asia/Seoul",
+          "reference_open_time": null,
+          "capital_multiplier": 1.0,
+          "allow_neutral": true,
+          "allow_long": true,
+          "assumed_spread_pct": 0.0002,
+          "normal_min_step_pct": 0.0015,
+          "dense_min_step_pct": 0.0006
+        }
+      },
+      "viability": {
+        "lookback_bars": 60,
+        "bars_per_hour": 60,
+        "min_crossings_per_hour": 1.0,
+        "min_reversal_ratio": 0.25,
+        "max_zero_activity_ratio": 0.2,
+        "min_trade_count_per_hour": 60,
+        "min_quote_volume_per_hour": 10000,
+        "max_spread_to_step_ratio": 0.5,
+        "min_net_capacity_per_hour": 0.00025
+      },
+      "long_signal": {
+        "short_window": 15,
+        "long_window": 60,
+        "minimum_long_return_pct": 0.001,
+        "minimum_short_return_pct": 0.0,
+        "minimum_directional_efficiency": 0.1,
+        "maximum_directional_efficiency": 0.65,
+        "minimum_reversal_ratio": 0.2,
+        "maximum_short_move_sigma": 3.0
+      },
+      "acceptance": {
+        "minimum_unique_windows": 8,
+        "minimum_positive_ratio": 0.55,
+        "minimum_profit_factor": 1.05,
+        "maximum_drawdown_pct_of_capital": 0.05,
+        "maximum_mean_inventory_drag_ratio": 0.35,
+        "maximum_best_window_concentration": 0.35,
+        "require_primary_positive": true,
+        "require_execution_stress_positive": true
+      },
+      "execution": {
+        "scenarios": {
+          "PRIMARY_ZERO_MAKER": {
+            "maker_fee_rate": 0.0,
+            "taker_fee_rate": 0.0005,
+            "maker_fill_probability": 0.65,
+            "max_fills_per_bar": 2,
+            "stop_slippage_bps": 10
+          },
+          "EXECUTION_STRESS": {
+            "maker_fee_rate": 0.0,
+            "taker_fee_rate": 0.00075,
+            "maker_fill_probability": 0.45,
+            "max_fills_per_bar": 1,
+            "stop_slippage_bps": 25
+          },
+          "MAKER_PROMO_OFF": {
+            "maker_fee_rate": 0.0002,
+            "taker_fee_rate": 0.0005,
+            "maker_fill_probability": 0.65,
+            "max_fills_per_bar": 2,
+            "stop_slippage_bps": 15
+          }
+        }
+      }
+    }
+  }
+}

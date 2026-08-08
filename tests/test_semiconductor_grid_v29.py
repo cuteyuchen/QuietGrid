@@ -433,6 +433,37 @@ def test_ex_mu_uses_an_independent_zero_count_sequence() -> None:
     assert separate["complete_forward_oos_windows"] == 1
 
 
+def test_empty_primary_assessment_reports_all_registered_symbols() -> None:
+    assessment = evaluate_forward_oos([])
+
+    assert [row["symbol"] for row in assessment["symbol_breakdown"]] == [
+        "MUUSDT",
+        "SKHYNIXUSDT",
+        "SNDKUSDT",
+        "SOXLUSDT",
+    ]
+    assert all(
+        row["net_pnl"] == 0.0
+        and row["complete_forward_oos_windows"] == 0
+        for row in assessment["symbol_breakdown"]
+    )
+
+
+def test_empty_ex_mu_assessment_reports_only_registered_symbols() -> None:
+    assessment = evaluate_forward_oos([], candidate_id=EX_MU_CANDIDATE_ID)
+
+    assert [row["symbol"] for row in assessment["symbol_breakdown"]] == [
+        "SKHYNIXUSDT",
+        "SNDKUSDT",
+        "SOXLUSDT",
+    ]
+    assert all(
+        row["net_pnl"] == 0.0
+        and row["complete_forward_oos_windows"] == 0
+        for row in assessment["symbol_breakdown"]
+    )
+
+
 def test_eight_window_threshold_counts_window_not_symbol_seed_or_scenario() -> None:
     one_window = [
         _result(

@@ -23,6 +23,17 @@ from typing import Any, Iterable, Mapping, Sequence
 PRIMARY_CANDIDATE_ID = "31111-NEUTRAL"
 DIAGNOSTIC_CONTROL_ID = "31121-NEUTRAL"
 EX_MU_CANDIDATE_ID = "31111-NEUTRAL-EX-MU"
+PRIMARY_SYMBOL_UNIVERSE = (
+    "SNDKUSDT",
+    "MUUSDT",
+    "SOXLUSDT",
+    "SKHYNIXUSDT",
+)
+EX_MU_SYMBOL_UNIVERSE = (
+    "SNDKUSDT",
+    "SOXLUSDT",
+    "SKHYNIXUSDT",
+)
 FORWARD_OOS_SCENARIOS = (
     "PRIMARY_ZERO_MAKER",
     "EXECUTION_STRESS",
@@ -281,7 +292,7 @@ def candidate_registry(
             "status": "NEW_POST_HOC_RESEARCH_CANDIDATE",
             "historical_validation": "NOT_CLAIMED",
             "forward_oos_count": 0,
-            "symbol_universe": ["SNDKUSDT", "SOXLUSDT", "SKHYNIXUSDT"],
+            "symbol_universe": list(EX_MU_SYMBOL_UNIVERSE),
             "excluded_symbols": ["MUUSDT"],
             "independent_sequence": True,
         }
@@ -693,10 +704,12 @@ def symbol_breakdown(
     *,
     candidate_id: str = PRIMARY_CANDIDATE_ID,
     scenario: str = "PRIMARY_ZERO_MAKER",
+    symbol_universe: Sequence[str] | None = None,
 ) -> list[dict[str, Any]]:
     rows = list(records)
     symbols = sorted(
-        {
+        set(symbol_universe or ())
+        | {
             str(row.get("symbol") or "")
             for row in rows
             if row.get("candidate_id") == candidate_id and row.get("symbol")
@@ -732,6 +745,12 @@ def evaluate_forward_oos(
     required_windows: int = REQUIRED_FORWARD_WINDOWS,
 ) -> dict[str, Any]:
     rows = list(records)
+    if candidate_id == PRIMARY_CANDIDATE_ID:
+        symbol_universe = PRIMARY_SYMBOL_UNIVERSE
+    elif candidate_id == EX_MU_CANDIDATE_ID:
+        symbol_universe = EX_MU_SYMBOL_UNIVERSE
+    else:
+        symbol_universe = None
     complete_keys = complete_forward_window_keys(rows, candidate_id=candidate_id)
     valid_oos = _valid_oos_rows(rows, candidate_id)
     valid_oos_ids = {id(row) for row in valid_oos}
@@ -755,7 +774,11 @@ def evaluate_forward_oos(
     }
     primary = scenarios["PRIMARY_ZERO_MAKER"]
     complete_windows = len(complete_keys)
-    symbols = symbol_breakdown(assessment_rows, candidate_id=candidate_id)
+    symbols = symbol_breakdown(
+        assessment_rows,
+        candidate_id=candidate_id,
+        symbol_universe=symbol_universe,
+    )
     positive_symbols = sum(row["net_pnl"] > 0 for row in symbols)
     data_quality_error = any(
         str(row.get("record_type") or "") == "DATA_QUALITY_ERROR"

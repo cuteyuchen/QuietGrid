@@ -6,7 +6,7 @@
       "combination_id": "31111",
       "direction": "NEUTRAL",
       "forward_oos_count": 0,
-      "candidate_sha": "d56eb37d35bcd6962c0d77eef1366505a126f1586f431c99fc186329dd2c8679"
+      "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774"
     }
   ],
   "diagnostic_controls": [
@@ -33,7 +33,7 @@
         "MUUSDT"
       ],
       "independent_sequence": true,
-      "candidate_sha": "ef6f5366aaa4cc67909b597b83f2ae91a667765114292db74a464cbf7b6e9cec"
+      "candidate_sha": "da816e4242d8eb0245e49f192dc2224affc8965cd14f24ef3fa7b1994ba140e3"
     }
   ]
 }

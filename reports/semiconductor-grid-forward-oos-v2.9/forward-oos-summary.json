@@ -138,5 +138,42 @@
       "window_metrics": []
     }
   },
-  "symbol_breakdown": []
+  "symbol_breakdown": [
+    {
+      "symbol": "MUUSDT",
+      "net_pnl": 0,
+      "profit_factor": 0.0,
+      "positive_window_ratio": 0.0,
+      "inventory_drag": 0,
+      "max_drawdown": 0.0,
+      "complete_forward_oos_windows": 0
+    },
+    {
+      "symbol": "SKHYNIXUSDT",
+      "net_pnl": 0,
+      "profit_factor": 0.0,
+      "positive_window_ratio": 0.0,
+      "inventory_drag": 0,
+      "max_drawdown": 0.0,
+      "complete_forward_oos_windows": 0
+    },
+    {
+      "symbol": "SNDKUSDT",
+      "net_pnl": 0,
+      "profit_factor": 0.0,
+      "positive_window_ratio": 0.0,
+      "inventory_drag": 0,
+      "max_drawdown": 0.0,
+      "complete_forward_oos_windows": 0
+    },
+    {
+      "symbol": "SOXLUSDT",
+      "net_pnl": 0,
+      "profit_factor": 0.0,
+      "positive_window_ratio": 0.0,
+      "inventory_drag": 0,
+      "max_drawdown": 0.0,
+      "complete_forward_oos_windows": 0
+    }
+  ]
 }

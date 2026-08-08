@@ -4,17 +4,17 @@
   "base_branch": "codex/semiconductor-grid-combinatorial-backtest-v2.8",
   "base_commit_sha": "7a24b18c0f027853fcfd939e8d2cb375f2e99c59",
   "v2_9_branch": "codex/semiconductor-grid-forward-oos-v2.9",
-  "candidate_freeze_commit": "e41dbd402dd6b1f02344000b0c2724493a70765b",
-  "candidate_freeze_time_utc": "2026-08-08T20:35:53.080973+00:00",
+  "candidate_freeze_commit": "190c2e49c797ba1b8d1b986270d866b16f8cd201",
+  "candidate_freeze_time_utc": "2026-08-08T20:45:23.438783+00:00",
   "candidate_id": "31111-NEUTRAL",
-  "candidate_sha": "d56eb37d35bcd6962c0d77eef1366505a126f1586f431c99fc186329dd2c8679",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
   "appended_oos_rows": 0,
   "appended_ex_mu_oos_rows": 0,
-  "ex_mu_candidate_sha": "ef6f5366aaa4cc67909b597b83f2ae91a667765114292db74a464cbf7b6e9cec",
+  "ex_mu_candidate_sha": "da816e4242d8eb0245e49f192dc2224affc8965cd14f24ef3fa7b1994ba140e3",
   "ex_mu_complete_forward_oos_windows": 0,
   "ex_mu_conclusion_code": "INSUFFICIENT_FORWARD_OOS",
   "config_sha": "d7d8d2223b78a0e70404470163b7ec44b55460752e389680d5faaac4496222cc",
-  "code_sha": "4933632c97344c4db4d4f88162a44a06ee0ab18e3e6eab8f790b3b873cae82ee",
+  "code_sha": "b8aa6708613e4ec8f24ea2a11c5c5753a7390ee7833fab1193ebf3dc90b6c015",
   "strategy_sha": "49f705258b65fe52c9ba769d9d8214d1637df15bb29d35512af4bd82b98aa734",
   "backtest_engine_sha": "356cdef52954d938da3bcec439877d78010b2d1e0de6eaa883ddf243ccaf34e1",
   "calendar_engine_sha": "152c23e9a0a2043e844e249e6811c16e92623fd8a9d9d28f2b70736e99adc4a9",
@@ -50,8 +50,8 @@
     "latest_timestamp_present_in_any_research_input": "2026-07-25T08:34:59.999000+00:00",
     "latest_window_seen_by_any_phase": "2026-07-13T08:00:00+00:00",
     "latest_window_seen_by_regime_or_gate": "2026-07-20T08:00:00+00:00",
-    "candidate_freeze_time_utc": "2026-08-08T20:35:53.080973+00:00",
-    "exposure_cutoff": "2026-08-08T20:35:53.080973+00:00"
+    "candidate_freeze_time_utc": "2026-08-08T20:45:23.438783+00:00",
+    "exposure_cutoff": "2026-08-08T20:45:23.438783+00:00"
   },
   "first_eligible_forward_window": null,
   "complete_forward_oos_windows": 0,
@@ -64,7 +64,7 @@
         "combination_id": "31111",
         "direction": "NEUTRAL",
         "forward_oos_count": 0,
-        "candidate_sha": "d56eb37d35bcd6962c0d77eef1366505a126f1586f431c99fc186329dd2c8679"
+        "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774"
       }
     ],
     "diagnostic_controls": [
@@ -91,7 +91,7 @@
           "MUUSDT"
         ],
         "independent_sequence": true,
-        "candidate_sha": "ef6f5366aaa4cc67909b597b83f2ae91a667765114292db74a464cbf7b6e9cec"
+        "candidate_sha": "da816e4242d8eb0245e49f192dc2224affc8965cd14f24ef3fa7b1994ba140e3"
       }
     ]
   },
@@ -105,5 +105,5 @@
     "safe": true
   },
   "compileall_result": "PASS (python -m compileall core strategy scripts tests)",
-  "pytest_result": "PASS (799 passed, 0 failed)"
+  "pytest_result": "PASS (801 passed, 0 failed)"
 }

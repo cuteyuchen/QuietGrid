@@ -4,15 +4,15 @@
   "candidate_id": "31111-NEUTRAL-EX-MU",
   "status": "NEW_POST_HOC_RESEARCH_CANDIDATE",
   "source_base_commit_sha": "7a24b18c0f027853fcfd939e8d2cb375f2e99c59",
-  "freeze_commit_sha": "e41dbd402dd6b1f02344000b0c2724493a70765b",
+  "freeze_commit_sha": "190c2e49c797ba1b8d1b986270d866b16f8cd201",
   "freeze_commit_semantics": "v2.9 code/config commit attested by the subsequent artifact commit",
-  "freeze_time_utc": "2026-08-08T20:35:53.080973+00:00",
+  "freeze_time_utc": "2026-08-08T20:45:23.438783+00:00",
   "v2_9_branch": "codex/semiconductor-grid-forward-oos-v2.9",
   "config_sha": "d7d8d2223b78a0e70404470163b7ec44b55460752e389680d5faaac4496222cc",
   "strategy_sha": "49f705258b65fe52c9ba769d9d8214d1637df15bb29d35512af4bd82b98aa734",
   "backtest_engine_sha": "356cdef52954d938da3bcec439877d78010b2d1e0de6eaa883ddf243ccaf34e1",
   "calendar_engine_sha": "152c23e9a0a2043e844e249e6811c16e92623fd8a9d9d28f2b70736e99adc4a9",
-  "code_sha": "4933632c97344c4db4d4f88162a44a06ee0ab18e3e6eab8f790b3b873cae82ee",
+  "code_sha": "b8aa6708613e4ec8f24ea2a11c5c5753a7390ee7833fab1193ebf3dc90b6c015",
   "exchange_rules_sha": "ac0ff63eecc9a9b285c68c5fdc48722f5e9ebd8614e6b7ddbb4ce51d59a04d58",
   "combination_definition": {
     "combination_id": "31111",
@@ -91,7 +91,7 @@
       },
       "registered_a3_max_volatility_expansion_multiplier": 1.5,
       "registered_a3_regime_threshold_delta": -10,
-      "v2_8_replay_uses_frozen_code_sha": "4933632c97344c4db4d4f88162a44a06ee0ab18e3e6eab8f790b3b873cae82ee"
+      "v2_8_replay_uses_frozen_code_sha": "b8aa6708613e4ec8f24ea2a11c5c5753a7390ee7833fab1193ebf3dc90b6c015"
     },
     "regime_and_reversal": {
       "regime": {
@@ -289,13 +289,13 @@
     59,
     97
   ],
-  "exposure_cutoff": "2026-08-08T20:35:53.080973+00:00",
+  "exposure_cutoff": "2026-08-08T20:45:23.438783+00:00",
   "exposure_evidence": {
     "latest_timestamp_present_in_any_research_input": "2026-07-25T08:34:59.999000+00:00",
     "latest_window_seen_by_any_phase": "2026-07-13T08:00:00+00:00",
     "latest_window_seen_by_regime_or_gate": "2026-07-20T08:00:00+00:00",
-    "candidate_freeze_time_utc": "2026-08-08T20:35:53.080973+00:00",
-    "exposure_cutoff": "2026-08-08T20:35:53.080973+00:00"
+    "candidate_freeze_time_utc": "2026-08-08T20:45:23.438783+00:00",
+    "exposure_cutoff": "2026-08-08T20:45:23.438783+00:00"
   },
   "first_eligible_forward_window": null,
   "selection_lock": {

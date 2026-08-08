@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at_utc": "2026-08-08T20:35:53.080973+00:00",
+  "generated_at_utc": "2026-08-08T20:45:23.438783+00:00",
   "latest_research_input_timestamp": "2026-07-25T08:34:59.999000+00:00",
   "files": {
     "config\\config.yaml": "f6ff4fc493dc6f919f2fa2da46dbe2626433d5d1caf9858d170f6dfde1566c0d",
@@ -22,8 +22,8 @@
     "reports\\semiconductor-grid-backtest-v2.8\\phase3-blocked.csv": "91f055f8fada3a72f7bcd454ad85d342f025ff23577d6cd74a032334cdeed854",
     "reports\\semiconductor-grid-backtest-v2.8\\final-report.md": "42799f0fe1a31ac8cdd5d0883ba5580b673cb68aa173c2190453150744c993d8",
     "reports\\semiconductor-grid-backtest-v2.8\\phase4-acceptance.json": "6a998d6fd9d96f8705b545f21feeff52cf6e6f06e1311d4011320a5f14ddace3",
-    "reports\\semiconductor-grid-forward-oos-v2.9\\candidate-31111-freeze.json": "d56eb37d35bcd6962c0d77eef1366505a126f1586f431c99fc186329dd2c8679",
-    "reports\\semiconductor-grid-forward-oos-v2.9\\candidate-31111-ex-mu-freeze.json": "ef6f5366aaa4cc67909b597b83f2ae91a667765114292db74a464cbf7b6e9cec",
+    "reports\\semiconductor-grid-forward-oos-v2.9\\candidate-31111-freeze.json": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+    "reports\\semiconductor-grid-forward-oos-v2.9\\candidate-31111-ex-mu-freeze.json": "da816e4242d8eb0245e49f192dc2224affc8965cd14f24ef3fa7b1994ba140e3",
     "reports\\semiconductor-grid-forward-oos-v2.9\\config-freeze.json": "d7d8d2223b78a0e70404470163b7ec44b55460752e389680d5faaac4496222cc",
     "reports\\semiconductor-grid-forward-oos-v2.9\\exchange-rules.json": "ac0ff63eecc9a9b285c68c5fdc48722f5e9ebd8614e6b7ddbb4ce51d59a04d58"
   },

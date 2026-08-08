@@ -289,15 +289,34 @@ def assign_time_splits(
     *,
     forward_oos_start: datetime | None = None,
 ) -> list[ClosedWindow]:
+    """Assign only wholly unseen windows to Forward OOS.
+
+    ``forward_oos_start`` is the complete exposure cutoff, not merely a code
+    commit time or the last successfully traded window.  A window that began
+    on or before the cutoff was at least partially observable and remains
+    exposed history even when its force-close boundary is later.
+    """
+    cutoff = None
+    if forward_oos_start is not None:
+        cutoff = (
+            forward_oos_start.replace(tzinfo=UTC)
+            if forward_oos_start.tzinfo is None
+            else forward_oos_start.astimezone(UTC)
+        )
     ordered = sorted(windows, key=lambda item: item.start_time)
     assigned: list[ClosedWindow] = []
     for window in ordered:
         split = "RESEARCH_VALIDATION_EXPOSED"
         if (
-            forward_oos_start is not None
+            cutoff is not None
             and window.complete
-            and window.force_close_at is not None
-            and window.force_close_at >= forward_oos_start
+            and window.observation_start is not None
+            and (
+                window.observation_start.replace(tzinfo=UTC)
+                if window.observation_start.tzinfo is None
+                else window.observation_start.astimezone(UTC)
+            )
+            > cutoff
         ):
             split = "FORWARD_OOS"
         if not window.complete:

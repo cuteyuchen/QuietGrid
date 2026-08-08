@@ -1,0 +1,2 @@
+# Content-addressed v2.9 artifacts use stable LF bytes on every checkout.
+reports/semiconductor-grid-forward-oos-v2.9/** text eol=lf

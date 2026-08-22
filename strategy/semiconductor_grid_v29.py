@@ -796,7 +796,7 @@ def evaluate_forward_oos(
         and str(row.get("candidate_id") or "") == candidate_id
         and _truthy(row.get("oos_eligible"))
     )
-    gates = {
+    gate_checks = {
         "complete_forward_oos_windows": complete_windows >= required_windows,
         "primary_net_pnl": primary["net_pnl"] > 0,
         "primary_median_window_pnl": primary["median_window_pnl"] >= 0,
@@ -811,25 +811,40 @@ def evaluate_forward_oos(
         "multiple_symbol_support": positive_symbols >= 2,
         "data_quality": data_quality_ok,
     }
+    formal_assessment_allowed = complete_windows >= required_windows
+    formal_assessment_status = (
+        "EVALUATED" if formal_assessment_allowed else "NOT_EVALUATED"
+    )
+    gates: dict[str, bool | str] = (
+        gate_checks
+        if formal_assessment_allowed
+        else {name: "NOT_EVALUATED" for name in gate_checks}
+    )
     if complete_windows <= 3:
         conclusion = "INSUFFICIENT_FORWARD_OOS"
     elif complete_windows < required_windows:
         conclusion = "FORWARD_OOS_ACCUMULATING"
-    elif not gates["data_quality"]:
+    elif not gate_checks["data_quality"]:
         conclusion = "FAIL_FORWARD_OOS_DATA_QUALITY"
-    elif not gates["execution_stress_net_pnl"]:
+    elif not gate_checks["execution_stress_net_pnl"]:
         conclusion = "FAIL_FORWARD_OOS_EXECUTION_STRESS"
-    elif not gates["inventory_drag_ratio"] or not gates["max_drawdown_pct"]:
+    elif (
+        not gate_checks["inventory_drag_ratio"]
+        or not gate_checks["max_drawdown_pct"]
+    ):
         conclusion = "FAIL_FORWARD_OOS_INVENTORY_TAIL"
-    elif not gates["best_window_concentration"] or not gates["multiple_symbol_support"]:
+    elif (
+        not gate_checks["best_window_concentration"]
+        or not gate_checks["multiple_symbol_support"]
+    ):
         conclusion = "FAIL_FORWARD_OOS_CONCENTRATION"
     elif not all(
         passed
-        for name, passed in gates.items()
+        for name, passed in gate_checks.items()
         if name != "maker_promo_off_net_pnl"
     ):
         conclusion = "FAIL_FORWARD_OOS_NO_EDGE"
-    elif not gates["maker_promo_off_net_pnl"]:
+    elif not gate_checks["maker_promo_off_net_pnl"]:
         conclusion = "PASS_FORWARD_OOS_MAKER_DEPENDENT"
     else:
         conclusion = "PASS_FORWARD_OOS_RESEARCH_CANDIDATE"
@@ -838,7 +853,8 @@ def evaluate_forward_oos(
         "conclusion_code": conclusion,
         "complete_forward_oos_windows": complete_windows,
         "required_forward_oos_windows": required_windows,
-        "formal_assessment_allowed": complete_windows >= required_windows,
+        "formal_assessment_allowed": formal_assessment_allowed,
+        "formal_assessment_status": formal_assessment_status,
         "gates": gates,
         "scenarios": scenarios,
         "symbol_breakdown": symbols,

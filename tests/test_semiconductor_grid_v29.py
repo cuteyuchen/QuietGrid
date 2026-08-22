@@ -436,6 +436,9 @@ def test_ex_mu_uses_an_independent_zero_count_sequence() -> None:
 def test_empty_primary_assessment_reports_all_registered_symbols() -> None:
     assessment = evaluate_forward_oos([])
 
+    assert assessment["formal_assessment_allowed"] is False
+    assert assessment["formal_assessment_status"] == "NOT_EVALUATED"
+    assert set(assessment["gates"].values()) == {"NOT_EVALUATED"}
     assert [row["symbol"] for row in assessment["symbol_breakdown"]] == [
         "MUUSDT",
         "SKHYNIXUSDT",
@@ -544,9 +547,16 @@ def test_forward_oos_status_moves_at_four_and_eight_unique_windows() -> None:
     four = [row for index in range(4) for row in _matrix(index)]
     eight = [row for index in range(8) for row in _matrix(index)]
 
-    assert evaluate_forward_oos(four)["conclusion_code"] == "FORWARD_OOS_ACCUMULATING"
+    accumulating = evaluate_forward_oos(four)
+    assert accumulating["conclusion_code"] == "FORWARD_OOS_ACCUMULATING"
+    assert accumulating["formal_assessment_allowed"] is False
+    assert accumulating["formal_assessment_status"] == "NOT_EVALUATED"
+    assert set(accumulating["gates"].values()) == {"NOT_EVALUATED"}
     passed = evaluate_forward_oos(eight)
     assert passed["complete_forward_oos_windows"] == 8
+    assert passed["formal_assessment_allowed"] is True
+    assert passed["formal_assessment_status"] == "EVALUATED"
+    assert all(isinstance(value, bool) for value in passed["gates"].values())
     assert passed["conclusion_code"] == "PASS_FORWARD_OOS_RESEARCH_CANDIDATE"
 
 

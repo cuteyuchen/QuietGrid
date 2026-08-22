@@ -51,15 +51,19 @@ python -m scripts.semiconductor_grid_forward_oos_v29 \
 运行器只读取冻结 v2.8 输入，不修改生产配置；`startup_auto_entry`、测试网
 强制窗口、快速观察均保持关闭，经济杠杆保持 1x。
 
-冻结后新增完整窗口只能走追加入口：
+冻结后新增完整窗口只能走冻结监控/追加入口：
 
 ```bash
-python -m scripts.semiconductor_grid_forward_oos_v29_append \
+python -m scripts.semiconductor_grid_forward_oos_v29_monitor \
   --run-time-utc <UTC timestamp>
 ```
 
-追加入口从 `candidate-31111-freeze.json`、`config-freeze.json` 和冻结交易规则
-重建运行上下文，校验候选/配置/代码哈希后才向 CSV/JSON ledger 追加新的
-`candidate + window + scenario + seed` 行。普通哈希变化会写入
-`SEQUENCE_INVALIDATED`；只有显式的新 `CANDIDATE_FREEZE` 才能开启新序列。
-EX-MU 使用独立候选哈希和独立统计，不会改变主候选序列。
+监控器检测已结束且完整的新休市窗口，从 `candidate-31111-freeze.json`、
+`config-freeze.json` 和冻结交易规则重建运行上下文，校验候选/配置/执行代码
+哈希后才向 CSV/JSON ledger 追加新的 `candidate + window + scenario + seed`
+行；相同身份不会重复追加，历史前缀必须保持不变。`--check-only` 只检测，
+不运行 31111，也不写入 ledger。兼容入口
+`scripts.semiconductor_grid_forward_oos_v29_append` 转发到同一监控器。
+
+普通哈希变化会写入 `SEQUENCE_INVALIDATED`；只有显式的新 `CANDIDATE_FREEZE`
+才能开启新序列。EX-MU 使用独立候选哈希和独立统计，不会改变主候选序列。

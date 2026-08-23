@@ -1,5 +1,5 @@
 symbol,net_pnl,profit_factor,positive_window_ratio,inventory_drag,max_drawdown,complete_forward_oos_windows
-MUUSDT,0,0.0,0.0,0,0.0,0
-SKHYNIXUSDT,0,0.0,0.0,0,0.0,0
-SNDKUSDT,0,0.0,0.0,0,0.0,0
-SOXLUSDT,0,0.0,0.0,0,0.0,0
+MUUSDT,0.0,0.0,0.0,0.0,0.0,1
+SKHYNIXUSDT,0.0,0.0,0.0,0.0,0.0,1
+SNDKUSDT,-4.03406218985135,0.0,0.0,5.700604726512897,6.3168050875581745,1
+SOXLUSDT,0.0,0.0,0.0,0.0,0.0,1

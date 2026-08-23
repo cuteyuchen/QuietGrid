@@ -1,0 +1,28 @@
+{
+  "protocol": "semiconductor-grid-oos-diagnostics-v2.9.2",
+  "mode": "DIAGNOSTIC_ONLY",
+  "base_commit": "50d681485503415ff339a8c24a3b90fda6049bb7",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "exposure_cutoff": "2026-08-08T20:45:23.438783+00:00",
+  "official_ledger_sha256": "2c034bc92bda12da193faf4ef5e2edabb624976a69edfddfa7b3b551190ed814",
+  "official_ledger_unchanged": true,
+  "candidate_sha_unchanged": true,
+  "forward_oos": "2/8",
+  "required_outputs": [
+    "run-manifest.json",
+    "window-eligibility-audit.csv",
+    "oos-pnl-attribution.csv",
+    "oos-window-diagnostics.csv",
+    "oos-seed-diagnostics.csv",
+    "scenario-attribution.csv",
+    "sndk-inventory-path.csv",
+    "sndk-grid-cycle-analysis.csv",
+    "oos-equity-curve.csv",
+    "stop-path-analysis.csv",
+    "counterfactual-results.csv",
+    "forward-oos-diagnostic-history.csv",
+    "diagnostic-summary.json",
+    "final-report.md"
+  ],
+  "counterfactuals_are_official_ledger_excluded": true
+}

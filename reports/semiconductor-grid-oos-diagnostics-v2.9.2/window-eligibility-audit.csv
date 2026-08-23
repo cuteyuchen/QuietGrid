@@ -1,0 +1,5 @@
+window_key,market_calendar,window_start,window_end,force_close_at,complete_window,data_complete,funding_complete,rules_frozen,force_close_covered,portfolio_complete,classification,rejection_reason
+NYSE:2026-08-14T20:00:00+00:00:2026-08-17T06:00:00+00:00,NYSE,2026-08-14T20:00:00+00:00,2026-08-17T06:00:00+00:00,2026-08-17T06:00:00+00:00,True,True,True,True,True,True,FORWARD_OOS,complete portfolio window after exposure cutoff
+NYSE:2026-08-21T20:00:00+00:00:2026-08-24T06:00:00+00:00,NYSE,2026-08-21T20:00:00+00:00,2026-08-24T06:00:00+00:00,2026-08-24T06:00:00+00:00,False,False,False,True,False,False,DATA_INCOMPLETE,one or more symbols lack a complete bar range
+XKRX:2026-08-14T06:30:00+00:00:2026-08-17T22:00:00+00:00,XKRX,2026-08-14T06:30:00+00:00,2026-08-17T22:00:00+00:00,2026-08-17T22:00:00+00:00,True,True,True,True,True,True,FORWARD_OOS,complete portfolio window after exposure cutoff
+XKRX:2026-08-21T06:30:00+00:00:2026-08-23T22:00:00+00:00,XKRX,2026-08-21T06:30:00+00:00,2026-08-23T22:00:00+00:00,2026-08-23T22:00:00+00:00,False,False,True,True,False,False,DATA_INCOMPLETE,one or more symbols lack a complete bar range

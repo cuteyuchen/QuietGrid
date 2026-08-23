@@ -1,0 +1,21 @@
+{
+  "formal_forward_oos_status": "INSUFFICIENT_FORWARD_OOS",
+  "formal_assessment_status": "NOT_EVALUATED",
+  "diagnostic_status": "EARLY_WARNING_INVENTORY_TAIL",
+  "candidate_id": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "exposure_cutoff": "2026-08-08T20:45:23.438783+00:00",
+  "forward_oos": "2/8",
+  "total_paired_grid_pnl": 1.9695625467153628,
+  "total_inventory_drag": 5.700604726512897,
+  "inventory_drag_usdt": 5.700604726512897,
+  "computed_inventory_drag_ratio": 2.89435069529515,
+  "official_inventory_drag_ratio": 2.89435069529515,
+  "grid_edge_positive": true,
+  "inventory_tail_dominates": true,
+  "sndk_removal_authorized": false,
+  "paired_cycle_count": 20,
+  "positive_cycle_ratio": 1.0,
+  "counterfactual_label": "DIAGNOSTIC_COUNTERFACTUAL",
+  "official_ledger_unchanged": true
+}

@@ -1,0 +1,20 @@
+{
+  "protocol": "semiconductor-grid-breakout-inventory-protection-v3.2",
+  "mode": "NEW_POST_HOC_RESEARCH",
+  "base_commit": "abe6ebf4474ac0362707fa631d29e35a81cc81b4",
+  "base_candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "exposure_cutoff": "2026-08-08T20:45:23.438783+00:00",
+  "current_forward_oos_reclassified": "RESEARCH_VALIDATION_EXPOSED",
+  "new_candidate_forward_oos": "0/8",
+  "official_ledger_sha256_before": "2c034bc92bda12da193faf4ef5e2edabb624976a69edfddfa7b3b551190ed814",
+  "candidate_freeze_sha_before": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "official_ledger_unchanged": true,
+  "candidate_freeze_unchanged": true,
+  "production_config_unchanged": true,
+  "startup_auto_entry": false,
+  "testnet_force_window": false,
+  "testnet_fast_observation": false,
+  "economic_leverage": 1.0,
+  "research_validation_rows": 234,
+  "conclusion": "REJECT_NO_STABLE_PROTECTION_REGION"
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "protocol": "semiconductor-grid-breakout-inventory-protection-v3.2",
+  "causal": true,
+  "registered_at_utc": "2026-08-23T00:00:00+00:00",
+  "detectors": {
+    "D1": {
+      "outside_grid_atr_min": 1.0,
+      "outside_duration_min": 30,
+      "directional_efficiency_min": 0.6,
+      "persistence_min": 0.7
+    },
+    "D2": {
+      "outside_grid_atr_min": 0.75,
+      "outside_duration_min": 20,
+      "reversal_ratio_max": 0.2,
+      "crossings_per_hour_max": 1.0,
+      "directional_efficiency_min": 0.55,
+      "persistence_min": 0.6
+    },
+    "D3": {
+      "outside_grid_atr_min": 0.5,
+      "outside_duration_min": 10,
+      "directional_efficiency_min": 0.5,
+      "persistence_min": 0.55,
+      "zero_activity_ratio_max": 0.2
+    }
+  },
+  "age_rules": {
+    "AGE_SOFT": 360,
+    "AGE_HARD": 720
+  },
+  "profit_giveback": {
+    "G1": 0.5,
+    "G2": 1.0
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "phase1": [
+    {
+      "profile_id": "CONTROL",
+      "detector": "NONE",
+      "response": "R0"
+    },
+    {
+      "profile_id": "D1-R1",
+      "detector": "D1",
+      "response": "R1"
+    },
+    {
+      "profile_id": "D1-R2",
+      "detector": "D1",
+      "response": "R2"
+    },
+    {
+      "profile_id": "D1-R3",
+      "detector": "D1",
+      "response": "R3"
+    },
+    {
+      "profile_id": "D2-R1",
+      "detector": "D2",
+      "response": "R1"
+    },
+    {
+      "profile_id": "D2-R2",
+      "detector": "D2",
+      "response": "R2"
+    },
+    {
+      "profile_id": "D2-R3",
+      "detector": "D2",
+      "response": "R3"
+    },
+    {
+      "profile_id": "D3-R1",
+      "detector": "D3",
+      "response": "R1"
+    },
+    {
+      "profile_id": "D3-R2",
+      "detector": "D3",
+      "response": "R2"
+    },
+    {
+      "profile_id": "D3-R3",
+      "detector": "D3",
+      "response": "R3"
+    }
+  ],
+  "phase2": {
+    "status": "NOT_RUN_PHASE_GATE",
+    "profiles": [
+      "D1-R4",
+      "D2-R4",
+      "D3-R4"
+    ]
+  },
+  "phase3": {
+    "status": "NOT_RUN_PHASE_GATE",
+    "profiles": []
+  }
+}

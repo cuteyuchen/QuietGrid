@@ -1,0 +1,6 @@
+{
+  "status": "NO_STABLE_PROTECTION_REGION",
+  "eligible_profiles": [],
+  "stable_profiles": [],
+  "adjacency_rule": "at least two neighboring detector-response profiles improve in the same direction"
+}

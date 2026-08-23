@@ -1,0 +1,7 @@
+{
+  "status": "PASS_CONTROL_PARITY",
+  "base_candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "current_rows_checked": 18,
+  "historical_rows_checked": 216,
+  "mismatches": []
+}

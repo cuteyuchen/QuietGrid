@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "protocol": "semiconductor-grid-breakout-confirmation-v3.3",
+  "frozen_at_utc": "2026-08-23T00:00:00+00:00",
+  "source": "v3.2 posthoc labels; labels are evaluation-only and never signal inputs",
+  "causal_signal_use": false,
+  "labels": {
+    "TRUE_BREAKOUT": "After the D2 signal, all available forward closes in the registered evaluation path remain outside the grid for the required sustained path.",
+    "FALSE_BREAKOUT": "After the D2 signal, at least one future close returns inside the grid range.",
+    "UNRESOLVED": "No sufficient future evaluation path exists or neither registered label condition is met."
+  }
+}

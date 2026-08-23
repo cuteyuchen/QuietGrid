@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "protocol": "semiconductor-grid-breakout-confirmation-v3.3",
+  "causal": true,
+  "frozen_at_utc": "2026-08-23T00:00:00+00:00",
+  "stage1": {
+    "detector": "D2",
+    "output_state": "BREAKOUT_SUSPECTED",
+    "trading_action": "NONE"
+  },
+  "stage2_profiles": {
+    "C1": {
+      "name": "PERSISTENCE_FIRST",
+      "requires_adverse_inventory": false,
+      "outside_close_ratio_min": 0.8,
+      "consecutive_close_ratio_min": 0.5,
+      "time_since_cross_ratio_min": 0.5,
+      "directional_efficiency_min": 0.0,
+      "same_direction_close_ratio_min": 0.0,
+      "cumulative_directional_move_atr_min": 0.0,
+      "adverse_inventory_utilization_min": 0.0
+    },
+    "C2": {
+      "name": "STRUCTURE_BALANCED",
+      "requires_adverse_inventory": true,
+      "outside_close_ratio_min": 0.75,
+      "consecutive_close_ratio_min": 0.6,
+      "time_since_cross_ratio_min": 0.5,
+      "directional_efficiency_min": 0.2,
+      "same_direction_close_ratio_min": 0.5,
+      "cumulative_directional_move_atr_min": 0.2,
+      "adverse_inventory_utilization_min": 0.0
+    },
+    "C3": {
+      "name": "INVENTORY_AWARE_STRICT",
+      "requires_adverse_inventory": true,
+      "outside_close_ratio_min": 0.85,
+      "consecutive_close_ratio_min": 0.7,
+      "time_since_cross_ratio_min": 0.6,
+      "directional_efficiency_min": 0.3,
+      "same_direction_close_ratio_min": 0.55,
+      "cumulative_directional_move_atr_min": 0.4,
+      "adverse_inventory_utilization_min": 0.3
+    }
+  },
+  "horizons_minutes": [
+    10,
+    20,
+    30
+  ],
+  "response": "R3",
+  "profit_lock": "PROFIT_LOCK_DISABLED"
+}

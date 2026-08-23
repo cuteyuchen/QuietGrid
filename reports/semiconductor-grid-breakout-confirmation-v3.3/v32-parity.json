@@ -1,0 +1,30 @@
+{
+  "status": "PASS_V32_PARITY",
+  "base_commit": "eb64ed821b09f285041639a1502456d24bb40e2f",
+  "control": {
+    "net_pnl": -299.15611799224587,
+    "grid_edge_retention": 1.0,
+    "inventory_tail_reduction": 0.0,
+    "max_drawdown": 7.430614296089008,
+    "worst_window": -5.8430211197665
+  },
+  "d2_r3": {
+    "net_pnl": 294.41343033062657,
+    "grid_edge_retention": 0.9391696508529289,
+    "inventory_tail_reduction": 0.7125807842012066,
+    "max_drawdown": 5.912560146719638,
+    "worst_window": -2.2267353343733
+  },
+  "current_sndk_primary": {
+    "control_net_pnl": -4.03406218985135,
+    "d2_r3_net_pnl": 0.40978529801050295
+  },
+  "execution_stress": {
+    "control": -137.08175137379615,
+    "d2_r3": 55.51243127972497
+  },
+  "current_sndk_execution_stress": {
+    "control": -28.835171180058268,
+    "d2_r3": -2.9902309169407646
+  }
+}

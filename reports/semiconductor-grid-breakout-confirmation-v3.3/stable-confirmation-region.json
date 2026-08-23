@@ -1,0 +1,10 @@
+{
+  "status": "NO_STABLE_CONFIRMATION_REGION",
+  "eligible_profiles": [],
+  "stable_profiles": [],
+  "adjacency_rule": "at least two neighboring confirmation profiles or horizons must pass together",
+  "candidate_gate_requires": [
+    "execution_stress >= CONTROL",
+    "at least 4/6 seeds improve versus CONTROL"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "protocol": "semiconductor-grid-staged-derisking-v3.4",
+  "mode": "POST_HOC_RESEARCH",
+  "base_commit": "3c15782da79dab306154d02653ca59201370b76f",
+  "base_31111_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "exposure_cutoff": "2026-08-08T20:45:23.438783+00:00",
+  "current_forward_oos_reclassified": "RESEARCH_VALIDATION_EXPOSED",
+  "new_candidate_forward_oos": "0/8",
+  "profiles": [
+    "CONTROL",
+    "D2-R3",
+    "S0",
+    "S1",
+    "S2",
+    "S3"
+  ],
+  "symbols": [
+    "SNDKUSDT",
+    "MUUSDT",
+    "SOXLUSDT",
+    "SKHYNIXUSDT"
+  ],
+  "scenarios": [
+    "PRIMARY_ZERO_MAKER",
+    "EXECUTION_STRESS",
+    "MAKER_PROMO_OFF"
+  ],
+  "seeds": [
+    3,
+    10,
+    17,
+    31,
+    59,
+    97
+  ],
+  "control_parity": "PASS_CONTROL_PARITY",
+  "v33_parity": "PASS_V33_PARITY",
+  "unique_market_event_count": 12,
+  "official_ledger_sha256_before": "2c034bc92bda12da193faf4ef5e2edabb624976a69edfddfa7b3b551190ed814",
+  "official_ledger_sha256_after": "2c034bc92bda12da193faf4ef5e2edabb624976a69edfddfa7b3b551190ed814",
+  "official_ledger_unchanged": true,
+  "candidate_freeze_sha256_before": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "candidate_freeze_sha256_after": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "candidate_freeze_unchanged": true,
+  "production_config_unchanged": true,
+  "startup_auto_entry": false,
+  "economic_leverage": 1.0,
+  "profit_lock": "PROFIT_LOCK_DISABLED",
+  "phase2_status": "COMPLETED_LIMITED_ROBUSTNESS",
+  "phase2_profiles": [
+    "S2",
+    "S3"
+  ],
+  "conclusion": "REJECT_INVENTORY_TAIL_NOT_IMPROVED"
+}

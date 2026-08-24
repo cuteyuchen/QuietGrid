@@ -1,0 +1,28 @@
+{
+  "control": "31111-NEUTRAL",
+  "base_31111_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "parameters_frozen": true,
+  "grid_unchanged": true,
+  "symbol_universe": [
+    "SNDKUSDT",
+    "MUUSDT",
+    "SOXLUSDT",
+    "SKHYNIXUSDT"
+  ],
+  "execution_scenarios": [
+    "PRIMARY_ZERO_MAKER",
+    "EXECUTION_STRESS",
+    "MAKER_PROMO_OFF"
+  ],
+  "random_seeds": [
+    3,
+    10,
+    17,
+    31,
+    59,
+    97
+  ],
+  "economic_leverage": 1.0,
+  "profit_lock": "PROFIT_LOCK_DISABLED",
+  "production_config_modified": false
+}

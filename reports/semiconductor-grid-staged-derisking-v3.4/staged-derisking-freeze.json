@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "protocol": "semiconductor-grid-staged-derisking-v3.4",
+  "mode": "POST_HOC_RESEARCH",
+  "frozen_at_utc": "2026-08-24T00:00:00+00:00",
+  "stage1": {
+    "detector": "D2",
+    "state": "BREAKOUT_SUSPECTED"
+  },
+  "stage2": {
+    "reference": "FROZEN_CONFIRMATION_REFERENCE",
+    "family": "C1",
+    "horizon_minutes": 20,
+    "state": "BREAKOUT_CONFIRMED"
+  },
+  "confirmed_response": {
+    "name": "R3",
+    "target_cumulative_adverse_reduction": 0.5,
+    "reduce_only": true
+  },
+  "profiles": {
+    "S0": {
+      "name": "WAIT_FOR_CONFIRMATION",
+      "early_flatten_fraction": 0.0,
+      "block_adverse_adds": false
+    },
+    "S1": {
+      "name": "SOFT_ADVERSE_ADD_BLOCK",
+      "early_flatten_fraction": 0.0,
+      "block_adverse_adds": true
+    },
+    "S2": {
+      "name": "EARLY_FLATTEN_10PCT",
+      "early_flatten_fraction": 0.1,
+      "block_adverse_adds": true
+    },
+    "S3": {
+      "name": "EARLY_FLATTEN_25PCT",
+      "early_flatten_fraction": 0.25,
+      "block_adverse_adds": true
+    }
+  },
+  "rejection_recovery": {
+    "causal_rule": "At the C1-20m checkpoint, insufficient C1 persistence evidence rejects the episode; price re-entry/grid-cross resumption is therefore permitted to return the state to NORMAL_GRID.",
+    "action": "release soft adverse-add block and resume NORMAL_GRID; never automatically re-leverage early-reduced inventory"
+  },
+  "economic_overlay": {
+    "true_breakout": "S0 is the frozen delayed-R3 baseline. Early inventory-loss saving is adverse_qty * early_fraction * adverse price move from D2 to C1 checkpoint. Only the change in execution cost versus S0's full confirmation flatten is charged.",
+    "false_breakout": "S1 charges frozen blocked-order opportunity cost. S2/S3 charge the early taker execution, favorable-recovery inventory opportunity loss, and frozen short-horizon paired-grid opportunity cost; no automatic re-entry is assumed.",
+    "false_soft_block_paired_after_fraction": 0.03,
+    "false_early_flatten_time_fraction": 0.15,
+    "true_early_grid_cost_fraction": 0.02
+  },
+  "profit_lock": "PROFIT_LOCK_DISABLED",
+  "economic_leverage": 1.0,
+  "no_future_label_in_actions": true
+}

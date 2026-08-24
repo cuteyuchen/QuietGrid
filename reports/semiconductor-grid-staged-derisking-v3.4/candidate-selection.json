@@ -1,0 +1,65 @@
+{
+  "candidate_gate": "UNIQUE_MARKET_EVENT metrics for true/false loss economics; full run matrix for portfolio risk gates",
+  "profiles": [
+    {
+      "profile_id": "S1",
+      "checks": {
+        "control_parity": true,
+        "v33_parity": true,
+        "grid_edge_retention": true,
+        "inventory_tail_reduction": false,
+        "net_defense_value": true,
+        "defense_efficiency": true,
+        "max_drawdown": false,
+        "worst_window": false,
+        "execution_stress": true,
+        "maker_promo_off": true,
+        "seed_consistency": true
+      },
+      "passed": false
+    },
+    {
+      "profile_id": "S2",
+      "checks": {
+        "control_parity": true,
+        "v33_parity": true,
+        "grid_edge_retention": true,
+        "inventory_tail_reduction": false,
+        "net_defense_value": true,
+        "defense_efficiency": true,
+        "max_drawdown": false,
+        "worst_window": false,
+        "execution_stress": true,
+        "maker_promo_off": true,
+        "seed_consistency": true
+      },
+      "passed": false
+    },
+    {
+      "profile_id": "S3",
+      "checks": {
+        "control_parity": true,
+        "v33_parity": true,
+        "grid_edge_retention": true,
+        "inventory_tail_reduction": false,
+        "net_defense_value": true,
+        "defense_efficiency": true,
+        "max_drawdown": false,
+        "worst_window": false,
+        "execution_stress": true,
+        "maker_promo_off": true,
+        "seed_consistency": true
+      },
+      "passed": false
+    }
+  ],
+  "stable_staged_defense_region": [],
+  "isolated_action_optimum": false,
+  "isolated_timing_optimum": false,
+  "recommended_forward_oos_candidate": "NONE",
+  "candidate_id": "",
+  "new_candidate_sha": "",
+  "forward_oos_count": "0/8",
+  "selection_status": "NONE",
+  "conclusion": "REJECT_INVENTORY_TAIL_NOT_IMPROVED"
+}

@@ -1,0 +1,18 @@
+{
+  "status": "PASS_V33_PARITY",
+  "control_parity": {
+    "status": "PASS_CONTROL_PARITY",
+    "checked_rows": 234,
+    "mismatches": []
+  },
+  "v33_parity": {
+    "status": "PASS_V33_PARITY",
+    "checked_profiles": [
+      "CONTROL",
+      "D2-R3",
+      "D2-C1-R3-20m"
+    ],
+    "mismatch_count": 0,
+    "mismatches": []
+  }
+}

@@ -1,0 +1,2 @@
+
+Warnings are emitted by pandas_market_calendars for discontinued break_start/break_end market-time fields.

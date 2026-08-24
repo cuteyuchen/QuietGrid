@@ -1,0 +1,12 @@
+{
+  "status": "NO_STABLE_STAGED_DEFENSE_REGION",
+  "stable_profiles": [],
+  "isolated_action_optimum": false,
+  "isolated_timing_optimum": false,
+  "rule": "At least two pre-registered adjacent staged profiles must independently pass all candidate gates.",
+  "phase2_status": "COMPLETED_LIMITED_ROBUSTNESS",
+  "phase2_profiles": [
+    "S2",
+    "S3"
+  ]
+}

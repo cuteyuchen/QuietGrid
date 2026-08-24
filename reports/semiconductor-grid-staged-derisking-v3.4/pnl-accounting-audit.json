@@ -1,0 +1,7 @@
+{
+  "status": "PASS_PNL_RECONCILIATION",
+  "convention": "net pnl is reconciled from the explicitly recorded base row plus inventory and execution deltas; early/confirmation execution is not charged twice.",
+  "rows_checked": 702,
+  "max_abs_residual": 0.0,
+  "slippage_double_counted": false
+}

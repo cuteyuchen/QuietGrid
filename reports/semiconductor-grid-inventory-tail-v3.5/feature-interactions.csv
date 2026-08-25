@@ -1,0 +1,57 @@
+F1,FN,FP,TN,TP,checkpoint,false_breakout_rate,feature_a,feature_b,fisher_exact_test,lead_time_vs_D2,precision,recall,robustness_status,rule_description,specificity
+0.0,2,0,10,0,T-60,0.0,inventory_build_rate_utilization_20m,reversal_ratio_20m,1.0,60,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND reversal <= 0.25,1.0
+0.0,2,1,9,0,T-60,1.0,inventory_build_rate_utilization_20m,directional_efficiency_ratio_20m,1.0,60,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND efficiency >= 0.60,0.9
+0.0,2,2,8,0,T-60,1.0,gross_inventory_utilization,grid_headroom_remaining,1.0,60,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,utilization >= 0.40 AND headroom <= 2,0.8
+0.0,2,0,10,0,T-60,0.0,one_sided_fill_ratio_10m,volatility_ratio_short_long,1.0,60,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND vol ratio >= 1.25,1.0
+0.0,2,0,10,0,T-60,0.0,one_sided_fill_ratio_10m,reversal_ratio_20m,1.0,60,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND reversal <= 0.25,1.0
+0.6666666666666666,1,0,10,1,T-60,0.0,inventory_age_max,minutes_to_force_close,0.16666666666666666,60,1.0,0.5,EXPLORATORY_SMALL_SAMPLE,age >= 360 AND time to close <= 360,1.0
+0.0,2,0,10,0,T-60,0.0,directional_efficiency_ratio_20m,minutes_to_force_close,1.0,60,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,efficiency >= 0.60 AND time to close <= 360,1.0
+0.0,2,0,10,0,T-60,0.0,inventory_pnl_unrealized,reversal_ratio_20m,1.0,60,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,inventory pnl < 0 AND reversal <= 0.25,1.0
+0.0,2,0,10,0,T-30,0.0,inventory_build_rate_utilization_20m,reversal_ratio_20m,1.0,30,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND reversal <= 0.25,1.0
+0.0,2,0,10,0,T-30,0.0,inventory_build_rate_utilization_20m,directional_efficiency_ratio_20m,1.0,30,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND efficiency >= 0.60,1.0
+0.0,2,3,7,0,T-30,1.0,gross_inventory_utilization,grid_headroom_remaining,1.0,30,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,utilization >= 0.40 AND headroom <= 2,0.7
+0.0,2,0,10,0,T-30,0.0,one_sided_fill_ratio_10m,volatility_ratio_short_long,1.0,30,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND vol ratio >= 1.25,1.0
+0.0,2,0,10,0,T-30,0.0,one_sided_fill_ratio_10m,reversal_ratio_20m,1.0,30,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND reversal <= 0.25,1.0
+0.6666666666666666,1,0,10,1,T-30,0.0,inventory_age_max,minutes_to_force_close,0.16666666666666666,30,1.0,0.5,EXPLORATORY_SMALL_SAMPLE,age >= 360 AND time to close <= 360,1.0
+0.0,2,0,10,0,T-30,0.0,directional_efficiency_ratio_20m,minutes_to_force_close,1.0,30,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,efficiency >= 0.60 AND time to close <= 360,1.0
+0.0,2,0,10,0,T-30,0.0,inventory_pnl_unrealized,reversal_ratio_20m,1.0,30,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,inventory pnl < 0 AND reversal <= 0.25,1.0
+0.0,2,0,10,0,T-20,0.0,inventory_build_rate_utilization_20m,reversal_ratio_20m,1.0,20,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND reversal <= 0.25,1.0
+0.0,2,1,9,0,T-20,1.0,inventory_build_rate_utilization_20m,directional_efficiency_ratio_20m,1.0,20,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND efficiency >= 0.60,0.9
+0.0,2,4,6,0,T-20,1.0,gross_inventory_utilization,grid_headroom_remaining,0.5151515151515151,20,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,utilization >= 0.40 AND headroom <= 2,0.6
+0.0,2,1,9,0,T-20,1.0,one_sided_fill_ratio_10m,volatility_ratio_short_long,1.0,20,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND vol ratio >= 1.25,0.9
+0.0,2,0,10,0,T-20,0.0,one_sided_fill_ratio_10m,reversal_ratio_20m,1.0,20,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND reversal <= 0.25,1.0
+0.5,1,1,9,1,T-20,0.5,inventory_age_max,minutes_to_force_close,0.3181818181818182,20,0.5,0.5,EXPLORATORY_SMALL_SAMPLE,age >= 360 AND time to close <= 360,0.9
+0.0,2,0,10,0,T-20,0.0,directional_efficiency_ratio_20m,minutes_to_force_close,1.0,20,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,efficiency >= 0.60 AND time to close <= 360,1.0
+0.0,2,0,10,0,T-20,0.0,inventory_pnl_unrealized,reversal_ratio_20m,1.0,20,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,inventory pnl < 0 AND reversal <= 0.25,1.0
+0.0,2,0,10,0,T-15,0.0,inventory_build_rate_utilization_20m,reversal_ratio_20m,1.0,15,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND reversal <= 0.25,1.0
+0.0,2,3,7,0,T-15,1.0,inventory_build_rate_utilization_20m,directional_efficiency_ratio_20m,1.0,15,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND efficiency >= 0.60,0.7
+0.0,2,6,4,0,T-15,1.0,gross_inventory_utilization,grid_headroom_remaining,0.45454545454545453,15,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,utilization >= 0.40 AND headroom <= 2,0.4
+0.0,2,1,9,0,T-15,1.0,one_sided_fill_ratio_10m,volatility_ratio_short_long,1.0,15,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND vol ratio >= 1.25,0.9
+0.0,2,0,10,0,T-15,0.0,one_sided_fill_ratio_10m,reversal_ratio_20m,1.0,15,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND reversal <= 0.25,1.0
+0.5,1,1,9,1,T-15,0.5,inventory_age_max,minutes_to_force_close,0.3181818181818182,15,0.5,0.5,EXPLORATORY_SMALL_SAMPLE,age >= 360 AND time to close <= 360,0.9
+0.0,2,1,9,0,T-15,1.0,directional_efficiency_ratio_20m,minutes_to_force_close,1.0,15,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,efficiency >= 0.60 AND time to close <= 360,0.9
+0.0,2,0,10,0,T-15,0.0,inventory_pnl_unrealized,reversal_ratio_20m,1.0,15,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,inventory pnl < 0 AND reversal <= 0.25,1.0
+0.0,2,0,10,0,T-10,0.0,inventory_build_rate_utilization_20m,reversal_ratio_20m,1.0,10,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND reversal <= 0.25,1.0
+0.0,2,1,9,0,T-10,1.0,inventory_build_rate_utilization_20m,directional_efficiency_ratio_20m,1.0,10,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND efficiency >= 0.60,0.9
+0.0,2,6,4,0,T-10,1.0,gross_inventory_utilization,grid_headroom_remaining,0.45454545454545453,10,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,utilization >= 0.40 AND headroom <= 2,0.4
+0.0,2,0,10,0,T-10,0.0,one_sided_fill_ratio_10m,volatility_ratio_short_long,1.0,10,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND vol ratio >= 1.25,1.0
+0.0,2,0,10,0,T-10,0.0,one_sided_fill_ratio_10m,reversal_ratio_20m,1.0,10,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND reversal <= 0.25,1.0
+0.5,1,1,9,1,T-10,0.5,inventory_age_max,minutes_to_force_close,0.3181818181818182,10,0.5,0.5,EXPLORATORY_SMALL_SAMPLE,age >= 360 AND time to close <= 360,0.9
+0.0,2,1,9,0,T-10,1.0,directional_efficiency_ratio_20m,minutes_to_force_close,1.0,10,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,efficiency >= 0.60 AND time to close <= 360,0.9
+0.0,2,0,10,0,T-10,0.0,inventory_pnl_unrealized,reversal_ratio_20m,1.0,10,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,inventory pnl < 0 AND reversal <= 0.25,1.0
+0.0,2,0,10,0,T-5,0.0,inventory_build_rate_utilization_20m,reversal_ratio_20m,1.0,5,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND reversal <= 0.25,1.0
+0.0,2,1,9,0,T-5,1.0,inventory_build_rate_utilization_20m,directional_efficiency_ratio_20m,1.0,5,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND efficiency >= 0.60,0.9
+0.0,2,6,4,0,T-5,1.0,gross_inventory_utilization,grid_headroom_remaining,0.45454545454545453,5,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,utilization >= 0.40 AND headroom <= 2,0.4
+0.0,2,0,10,0,T-5,0.0,one_sided_fill_ratio_10m,volatility_ratio_short_long,1.0,5,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND vol ratio >= 1.25,1.0
+0.0,2,0,10,0,T-5,0.0,one_sided_fill_ratio_10m,reversal_ratio_20m,1.0,5,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND reversal <= 0.25,1.0
+0.5,1,1,9,1,T-5,0.5,inventory_age_max,minutes_to_force_close,0.3181818181818182,5,0.5,0.5,EXPLORATORY_SMALL_SAMPLE,age >= 360 AND time to close <= 360,0.9
+0.0,2,1,9,0,T-5,1.0,directional_efficiency_ratio_20m,minutes_to_force_close,1.0,5,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,efficiency >= 0.60 AND time to close <= 360,0.9
+0.0,2,0,10,0,T-5,0.0,inventory_pnl_unrealized,reversal_ratio_20m,1.0,5,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,inventory pnl < 0 AND reversal <= 0.25,1.0
+0.0,2,0,10,0,T0,0.0,inventory_build_rate_utilization_20m,reversal_ratio_20m,1.0,0,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND reversal <= 0.25,1.0
+0.0,2,1,9,0,T0,1.0,inventory_build_rate_utilization_20m,directional_efficiency_ratio_20m,1.0,0,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,build >= 0.002 AND efficiency >= 0.60,0.9
+0.0,2,6,4,0,T0,1.0,gross_inventory_utilization,grid_headroom_remaining,0.45454545454545453,0,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,utilization >= 0.40 AND headroom <= 2,0.4
+0.0,2,0,10,0,T0,0.0,one_sided_fill_ratio_10m,volatility_ratio_short_long,1.0,0,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND vol ratio >= 1.25,1.0
+0.0,2,0,10,0,T0,0.0,one_sided_fill_ratio_10m,reversal_ratio_20m,1.0,0,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,one-sided >= 0.80 AND reversal <= 0.25,1.0
+0.5,1,1,9,1,T0,0.5,inventory_age_max,minutes_to_force_close,0.3181818181818182,0,0.5,0.5,EXPLORATORY_SMALL_SAMPLE,age >= 360 AND time to close <= 360,0.9
+0.0,2,1,9,0,T0,1.0,directional_efficiency_ratio_20m,minutes_to_force_close,1.0,0,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,efficiency >= 0.60 AND time to close <= 360,0.9
+0.0,2,0,10,0,T0,0.0,inventory_pnl_unrealized,reversal_ratio_20m,1.0,0,0.0,0.0,EXPLORATORY_SMALL_SAMPLE,inventory pnl < 0 AND reversal <= 0.25,1.0

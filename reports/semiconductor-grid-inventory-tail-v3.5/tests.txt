@@ -1,0 +1,39 @@
+COMMAND: python -m compileall core strategy scripts tests
+EXIT_CODE: 0
+Listing 'core'...
+Listing 'strategy'...
+Listing 'scripts'...
+Listing 'tests'...
+Compiling 'tests\\test_semiconductor_grid_inventory_tail_v35.py'...
+
+COMMAND: python -m pytest -q
+EXIT_CODE: 0
+C:\Users\Windows\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+System.Management.Automation.RemoteException
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+........................................................................ [  8%]
+........................................................................ [ 16%]
+........................................................................ [ 24%]
+........................................................................ [ 32%]
+........................................................................ [ 40%]
+........................................................................ [ 49%]
+........................................................................ [ 57%]
+........................................................................ [ 65%]
+........................................................................ [ 73%]
+........................................................................ [ 81%]
+........................................................................ [ 89%]
+........................................................................ [ 98%]
+.................                                                        [100%]
+============================== warnings summary ===============================
+tests/test_scheduler_markets.py::test_krx_uses_regular_open_when_no_premarket_is_configured
+tests/test_semiconductor_grid_backtest_helpers.py::test_xkrx_window_uses_regular_open_and_incomplete_window_is_excluded
+tests/test_semiconductor_grid_backtest_helpers.py::test_xkrx_window_uses_regular_open_and_incomplete_window_is_excluded
+  C:\Users\Windows\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas_market_calendars\market_calendar.py:145: UserWarning: ['break_start', 'break_end'] are discontinued, the dictionary `.discontinued_market_times` has the dates on which these were discontinued. The times as of those dates are incorrect, use .remove_time(market_time) to ignore a market_time.
+    self._prepare_regular_market_times()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+881 passed, 3 warnings in 101.02s (0:01:41)
+
+COMMAND: git diff --check
+EXIT_CODE: 0

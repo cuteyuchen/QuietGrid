@@ -1,0 +1,19 @@
+{
+  "status": "PASS_DATA_QUALITY",
+  "replay_errors": [],
+  "leakage_errors": [],
+  "unique_event_paths": 12,
+  "NO_L2_ORDERBOOK": true,
+  "market_activity_source": "OHLCV quote_volume/base_volume/trade_count proxies; not order-book depth",
+  "canonical_path": "31111-NEUTRAL CONTROL",
+  "defense_paths_excluded": [
+    "S0",
+    "S1",
+    "S2",
+    "S3"
+  ],
+  "control_aggregate_fallback_event_ids": [
+    "D2-cb237b14dd2e1af4"
+  ],
+  "control_aggregate_fallback_note": "One frozen v3.2 event had no admitted fill-level replay; constant-inventory CONTROL fallback is reproduced and fill-cascade fields are explicitly sparse."
+}

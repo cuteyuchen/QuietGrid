@@ -1,0 +1,11 @@
+{
+  "source": "v3.4 frozen D2 event set; verbatim v3.3/v3.2 posthoc truth definition",
+  "causal_signal_use": false,
+  "labels": {
+    "TRUE_BREAKOUT": "After the D2 signal, all available forward closes in the registered evaluation path remain outside the grid for the required sustained path.",
+    "FALSE_BREAKOUT": "After the D2 signal, at least one future close returns inside the grid range.",
+    "UNRESOLVED": "No sufficient future evaluation path exists or neither registered label condition is met."
+  },
+  "implementation": "scripts.semiconductor_grid_breakout_inventory_protection_v32._posthoc_label",
+  "label_fields_are": "LABEL_ONLY"
+}

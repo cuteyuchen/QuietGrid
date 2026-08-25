@@ -1,0 +1,50 @@
+{
+  "protocol": "semiconductor-grid-inventory-tail-early-warning-v3.5",
+  "branch": "codex/semiconductor-grid-inventory-tail-early-warning-v3.5",
+  "commit": "d367665e4d0cf2bd2d1fff13f0b46555b7884824",
+  "base_commit": "32df63f7a843bdf0982d580f427026f416d70118",
+  "source_data_hashes": {
+    "data\\backtests\\semiconductor-v2.7\\SNDKUSDT-1m.csv": "758d6702bc4d6c303dd26386dcf8f281e1195bec92c145725b7ecdc5e5f13d87",
+    "data\\backtests\\semiconductor-v2.7\\MUUSDT-1m.csv": "9006cd140974234bbb1897a49ef65652a910ec3b15cce38b7946286cf157a994",
+    "data\\backtests\\semiconductor-v2.7\\SOXLUSDT-1m.csv": "25ac9ffb70e4eb2a51d725a8439cb0f659b85bd85d5866116a7f11bce433ff02",
+    "data\\backtests\\semiconductor-v2.7\\SKHYNIXUSDT-1m.csv": "4afdae308cfafe0bc7f981f0115a1d6f21c5079934c8dc83e7c284565b58fffa",
+    "reports\\semiconductor-grid-breakout-inventory-protection-v3.2\\breakout-events.csv": "aa3dc76f5bf4b9aacd2f4def7020de65b36024621b9bd04019d9906aee935db2",
+    "reports\\semiconductor-grid-breakout-confirmation-v3.3\\profile-results.csv": "06d09f5b6a2d0e98549baba2e3e8d5d99aa363defb5b10115cccd1dfdc656f67",
+    "reports\\semiconductor-grid-staged-derisking-v3.4\\run-manifest.json": "b998f4726f0018fdaacd2fc41ee49db09345acfd0f6a8576e717c1a0e9fe83eb"
+  },
+  "control_candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "v34_source_commit": "32df63f7a843bdf0982d580f427026f416d70118",
+  "truth_definition_hash": "cd5f21100389b642c17ea4a4c617693870e7b574688f3f4d26d065e21d0015a2",
+  "feature_definition_hash": "28a89d0805d6438b95dd6c1d0a0236949742d6f0bcf0906d22ce4e5982677738",
+  "unique_event_count": 12,
+  "true_event_count": 2,
+  "false_event_count": 10,
+  "symbols": [
+    "SNDKUSDT",
+    "MUUSDT",
+    "SOXLUSDT",
+    "SKHYNIXUSDT"
+  ],
+  "scenarios": [
+    "PRIMARY_ZERO_MAKER",
+    "EXECUTION_STRESS",
+    "MAKER_PROMO_OFF"
+  ],
+  "seeds": [
+    3,
+    10,
+    17,
+    31,
+    59,
+    97
+  ],
+  "statistical_unit": "UNIQUE_MARKET_EVENT",
+  "research_status": "REJECT_FALSE_POSITIVE_NOT_REDUCED",
+  "data_classification": "RESEARCH_VALIDATION_EXPOSED",
+  "production_config_changed": false,
+  "auto_entry_enabled": false,
+  "economic_leverage": 1.0,
+  "new_forward_oos_candidate": "NONE",
+  "small_event_sample": true,
+  "LOEO_status": "INSUFFICIENT_EVENT_SAMPLE_FOR_LOEO"
+}

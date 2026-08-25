@@ -1,0 +1,44 @@
+{
+  "status": "PASS_V34_EVENT_PARITY",
+  "control_parity": {
+    "status": "PASS_CONTROL_PARITY",
+    "checked_rows": 234,
+    "mismatches": []
+  },
+  "v33_parity": {
+    "status": "PASS_V33_PARITY",
+    "checked_profiles": [
+      "CONTROL",
+      "D2-R3",
+      "D2-C1-R3-20m"
+    ],
+    "mismatch_count": 0,
+    "mismatches": []
+  },
+  "expected_unique_event_confusion": {
+    "TP": 2,
+    "FP": 10,
+    "FN": 0,
+    "TN": 0
+  },
+  "observed_unique_event_confusion": {
+    "TP": 2,
+    "FP": 10,
+    "FN": 0,
+    "TN": 0
+  },
+  "expected_run_level_confusion": {
+    "TP": 36,
+    "FP": 180,
+    "FN": 0,
+    "TN": 0
+  },
+  "observed_run_level_confusion": {
+    "TP": 36,
+    "FP": 180,
+    "FN": 0,
+    "TN": 0
+  },
+  "unique_event_count": 12,
+  "truth_definition_hash": "cd5f21100389b642c17ea4a4c617693870e7b574688f3f4d26d065e21d0015a2"
+}

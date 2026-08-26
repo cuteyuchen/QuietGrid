@@ -1,0 +1,20 @@
+{
+  "profile": "PAPER_CONSERVATIVE",
+  "profile_config": {
+    "name": "PAPER_CONSERVATIVE",
+    "queue_ahead_fraction": 0.9,
+    "participation_cap": 0.1,
+    "placement_latency_ms": 250,
+    "cancel_latency_ms": 500,
+    "stale_timeout_seconds": 30.0,
+    "require_trade_through": true,
+    "same_event_policy": "CONSERVATIVE_ADVERSE_FIRST",
+    "maker_fee_rate": 0.0,
+    "taker_fee_rate": 0.0005
+  },
+  "same_event_policy": "CONSERVATIVE_ADVERSE_FIRST",
+  "touch_is_not_fill": true,
+  "funding": "public settlement events only",
+  "stale_market_data": "no fills and no risk-increasing orders",
+  "production_private_api": "DISABLED"
+}

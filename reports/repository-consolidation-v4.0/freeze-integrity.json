@@ -1,0 +1,17 @@
+{
+  "result": "PASS_FREEZE_INTEGRITY",
+  "base_candidate_freeze_blob_sha": "8d78533ef4601439cb9d14bb0b4628b596cf4fd0",
+  "evidence_candidate_freeze_blob_sha": "8d78533ef4601439cb9d14bb0b4628b596cf4fd0",
+  "working_candidate_freeze_sha256": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "candidate_id": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "freeze_commit_sha": "190c2e49c797ba1b8d1b986270d866b16f8cd201",
+  "freeze_time_utc": "2026-08-08T20:45:23.438783+00:00",
+  "exposure_cutoff": "2026-08-08T20:45:23.438783+00:00",
+  "freeze_tag": "semiconductor-grid-forward-oos-v2.9-freeze",
+  "freeze_tag_target": "f5c2a6a45b28b348dcc50c3cbbda6d206b11e102",
+  "ledger_before_sha256": "2c034bc92bda12da193faf4ef5e2edabb624976a69edfddfa7b3b551190ed814",
+  "ledger_before_row_count": 76,
+  "ledger_prefix_sha256": "a18381b61960b91ce8d44e504f2ec8d0f0ed77e4e5f44a1d3baf5d4d353f3c67",
+  "ledger_prefix_bytes": 4096
+}

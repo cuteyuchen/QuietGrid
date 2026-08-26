@@ -1,0 +1,23 @@
+{
+  "v4_code_commit_sha": "50d681485503415ff339a8c24a3b90fda6049bb7",
+  "base_sha": "50d681485503415ff339a8c24a3b90fda6049bb7",
+  "candidate_id": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "freeze_tag": "semiconductor-grid-forward-oos-v2.9-freeze",
+  "freeze_evidence_sha": "f5c2a6a45b28b348dcc50c3cbbda6d206b11e102",
+  "freeze_artifact_blob_sha": "8d78533ef4601439cb9d14bb0b4628b596cf4fd0",
+  "exposure_cutoff": "2026-08-08T20:45:23.438783+00:00",
+  "lane": "TRADFI_SHADOW_CONSERVATIVE",
+  "market_data_environment": "PRODUCTION_PUBLIC",
+  "order_environment": "PAPER",
+  "production_private_permission": "DISABLED",
+  "execution_profile": "PAPER_CONSERVATIVE",
+  "symbols": [
+    "SNDKUSDT",
+    "MUUSDT",
+    "SOXLUSDT",
+    "SKHYNIXUSDT"
+  ],
+  "economic_leverage": 1,
+  "started_at": "2026-08-26T10:56:36.361684+00:00"
+}

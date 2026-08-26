@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-08-26T10:54:49.532680+00:00",
+  "endpoint": "https://testnet.binancefuture.com",
+  "symbols": [
+    {
+      "symbol": "SNDKUSDT",
+      "exists": false,
+      "status": "UNSUPPORTED",
+      "final_capability": "TESTNET_TRADFI_UNSUPPORTED"
+    },
+    {
+      "symbol": "MUUSDT",
+      "exists": false,
+      "status": "UNSUPPORTED",
+      "final_capability": "TESTNET_TRADFI_UNSUPPORTED"
+    },
+    {
+      "symbol": "SOXLUSDT",
+      "exists": false,
+      "status": "UNSUPPORTED",
+      "final_capability": "TESTNET_TRADFI_UNSUPPORTED"
+    },
+    {
+      "symbol": "SKHYNIXUSDT",
+      "exists": false,
+      "status": "UNSUPPORTED",
+      "final_capability": "TESTNET_TRADFI_UNSUPPORTED"
+    }
+  ],
+  "authenticated": {
+    "status": "SKIPPED_NO_CREDENTIALS"
+  },
+  "production_private_api": "DISABLED",
+  "safety": {
+    "lane": "TESTNET_EXECUTION",
+    "data_environment": "TESTNET_PUBLIC",
+    "order_environment": "TESTNET_SIGNED",
+    "candidate": "31111-NEUTRAL",
+    "economic_leverage": 1,
+    "production_private_api": "DISABLED",
+    "capabilities": {
+      "production_public_rest": false,
+      "production_public_websocket": false,
+      "production_signed_rest": false,
+      "testnet_signed_rest": true,
+      "testnet_websocket": false,
+      "paper_order_mutation": false,
+      "real_order_mutation": false
+    }
+  },
+  "server_time": {
+    "status": "SUPPORTED",
+    "serverTime": 1787741691473
+  },
+  "fallback_symbols": [
+    {
+      "symbol": "BTCUSDT",
+      "exists": true,
+      "status": "TRADING",
+      "evidence_role": "EXECUTION_INFRA_ONLY"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "exists": true,
+      "status": "TRADING",
+      "evidence_role": "EXECUTION_INFRA_ONLY"
+    },
+    {
+      "symbol": "BCHUSDT",
+      "exists": true,
+      "status": "TRADING",
+      "evidence_role": "EXECUTION_INFRA_ONLY"
+    }
+  ],
+  "classification": "TESTNET_TRADFI_UNSUPPORTED_USE_DUAL_LANE"
+}

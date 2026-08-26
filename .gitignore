@@ -11,7 +11,13 @@ data/*.db-*
 logs/*.log
 reports/*.json
 reports/**/*.json
+!reports/repository-consolidation-v4.0/
+!reports/repository-consolidation-v4.0/*.json
+!reports/testnet-shadow-v4.0/
+!reports/testnet-shadow-v4.0/*.json
 data/backtests/
+data/shadow/
+data/runtime/
 output/
 dist/
 frontend/dist/

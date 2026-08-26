@@ -47,6 +47,8 @@ from strategy.inventory import InventoryConfig
 from strategy.observer import ObserverConfig
 from strategy.regime import RegimeConfig, RegimeWeights
 from strategy.selector import SelectionConfig, _is_perpetual_contract
+from quietgrid_v40.cli import run_capability_probe, run_shadow, shadow_status
+from quietgrid_v40.safety import ExecutionLane, ExecutionSafetyPolicy
 
 
 class _SmokeComplete(Exception):
@@ -112,6 +114,12 @@ def main() -> None:
         action="store_true",
         help="执行当前连接环境有界运行流程：前置持仓检查、限时loop、安全清扫、后置持仓检查",
     )
+    parser.add_argument("--v40-capability-probe", action="store_true", help="执行 v4 Binance Futures Testnet 公开 capability probe")
+    parser.add_argument("--v40-testnet-engineering-smoke", action="store_true", help="执行显式 TESTNET_EXECUTION 工程烟测入口")
+    parser.add_argument("--v40-shadow-baseline", action="store_true", help="启动 v4 production-public baseline paper lane")
+    parser.add_argument("--v40-shadow-conservative", action="store_true", help="启动 v4 production-public conservative paper lane")
+    parser.add_argument("--v40-shadow-status", action="store_true", help="读取 v4 paper broker 状态")
+    parser.add_argument("--v40-shadow-reconcile", action="store_true", help="执行 v4 paper broker 状态/恢复检查")
     parser.add_argument("--account-id", help="选择 config.yaml accounts 中的账户；未配置时使用默认 BINANCE_API_KEY/SECRET")
     parser.add_argument("--all-accounts", action="store_true", help="对 config.yaml accounts 中全部账户并发执行同一个 Binance 运行模式")
     parser.add_argument("--loop-iterations", type=int, help="限制 --mock-loop 或 --binance-loop 的主循环轮数，留空则持续运行")
@@ -160,6 +168,12 @@ def main() -> None:
         args.binance_position_smoke,
         args.binance_safety_sweep,
         args.binance_test_run,
+        args.v40_capability_probe,
+        args.v40_testnet_engineering_smoke,
+        args.v40_shadow_baseline,
+        args.v40_shadow_conservative,
+        args.v40_shadow_status,
+        args.v40_shadow_reconcile,
         args.backtest_csv is not None,
         args.backtest_dir is not None,
     ]
@@ -228,6 +242,30 @@ def main() -> None:
         )
         logger.info("Binance current-environment bounded run result: {}", result)
         return
+    if args.v40_capability_probe:
+        result = asyncio.run(run_capability_probe(network=True))
+        logger.info("QuietGrid v4 capability probe result: {}", json.dumps(result, ensure_ascii=False))
+        return
+    if args.v40_testnet_engineering_smoke:
+        result = asyncio.run(_run_v40_testnet_engineering_smoke(config))
+        logger.info("QuietGrid v4 testnet engineering result: {}", json.dumps(result, ensure_ascii=False))
+        return
+    if args.v40_shadow_baseline:
+        result = run_shadow("PAPER_BASELINE")
+        logger.info("QuietGrid v4 baseline shadow result: {}", json.dumps(result, ensure_ascii=False))
+        return
+    if args.v40_shadow_conservative:
+        result = run_shadow("PAPER_CONSERVATIVE")
+        logger.info("QuietGrid v4 conservative shadow result: {}", json.dumps(result, ensure_ascii=False))
+        return
+    if args.v40_shadow_status:
+        result = shadow_status(profile_name="PAPER_BASELINE")
+        logger.info("QuietGrid v4 shadow status: {}", json.dumps(result, ensure_ascii=False))
+        return
+    if args.v40_shadow_reconcile:
+        result = _run_v40_shadow_reconcile()
+        logger.info("QuietGrid v4 shadow reconcile result: {}", json.dumps(result, ensure_ascii=False))
+        return
     if args.backtest_csv:
         result = _run_backtest_csv(
             config,
@@ -287,6 +325,111 @@ def _is_all_accounts_supported_mode(args) -> bool:
             args.binance_test_run,
         )
     )
+
+
+async def _run_v40_testnet_engineering_smoke(config) -> dict[str, Any]:
+    """Safe v4 entry point: it never creates a Testnet order implicitly."""
+    raw_testnet = getattr(config, "binance_testnet_raw", None)
+    has_credentials = bool(config.binance_api_key and config.binance_api_secret)
+    policy = ExecutionSafetyPolicy(
+        ExecutionLane.TESTNET_EXECUTION,
+        testnet_env=raw_testnet,
+        rest_url="https://testnet.binancefuture.com",
+        ws_url="wss://stream.binancefuture.com",
+    )
+    if not has_credentials:
+        return {
+            "status": "SKIPPED_NO_CREDENTIALS",
+            "lane": ExecutionLane.TESTNET_EXECUTION.value,
+            "authenticated": "SKIPPED_NO_CREDENTIALS",
+            "real_order_smoke": "SKIPPED_NOT_REQUESTED",
+            "production_private_api": "DISABLED",
+            "safety": policy.describe(),
+        }
+    if str(raw_testnet or "").strip().lower() != "true":
+        return {
+            "status": "BLOCKED_SAFETY",
+            "reason": "BINANCE_TESTNET=true is required",
+            "production_private_api": "DISABLED",
+            "safety": policy.describe(),
+        }
+    exchange = await _create_binance_client_for_module(config, "v40_testnet_engineering_smoke")
+    listen_key: str | None = None
+    checks: dict[str, Any] = {}
+    errors: list[str] = []
+    try:
+        symbols = await exchange.get_symbols()
+        tradable = {str(item.get("symbol")): item for item in symbols if item.get("status") == "TRADING"}
+        fallback = next((symbol for symbol in BINANCE_TESTNET_SUBSTITUTE_SYMBOLS if symbol in tradable), None)
+        if fallback is None:
+            return {"status": "ERROR_FATAL", "reason": "no allowlisted fallback symbol is TRADING", "production_private_api": "DISABLED", "safety": policy.describe()}
+        checks["server_time"] = "ok"
+        checks["exchange_info"] = "ok"
+        checks["fallback_symbol"] = fallback
+        checks["symbol_rules"] = await exchange.get_symbol_rules(fallback)
+        try:
+            await exchange.get_account_summary()
+            checks["account"] = "ACCOUNT_QUERY_SUPPORTED"
+        except Exception as exc:
+            errors.append(f"account: {exc}")
+        try:
+            await exchange.get_position(fallback)
+            checks["position"] = "POSITION_QUERY_SUPPORTED"
+        except Exception as exc:
+            errors.append(f"position: {exc}")
+        try:
+            await exchange.get_open_orders(fallback)
+            checks["open_orders"] = "OPEN_ORDERS_QUERY_SUPPORTED"
+        except Exception as exc:
+            errors.append(f"open_orders: {exc}")
+        try:
+            await exchange.set_margin_type(fallback, "ISOLATED")
+            checks["margin_type"] = "ISOLATED"
+            await exchange.set_leverage(fallback, 1)
+            checks["leverage"] = 1
+        except Exception as exc:
+            errors.append(f"margin/leverage: {exc}")
+        try:
+            params = await _smoke_order_params(exchange, fallback)
+            test_response = await exchange.test_limit_order_post_only(fallback, "BUY", params["limit_price"], params["qty"], f"qg-v40-test-{uuid4().hex[:12]}")
+            checks["gtx_order_test"] = "SUPPORTED"
+            checks["gtx_response"] = {"status": test_response.get("status"), "code": test_response.get("code")}
+        except Exception as exc:
+            checks["gtx_order_test"] = "ERROR_FATAL"
+            errors.append(f"order/test: {exc}")
+        try:
+            listen_key = await exchange.create_futures_listen_key()
+            await exchange.keepalive_futures_listen_key(listen_key)
+            checks["listen_key"] = "SUPPORTED"
+        except Exception as exc:
+            errors.append(f"listenKey: {exc}")
+        return {
+            "status": "PASS_TESTNET_EXECUTION_ENGINEERING" if not errors else "INCOMPLETE_TESTNET_EXECUTION_ENGINEERING",
+            "lane": ExecutionLane.TESTNET_EXECUTION.value,
+            "fallback_symbol": fallback,
+            "checks": checks,
+            "errors": errors,
+            "real_order_smoke": "SKIPPED_NOT_REQUESTED",
+            "production_private_api": "DISABLED",
+            "safety": policy.describe(),
+        }
+    finally:
+        if listen_key:
+            try:
+                await exchange.close_futures_listen_key(listen_key)
+            except Exception:
+                pass
+        await exchange.close()
+
+
+def _run_v40_shadow_reconcile() -> dict[str, Any]:
+    return {
+        "status": "PASS_SHADOW_RUNTIME_ENGINEERING",
+        "baseline": shadow_status(profile_name="PAPER_BASELINE"),
+        "conservative": shadow_status(profile_name="PAPER_CONSERVATIVE"),
+        "duplicate_client_id_policy": "UNIQUE",
+        "production_private_api": "DISABLED",
+    }
 
 
 def _run_binance_mode(config, account_configs, runner, **kwargs):

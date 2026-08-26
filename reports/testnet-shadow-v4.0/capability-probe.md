@@ -1,0 +1,14 @@
+# Binance Futures Testnet Capability Probe
+
+Classification: TESTNET_TRADFI_UNSUPPORTED_USE_DUAL_LANE
+
+| Symbol | Exists | Status | Contract | Rules | GTX/order-test | Authenticated | Final |
+|---|---:|---|---|---|---|---|---|
+| SNDKUSDT | False | UNSUPPORTED | NOT_PROBED | NOT_PROBED | NOT_PROBED | NOT_PROBED | TESTNET_TRADFI_UNSUPPORTED |
+| MUUSDT | False | UNSUPPORTED | NOT_PROBED | NOT_PROBED | NOT_PROBED | NOT_PROBED | TESTNET_TRADFI_UNSUPPORTED |
+| SOXLUSDT | False | UNSUPPORTED | NOT_PROBED | NOT_PROBED | NOT_PROBED | NOT_PROBED | TESTNET_TRADFI_UNSUPPORTED |
+| SKHYNIXUSDT | False | UNSUPPORTED | NOT_PROBED | NOT_PROBED | NOT_PROBED | NOT_PROBED | TESTNET_TRADFI_UNSUPPORTED |
+
+Production private API: DISABLED
+
+No production private endpoint was called.

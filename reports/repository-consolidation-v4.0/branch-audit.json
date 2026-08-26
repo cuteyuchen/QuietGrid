@@ -1,0 +1,707 @@
+{
+  "generated_at": "2026-08-26T10:54:48.901373+00:00",
+  "base_sha": "50d681485503415ff339a8c24a3b90fda6049bb7",
+  "local_branches": 14,
+  "remote_branches": 12,
+  "tag_count": 1,
+  "branches": [
+    {
+      "branch_name": "codex/profit-protection-backtest-v2.3",
+      "scope": "both",
+      "head_sha": "31d828122f17978cec79aace5ac0a38f57c42f0e",
+      "head_commit_date": "2026-07-25T14:01:35+08:00",
+      "head_subject": "research: record stock perpetual H1.1 invalid sample gate",
+      "merge_base_vs_v4_base": "d4f145c28d4dfaefe59396d32974298a4528c4dc",
+      "is_ancestor_of_base": false,
+      "is_base_ancestor_of_branch": false,
+      "ahead_count_vs_base": 9,
+      "behind_count_vs_base": 13,
+      "unique_commit_count": 9,
+      "unique_commit_shas": [
+        "31d828122f17978cec79aace5ac0a38f57c42f0e",
+        "7f4613083f12dd40050a017acaa11009549ac521",
+        "2f8e5d9f3d36a07223eff3020e7506cc4ce4f40e",
+        "d1d82c1d145c018c20855ab4f34a51c1fae6a4fc",
+        "a359981caecaa1bd7163904d71a2e9b69b2a59e4",
+        "1cec0efe54947d5f6a18314b669c2db808f1a21c",
+        "d6a56e9f7876fcedf4fca05ebca801e8c09708fb",
+        "4eed2e9cf8e09c1e5464b208431221817ab7e976",
+        "d7f781252e1d29a15a992b6a91537bde0a061a7a"
+      ],
+      "report_directories": [
+        "docs",
+        "reports\\cross-era-oos",
+        "reports\\profit-protection",
+        "reports\\stock-perp-weekend-grid-h1-1-v2.6",
+        "reports\\stock-perp-weekend-grid-v1",
+        "reports\\stock-perp-weekend-grid-v1-smoke",
+        "reports\\stock-perp-weekend-grid-v1\\attempt-1-final",
+        "reports\\stock-perp-weekend-grid-v1\\boundary-alignment-attempt-2",
+        "reports\\stock-perp-weekend-grid-v1\\boundary-alignment-attempt-2\\boundary-test-h1",
+        "reports\\stock-perp-weekend-grid-v1\\boundary-alignment-attempt-2\\boundary-test-windows",
+        "reports\\stock-perp-weekend-grid-v1\\discovery-attempt-1",
+        "reports\\stock-perp-weekend-grid-v1\\h1-attempt-1",
+        "reports\\volatility-defense",
+        "reports\\volatility-loss-guard-smoke",
+        "reports\\volatility-severe-event-freeze",
+        "reports\\volatility-severe-event-freeze-smoke",
+        "reports\\volatility-severe-wind-down-smoke",
+        "reports\\volatility-wind-down-smoke"
+      ],
+      "known_evidence_files": [
+        "reports/profit-protection/final-report.md",
+        "reports/stock-perp-weekend-grid-h1-1-v2.6/final-report.md",
+        "reports/stock-perp-weekend-grid-v1/attempt-1-final/final-report.md",
+        "reports/stock-perp-weekend-grid-v1/boundary-alignment-attempt-2/boundary-test-h1/final-report.md",
+        "reports/stock-perp-weekend-grid-v1/final-report.md",
+        "reports/stock-perp-weekend-grid-v1/h1-attempt-1/final-report.md",
+        "reports/volatility-defense/final-report.md",
+        "reports/volatility-loss-guard-smoke/final-report.md",
+        "reports/volatility-severe-event-freeze-smoke/final-report.md",
+        "reports/volatility-severe-event-freeze/final-report.md",
+        "reports/volatility-severe-wind-down-smoke/final-report.md",
+        "reports/volatility-wind-down-smoke/final-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "PASS"
+      ],
+      "classification": "KEEP_RESEARCH_REFERENCE",
+      "tags_containing_head": []
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-backtest-run-v2.7.1",
+      "scope": "both",
+      "head_sha": "1d1fb073f921785867d689c4d89b540644531d22",
+      "head_commit_date": "2026-07-30T15:47:43+08:00",
+      "head_subject": "docs: add v2.8 combinatorial grid backtest protocol",
+      "merge_base_vs_v4_base": "1d1fb073f921785867d689c4d89b540644531d22",
+      "is_ancestor_of_base": true,
+      "is_base_ancestor_of_branch": false,
+      "ahead_count_vs_base": 0,
+      "behind_count_vs_base": 7,
+      "unique_commit_count": 0,
+      "unique_commit_shas": [],
+      "report_directories": [],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "PASS"
+      ],
+      "classification": "MERGED_SAFE_TO_DELETE",
+      "tags_containing_head": [
+        "semiconductor-grid-forward-oos-v2.9-freeze"
+      ]
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-breakout-confirmation-v3.3",
+      "scope": "both",
+      "head_sha": "3c15782da79dab306154d02653ca59201370b76f",
+      "head_commit_date": "2026-08-23T23:16:16+08:00",
+      "head_subject": "research: improve breakout confirmation precision v3.3",
+      "merge_base_vs_v4_base": "50d681485503415ff339a8c24a3b90fda6049bb7",
+      "is_ancestor_of_base": false,
+      "is_base_ancestor_of_branch": true,
+      "ahead_count_vs_base": 3,
+      "behind_count_vs_base": 0,
+      "unique_commit_count": 3,
+      "unique_commit_shas": [
+        "3c15782da79dab306154d02653ca59201370b76f",
+        "eb64ed821b09f285041639a1502456d24bb40e2f",
+        "abe6ebf4474ac0362707fa631d29e35a81cc81b4"
+      ],
+      "report_directories": [
+        "reports\\semiconductor-grid-breakout-confirmation-v3.3",
+        "reports\\semiconductor-grid-breakout-inventory-protection-v3.2",
+        "reports\\semiconductor-grid-oos-diagnostics-v2.9.2"
+      ],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8-smoke/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8/final-report.md",
+        "reports/semiconductor-grid-breakout-confirmation-v3.3/candidate-selection.json",
+        "reports/semiconductor-grid-breakout-confirmation-v3.3/final-report.md",
+        "reports/semiconductor-grid-breakout-inventory-protection-v3.2/candidate-selection.json",
+        "reports/semiconductor-grid-breakout-inventory-protection-v3.2/final-report.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/acceptance-gates.json",
+        "reports/semiconductor-grid-forward-oos-v2.9/forward_oos_status.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md",
+        "reports/semiconductor-grid-oos-diagnostics-v2.9.2/final-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "NOT_EVALUATED",
+        "PASS",
+        "PASS_CONTROL_PARITY",
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY",
+        "PASS_V32_PARITY"
+      ],
+      "classification": "KEEP_RESEARCH_REFERENCE",
+      "tags_containing_head": []
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-breakout-inventory-protection-v3.2",
+      "scope": "both",
+      "head_sha": "eb64ed821b09f285041639a1502456d24bb40e2f",
+      "head_commit_date": "2026-08-23T16:10:32+08:00",
+      "head_subject": "research: evaluate breakout inventory protection v3.2",
+      "merge_base_vs_v4_base": "50d681485503415ff339a8c24a3b90fda6049bb7",
+      "is_ancestor_of_base": false,
+      "is_base_ancestor_of_branch": true,
+      "ahead_count_vs_base": 2,
+      "behind_count_vs_base": 0,
+      "unique_commit_count": 2,
+      "unique_commit_shas": [
+        "eb64ed821b09f285041639a1502456d24bb40e2f",
+        "abe6ebf4474ac0362707fa631d29e35a81cc81b4"
+      ],
+      "report_directories": [
+        "reports\\semiconductor-grid-breakout-inventory-protection-v3.2",
+        "reports\\semiconductor-grid-oos-diagnostics-v2.9.2"
+      ],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8-smoke/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8/final-report.md",
+        "reports/semiconductor-grid-breakout-inventory-protection-v3.2/candidate-selection.json",
+        "reports/semiconductor-grid-breakout-inventory-protection-v3.2/final-report.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/acceptance-gates.json",
+        "reports/semiconductor-grid-forward-oos-v2.9/forward_oos_status.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md",
+        "reports/semiconductor-grid-oos-diagnostics-v2.9.2/final-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "NOT_EVALUATED",
+        "PASS",
+        "PASS_CONTROL_PARITY",
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY"
+      ],
+      "classification": "KEEP_RESEARCH_REFERENCE",
+      "tags_containing_head": []
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-combinatorial-backtest-v2.8",
+      "scope": "both",
+      "head_sha": "7a24b18c0f027853fcfd939e8d2cb375f2e99c59",
+      "head_commit_date": "2026-07-31T14:37:28+08:00",
+      "head_subject": "回测结果",
+      "merge_base_vs_v4_base": "7a24b18c0f027853fcfd939e8d2cb375f2e99c59",
+      "is_ancestor_of_base": true,
+      "is_base_ancestor_of_branch": false,
+      "ahead_count_vs_base": 0,
+      "behind_count_vs_base": 6,
+      "unique_commit_count": 0,
+      "unique_commit_shas": [],
+      "report_directories": [],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8-smoke/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8/final-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "PASS",
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY"
+      ],
+      "classification": "MERGED_SAFE_TO_DELETE",
+      "tags_containing_head": [
+        "semiconductor-grid-forward-oos-v2.9-freeze"
+      ]
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-forward-oos-monitor-v2.9.1",
+      "scope": "both",
+      "head_sha": "50d681485503415ff339a8c24a3b90fda6049bb7",
+      "head_commit_date": "2026-08-23T10:55:10+08:00",
+      "head_subject": "research: refresh and append forward OOS data",
+      "merge_base_vs_v4_base": "50d681485503415ff339a8c24a3b90fda6049bb7",
+      "is_ancestor_of_base": true,
+      "is_base_ancestor_of_branch": true,
+      "ahead_count_vs_base": 0,
+      "behind_count_vs_base": 0,
+      "unique_commit_count": 0,
+      "unique_commit_shas": [],
+      "report_directories": [],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8-smoke/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8/final-report.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/acceptance-gates.json",
+        "reports/semiconductor-grid-forward-oos-v2.9/forward_oos_status.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "NOT_EVALUATED",
+        "PASS",
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY"
+      ],
+      "classification": "KEEP_ACTIVE",
+      "tags_containing_head": []
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-forward-oos-v2.9",
+      "scope": "both",
+      "head_sha": "f5c2a6a45b28b348dcc50c3cbbda6d206b11e102",
+      "head_commit_date": "2026-08-09T04:51:53+08:00",
+      "head_subject": "research: regenerate v2.9 forward OOS freeze evidence",
+      "merge_base_vs_v4_base": "f5c2a6a45b28b348dcc50c3cbbda6d206b11e102",
+      "is_ancestor_of_base": true,
+      "is_base_ancestor_of_branch": false,
+      "ahead_count_vs_base": 0,
+      "behind_count_vs_base": 2,
+      "unique_commit_count": 0,
+      "unique_commit_shas": [],
+      "report_directories": [],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8-smoke/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8/final-report.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/acceptance-gates.json",
+        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "PASS",
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY"
+      ],
+      "classification": "MERGED_SAFE_TO_DELETE",
+      "tags_containing_head": [
+        "semiconductor-grid-forward-oos-v2.9-freeze"
+      ]
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-integer-leverage-v3.1",
+      "scope": "local",
+      "head_sha": "4b181cda894c333dbe8dbca478790924f1a3e1bc",
+      "head_commit_date": "2026-08-23T15:04:11+08:00",
+      "head_subject": "research: validate integer exchange leverage robustness v3.1",
+      "merge_base_vs_v4_base": "190c2e49c797ba1b8d1b986270d866b16f8cd201",
+      "is_ancestor_of_base": false,
+      "is_base_ancestor_of_branch": false,
+      "ahead_count_vs_base": 2,
+      "behind_count_vs_base": 3,
+      "unique_commit_count": 2,
+      "unique_commit_shas": [
+        "4b181cda894c333dbe8dbca478790924f1a3e1bc",
+        "4bd2ea42308faa28e6110a2047e37e274045959f"
+      ],
+      "report_directories": [
+        "reports\\semiconductor-grid-integer-leverage-v3.1",
+        "reports\\semiconductor-grid-leverage-robustness-v3.0"
+      ],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8-smoke/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8/final-report.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/acceptance-gates.json",
+        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md",
+        "reports/semiconductor-grid-integer-leverage-v3.1/candidate-selection.json",
+        "reports/semiconductor-grid-integer-leverage-v3.1/final-report.md",
+        "reports/semiconductor-grid-leverage-robustness-v3.0/candidate-selection.json",
+        "reports/semiconductor-grid-leverage-robustness-v3.0/final-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_EXCHANGE_LEVERAGE_SUPPORT_UNVERIFIED",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "PASS",
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY"
+      ],
+      "classification": "KEEP_RESEARCH_REFERENCE",
+      "tags_containing_head": []
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-inventory-tail-early-warning-v3.5",
+      "scope": "local",
+      "head_sha": "996151e9f910786494c03e7d5e5bfef5a525e964",
+      "head_commit_date": "2026-08-25T23:35:22+08:00",
+      "head_subject": "Add v3.5 inventory tail research report",
+      "merge_base_vs_v4_base": "50d681485503415ff339a8c24a3b90fda6049bb7",
+      "is_ancestor_of_base": false,
+      "is_base_ancestor_of_branch": true,
+      "ahead_count_vs_base": 6,
+      "behind_count_vs_base": 0,
+      "unique_commit_count": 6,
+      "unique_commit_shas": [
+        "996151e9f910786494c03e7d5e5bfef5a525e964",
+        "d367665e4d0cf2bd2d1fff13f0b46555b7884824",
+        "32df63f7a843bdf0982d580f427026f416d70118",
+        "3c15782da79dab306154d02653ca59201370b76f",
+        "eb64ed821b09f285041639a1502456d24bb40e2f",
+        "abe6ebf4474ac0362707fa631d29e35a81cc81b4"
+      ],
+      "report_directories": [
+        "reports\\semiconductor-grid-breakout-confirmation-v3.3",
+        "reports\\semiconductor-grid-breakout-inventory-protection-v3.2",
+        "reports\\semiconductor-grid-inventory-tail-v3.5",
+        "reports\\semiconductor-grid-inventory-tail-v3.5\\event-paths",
+        "reports\\semiconductor-grid-oos-diagnostics-v2.9.2",
+        "reports\\semiconductor-grid-staged-derisking-v3.4"
+      ],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8-smoke/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8/final-report.md",
+        "reports/semiconductor-grid-breakout-confirmation-v3.3/candidate-selection.json",
+        "reports/semiconductor-grid-breakout-confirmation-v3.3/final-report.md",
+        "reports/semiconductor-grid-breakout-inventory-protection-v3.2/candidate-selection.json",
+        "reports/semiconductor-grid-breakout-inventory-protection-v3.2/final-report.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/acceptance-gates.json",
+        "reports/semiconductor-grid-forward-oos-v2.9/forward_oos_status.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md",
+        "reports/semiconductor-grid-inventory-tail-v3.5/final-report.md",
+        "reports/semiconductor-grid-oos-diagnostics-v2.9.2/final-report.md",
+        "reports/semiconductor-grid-staged-derisking-v3.4/candidate-selection.json",
+        "reports/semiconductor-grid-staged-derisking-v3.4/final-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_CROSS_SYMBOL_TRUE_SUPPORT",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "NOT_EVALUATED",
+        "PASS",
+        "PASS_CONTROL_PARITY",
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY",
+        "PASS_V32_PARITY",
+        "PASS_V33_PARITY",
+        "PASS_V34_EVENT_PARITY"
+      ],
+      "classification": "KEEP_RESEARCH_REFERENCE",
+      "tags_containing_head": []
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-leverage-robustness-v3.0",
+      "scope": "local",
+      "head_sha": "4bd2ea42308faa28e6110a2047e37e274045959f",
+      "head_commit_date": "2026-08-23T12:13:48+08:00",
+      "head_subject": "research: evaluate 31111 leverage robustness v3.0",
+      "merge_base_vs_v4_base": "190c2e49c797ba1b8d1b986270d866b16f8cd201",
+      "is_ancestor_of_base": false,
+      "is_base_ancestor_of_branch": false,
+      "ahead_count_vs_base": 1,
+      "behind_count_vs_base": 3,
+      "unique_commit_count": 1,
+      "unique_commit_shas": [
+        "4bd2ea42308faa28e6110a2047e37e274045959f"
+      ],
+      "report_directories": [
+        "reports\\semiconductor-grid-leverage-robustness-v3.0"
+      ],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8-smoke/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8/final-report.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/acceptance-gates.json",
+        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md",
+        "reports/semiconductor-grid-leverage-robustness-v3.0/candidate-selection.json",
+        "reports/semiconductor-grid-leverage-robustness-v3.0/final-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "PASS",
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY"
+      ],
+      "classification": "KEEP_RESEARCH_REFERENCE",
+      "tags_containing_head": []
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-oos-diagnostics-v2.9.2",
+      "scope": "both",
+      "head_sha": "abe6ebf4474ac0362707fa631d29e35a81cc81b4",
+      "head_commit_date": "2026-08-23T13:11:49+08:00",
+      "head_subject": "research: diagnose first forward OOS inventory losses v2.9.2",
+      "merge_base_vs_v4_base": "50d681485503415ff339a8c24a3b90fda6049bb7",
+      "is_ancestor_of_base": false,
+      "is_base_ancestor_of_branch": true,
+      "ahead_count_vs_base": 1,
+      "behind_count_vs_base": 0,
+      "unique_commit_count": 1,
+      "unique_commit_shas": [
+        "abe6ebf4474ac0362707fa631d29e35a81cc81b4"
+      ],
+      "report_directories": [
+        "reports\\semiconductor-grid-oos-diagnostics-v2.9.2"
+      ],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8-smoke/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8/final-report.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/acceptance-gates.json",
+        "reports/semiconductor-grid-forward-oos-v2.9/forward_oos_status.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md",
+        "reports/semiconductor-grid-oos-diagnostics-v2.9.2/final-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "NOT_EVALUATED",
+        "PASS",
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY"
+      ],
+      "classification": "KEEP_RESEARCH_REFERENCE",
+      "tags_containing_head": []
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-staged-derisking-v3.4",
+      "scope": "local",
+      "head_sha": "32df63f7a843bdf0982d580f427026f416d70118",
+      "head_commit_date": "2026-08-24T22:31:12+08:00",
+      "head_subject": "research: evaluate staged breakout de-risking v3.4",
+      "merge_base_vs_v4_base": "50d681485503415ff339a8c24a3b90fda6049bb7",
+      "is_ancestor_of_base": false,
+      "is_base_ancestor_of_branch": true,
+      "ahead_count_vs_base": 4,
+      "behind_count_vs_base": 0,
+      "unique_commit_count": 4,
+      "unique_commit_shas": [
+        "32df63f7a843bdf0982d580f427026f416d70118",
+        "3c15782da79dab306154d02653ca59201370b76f",
+        "eb64ed821b09f285041639a1502456d24bb40e2f",
+        "abe6ebf4474ac0362707fa631d29e35a81cc81b4"
+      ],
+      "report_directories": [
+        "reports\\semiconductor-grid-breakout-confirmation-v3.3",
+        "reports\\semiconductor-grid-breakout-inventory-protection-v3.2",
+        "reports\\semiconductor-grid-oos-diagnostics-v2.9.2",
+        "reports\\semiconductor-grid-staged-derisking-v3.4"
+      ],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8-smoke/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8/final-report.md",
+        "reports/semiconductor-grid-breakout-confirmation-v3.3/candidate-selection.json",
+        "reports/semiconductor-grid-breakout-confirmation-v3.3/final-report.md",
+        "reports/semiconductor-grid-breakout-inventory-protection-v3.2/candidate-selection.json",
+        "reports/semiconductor-grid-breakout-inventory-protection-v3.2/final-report.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/acceptance-gates.json",
+        "reports/semiconductor-grid-forward-oos-v2.9/forward_oos_status.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md",
+        "reports/semiconductor-grid-oos-diagnostics-v2.9.2/final-report.md",
+        "reports/semiconductor-grid-staged-derisking-v3.4/candidate-selection.json",
+        "reports/semiconductor-grid-staged-derisking-v3.4/final-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "NOT_EVALUATED",
+        "PASS",
+        "PASS_CONTROL_PARITY",
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY",
+        "PASS_V32_PARITY",
+        "PASS_V33_PARITY"
+      ],
+      "classification": "KEEP_RESEARCH_REFERENCE",
+      "tags_containing_head": []
+    },
+    {
+      "branch_name": "codex/semiconductor-grid-testnet-shadow-v4.0",
+      "scope": "local",
+      "head_sha": "50d681485503415ff339a8c24a3b90fda6049bb7",
+      "head_commit_date": "2026-08-23T10:55:10+08:00",
+      "head_subject": "research: refresh and append forward OOS data",
+      "merge_base_vs_v4_base": "50d681485503415ff339a8c24a3b90fda6049bb7",
+      "is_ancestor_of_base": true,
+      "is_base_ancestor_of_branch": true,
+      "ahead_count_vs_base": 0,
+      "behind_count_vs_base": 0,
+      "unique_commit_count": 0,
+      "unique_commit_shas": [],
+      "report_directories": [],
+      "known_evidence_files": [
+        "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
+        "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.7.2/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8-smoke/final-report.md",
+        "reports/semiconductor-grid-backtest-v2.8/final-report.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/acceptance-gates.json",
+        "reports/semiconductor-grid-forward-oos-v2.9/forward_oos_status.md",
+        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md"
+      ],
+      "conclusion_codes": [
+        "FAIL",
+        "FAIL_NO_ROBUST_EDGE",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_FORWARD_OOS",
+        "NOT_EVALUATED",
+        "PASS",
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY"
+      ],
+      "classification": "KEEP_ACTIVE",
+      "tags_containing_head": []
+    },
+    {
+      "branch_name": "master",
+      "scope": "both",
+      "head_sha": "55e4a1116c9e4d4814d6d0c4a8cc5a0a1c871e47",
+      "head_commit_date": "2026-07-25T15:57:54+08:00",
+      "head_subject": "feat: add semiconductor closed-market grid v2.7",
+      "merge_base_vs_v4_base": "55e4a1116c9e4d4814d6d0c4a8cc5a0a1c871e47",
+      "is_ancestor_of_base": true,
+      "is_base_ancestor_of_branch": false,
+      "ahead_count_vs_base": 0,
+      "behind_count_vs_base": 12,
+      "unique_commit_count": 0,
+      "unique_commit_shas": [],
+      "report_directories": [],
+      "known_evidence_files": [],
+      "conclusion_codes": [],
+      "classification": "KEEP_ACTIVE",
+      "tags_containing_head": [
+        "semiconductor-grid-forward-oos-v2.9-freeze"
+      ]
+    },
+    {
+      "branch_name": "origin/codex/semiconductor-grid-backtest-v2.7",
+      "scope": "remote",
+      "head_sha": "b40c8d73d3ca0bec8bbb6f7f4fb0cb36c3eed3b2",
+      "head_commit_date": "2026-07-25T15:55:59+08:00",
+      "head_subject": "test: cover Binance rule snapshot normalization",
+      "merge_base_vs_v4_base": "d4f145c28d4dfaefe59396d32974298a4528c4dc",
+      "is_ancestor_of_base": false,
+      "is_base_ancestor_of_branch": false,
+      "ahead_count_vs_base": 12,
+      "behind_count_vs_base": 13,
+      "unique_commit_count": 12,
+      "unique_commit_shas": [
+        "b40c8d73d3ca0bec8bbb6f7f4fb0cb36c3eed3b2",
+        "07dc889f28995cd5c8f6d529725ea4b366483230",
+        "094d344ae9f28cf4099eeb7b72cd5851659ecd10",
+        "bdd71daf384341c6cd5d8ca5bb2209e6f5ba200d",
+        "cac87e38c6adf0ca30d585f3b524eaac275dabcf",
+        "71dfd4353ad01bd2b1ad44f2ad07fe874cca00d6",
+        "ac9253ae5bcfc84e3aae848c3cb96eb56ba79906",
+        "764849b5e3840de1633f06c777782faf483c09ec",
+        "471e442dcdf8479cd55554cd1016a135d892a582",
+        "fa64b127c2d921c5ee9dd46f006e8c9f2343eb9d",
+        "9ade370fc7d4675f43b8179611eff6e911395b79",
+        "895da3b41d47482fbd5b103a89ea0b27051cf052"
+      ],
+      "report_directories": [
+        "docs"
+      ],
+      "known_evidence_files": [],
+      "conclusion_codes": [],
+      "classification": "KEEP_RESEARCH_REFERENCE",
+      "tags_containing_head": []
+    },
+    {
+      "branch_name": "origin/v2.1-runtime-autostart",
+      "scope": "remote",
+      "head_sha": "09140b8aafb1f72091a8be92666c22fad4f9b054",
+      "head_commit_date": "2026-07-21T18:47:34+08:00",
+      "head_subject": "feat(api): 增强数据健康检查与交易控制逻辑",
+      "merge_base_vs_v4_base": "09140b8aafb1f72091a8be92666c22fad4f9b054",
+      "is_ancestor_of_base": true,
+      "is_base_ancestor_of_branch": false,
+      "ahead_count_vs_base": 0,
+      "behind_count_vs_base": 21,
+      "unique_commit_count": 0,
+      "unique_commit_shas": [],
+      "report_directories": [],
+      "known_evidence_files": [],
+      "conclusion_codes": [],
+      "classification": "MERGED_SAFE_TO_DELETE",
+      "tags_containing_head": [
+        "semiconductor-grid-forward-oos-v2.9-freeze"
+      ]
+    },
+    {
+      "branch_name": "origin/v2.2-neutral-trend-defense",
+      "scope": "remote",
+      "head_sha": "e41a1bc704c0f76a9e013795a506cff629ea3494",
+      "head_commit_date": "2026-07-21T19:13:15+08:00",
+      "head_subject": "docs: add neutral-grid trend defense implementation notes",
+      "merge_base_vs_v4_base": "e41a1bc704c0f76a9e013795a506cff629ea3494",
+      "is_ancestor_of_base": true,
+      "is_base_ancestor_of_branch": false,
+      "ahead_count_vs_base": 0,
+      "behind_count_vs_base": 17,
+      "unique_commit_count": 0,
+      "unique_commit_shas": [],
+      "report_directories": [],
+      "known_evidence_files": [],
+      "conclusion_codes": [],
+      "classification": "MERGED_SAFE_TO_DELETE",
+      "tags_containing_head": [
+        "semiconductor-grid-forward-oos-v2.9-freeze"
+      ]
+    }
+  ],
+  "recovery": {
+    "v3.4": {
+      "sha": "32df63f7a843bdf0982d580f427026f416d70118",
+      "status": "RECOVERED_LOCAL_OBJECT",
+      "summary": {
+        "sha": "32df63f7a843bdf0982d580f427026f416d70118",
+        "date": "2026-08-24T22:31:12+08:00",
+        "subject": "research: evaluate staged breakout de-risking v3.4"
+      }
+    },
+    "v3.5": {
+      "sha": "996151e9f910786494c03e7d5e5bfef5a525e964",
+      "status": "RECOVERED_LOCAL_OBJECT",
+      "summary": {
+        "sha": "996151e9f910786494c03e7d5e5bfef5a525e964",
+        "date": "2026-08-25T23:35:22+08:00",
+        "subject": "Add v3.5 inventory tail research report"
+      }
+    }
+  },
+  "no_branches_deleted": true,
+  "no_existing_tags_moved": true
+}

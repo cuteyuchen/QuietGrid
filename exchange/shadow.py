@@ -230,17 +230,25 @@ class ShadowBroker:
         if isinstance(at, str):
             at = datetime.fromisoformat(at)
         event_key = str(event.get("event_id") or hashlib.sha256(json.dumps({"symbol": symbol, **event}, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest())
+        duplicate = False
+        out_of_order = False
         with self._connect() as conn:
             try:
                 conn.execute("INSERT INTO shadow_market_events(event_key,symbol,event_time,payload_json) VALUES (?,?,?,?)", (event_key, symbol, self._iso(at), json.dumps(event, default=str, separators=(",", ":"))))
             except sqlite3.IntegrityError:
-                self._record_event("DUPLICATE_MARKET_EVENT", {"symbol": symbol, "event_key": event_key}, self._now())
-                return []
-            previous = conn.execute("SELECT last_event_at FROM shadow_market_state WHERE symbol = ?", (symbol,)).fetchone()
-            if previous is not None and datetime.fromisoformat(previous["last_event_at"]) >= at:
-                self._record_event("OUT_OF_ORDER_MARKET_EVENT", {"symbol": symbol, "event_key": event_key}, self._now())
-                return []
-            conn.execute("INSERT INTO shadow_market_state(symbol,last_event_at) VALUES (?,?) ON CONFLICT(symbol) DO UPDATE SET last_event_at=excluded.last_event_at", (symbol, self._iso(at)))
+                duplicate = True
+            if not duplicate:
+                previous = conn.execute("SELECT last_event_at FROM shadow_market_state WHERE symbol = ?", (symbol,)).fetchone()
+                if previous is not None and datetime.fromisoformat(previous["last_event_at"]) >= at:
+                    out_of_order = True
+                else:
+                    conn.execute("INSERT INTO shadow_market_state(symbol,last_event_at) VALUES (?,?) ON CONFLICT(symbol) DO UPDATE SET last_event_at=excluded.last_event_at", (symbol, self._iso(at)))
+        if duplicate:
+            self._record_event("DUPLICATE_MARKET_EVENT", {"symbol": symbol, "event_key": event_key}, self._now())
+            return []
+        if out_of_order:
+            self._record_event("OUT_OF_ORDER_MARKET_EVENT", {"symbol": symbol, "event_key": event_key}, self._now())
+            return []
         self._last_market[symbol] = {**self._last_market.get(symbol, {}), **event}
         age = (self._now() - at.astimezone(timezone.utc)).total_seconds()
         if age > self.profile.stale_timeout_seconds:
@@ -284,9 +292,16 @@ class ShadowBroker:
             old_avg = float(row["avg_price"]) if row else 0.0
             new_qty = old_qty + signed
             realized = 0.0
-            if old_qty and old_qty * signed < 0:
+            opposite_side = bool(old_qty and old_qty * signed < 0)
+            if opposite_side:
                 realized = min(abs(old_qty), abs(signed)) * (price - old_avg) * (1 if old_qty > 0 else -1)
-            new_avg = price if old_qty == 0 or old_qty * signed < 0 and abs(signed) >= abs(old_qty) else (old_avg * abs(old_qty) + price * abs(signed)) / max(abs(old_qty) + abs(signed), 1e-12)
+            if old_qty == 0 or (opposite_side and abs(signed) >= abs(old_qty)):
+                new_avg = price if new_qty else 0.0
+            elif opposite_side:
+                # Partial reduction keeps the cost basis of the remaining side.
+                new_avg = old_avg
+            else:
+                new_avg = (old_avg * abs(old_qty) + price * abs(signed)) / max(abs(old_qty) + abs(signed), 1e-12)
             conn.execute("INSERT INTO shadow_positions(symbol,qty,avg_price,realized_pnl) VALUES (?,?,?,?) ON CONFLICT(symbol) DO UPDATE SET qty=excluded.qty,avg_price=excluded.avg_price,realized_pnl=shadow_positions.realized_pnl+excluded.realized_pnl", (symbol, new_qty, new_avg, realized))
             conn.execute("INSERT INTO shadow_fills(order_id,symbol,side,price,qty,fee,event_time) VALUES (?,?,?,?,?,?,?)", (order_id, symbol, side, price, qty, abs(price * qty) * self.profile.maker_fee_rate, self._iso(at)))
 

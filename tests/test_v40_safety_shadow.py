@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from exchange.shadow import PAPER_BASELINE, ShadowBroker
+from exchange.shadow import PAPER_BASELINE, ShadowBroker, ShadowExecutionProfile
 from quietgrid_v40.frozen import load_frozen_31111
 from quietgrid_v40.safety import ExecutionLane, ExecutionSafetyPolicy, LaneConfigurationError, ProductionPrivateApiBlocked
 
@@ -63,4 +63,43 @@ def test_marketable_post_only_is_rejected(tmp_path) -> None:
         result = await broker.place_limit_order_post_only("MUUSDT", "BUY", 101.0, 1.0, "qg-v40-test-reject")
         assert result["status"] == "REJECTED"
         assert result["rejectReason"] == "POST_ONLY_MARKETABLE"
+    asyncio.run(scenario())
+
+
+def test_shadow_market_event_dedupe_out_of_order_and_cancel_latency(tmp_path) -> None:
+    async def scenario() -> None:
+        profile = ShadowExecutionProfile("TEST", 0.0, 1.0, 100, 500, 90.0)
+        broker = ShadowBroker(tmp_path / "shadow.db", profile)
+        broker._last_market["MUUSDT"] = {"bid": 99.0, "ask": 101.0}
+        order = await broker.place_limit_order_post_only("MUUSDT", "BUY", 99.5, 1.0, "qg-v40-dedupe")
+        at = datetime.now(timezone.utc) + timedelta(seconds=1)
+        event = {"event_id": "evt-1", "timestamp": at, "trade_price": 99.4, "trade_qty": 2.0}
+        fills = await broker.process_market_event("MUUSDT", event)
+        assert fills and fills[0]["status"] == "FILLED"
+        assert await broker.process_market_event("MUUSDT", event) == []
+        older = {"event_id": "evt-older", "timestamp": at - timedelta(seconds=1), "trade_price": 99.4, "trade_qty": 2.0}
+        assert await broker.process_market_event("MUUSDT", older) == []
+
+        broker._last_market["SNDKUSDT"] = {"bid": 99.0, "ask": 101.0}
+        pending = await broker.place_limit_order_post_only("SNDKUSDT", "BUY", 98.5, 1.0, "qg-v40-cancel-race")
+        await broker.cancel_order("SNDKUSDT", pending["orderId"])
+        race_event = {"event_id": "evt-race", "timestamp": datetime.now(timezone.utc) + timedelta(milliseconds=250), "trade_price": 98.4, "trade_qty": 2.0}
+        race_fills = await broker.process_market_event("SNDKUSDT", race_event)
+        assert race_fills and race_fills[0]["status"] == "FILLED"
+
+    asyncio.run(scenario())
+
+
+def test_shadow_partial_reduction_preserves_cost_basis(tmp_path) -> None:
+    async def scenario() -> None:
+        broker = ShadowBroker(tmp_path / "shadow.db", PAPER_BASELINE)
+        broker._last_market["MUUSDT"] = {"last": 100.0}
+        await broker.place_market_order("MUUSDT", "BUY", 10.0, client_id="qg-v40-buy")
+        broker._last_market["MUUSDT"] = {"last": 110.0}
+        await broker.place_market_order("MUUSDT", "SELL", 4.0, client_id="qg-v40-sell")
+        position = await broker.get_position("MUUSDT")
+        assert position["qty"] == 6.0
+        assert position["avg_price"] == 100.0
+        assert position["realized_pnl"] == 40.0
+
     asyncio.run(scenario())

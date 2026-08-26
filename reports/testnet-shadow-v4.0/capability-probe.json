@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-26T11:39:21.354434+00:00",
+  "generated_at": "2026-08-26T11:47:26.617592+00:00",
   "endpoint": "https://testnet.binancefuture.com",
   "symbols": [
     {
@@ -50,7 +50,7 @@
   },
   "server_time": {
     "status": "SUPPORTED",
-    "serverTime": 1787744363614
+    "serverTime": 1787744848747
   },
   "fallback_symbols": [
     {

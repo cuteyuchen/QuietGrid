@@ -1,5 +1,5 @@
 {
-  "v4_code_commit_sha": "c6db2884b0948b7a22b1093b8b6a37e42f4ab566",
+  "v4_code_commit_sha": "a0a54842d5d1bac0df3b1b367682c1af491ec749",
   "base_sha": "50d681485503415ff339a8c24a3b90fda6049bb7",
   "candidate_id": "31111-NEUTRAL",
   "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
@@ -20,8 +20,8 @@
     "SKHYNIXUSDT"
   ],
   "economic_leverage": 1,
-  "started_at": "2026-08-26T11:39:26.079982+00:00",
-  "ended_at": "2026-08-26T11:39:26.079982+00:00",
+  "started_at": "2026-08-26T11:47:31.004321+00:00",
+  "ended_at": "2026-08-26T11:47:31.004321+00:00",
   "test_suite_result": "TARGETED_PASS",
   "network_probe_status": "TESTNET_TRADFI_UNSUPPORTED_USE_DUAL_LANE"
 }

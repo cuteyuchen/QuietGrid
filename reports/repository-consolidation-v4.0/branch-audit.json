@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-26T11:39:20.640160+00:00",
+  "generated_at": "2026-08-26T11:47:25.933576+00:00",
   "base_sha": "50d681485503415ff339a8c24a3b90fda6049bb7",
   "local_branches": 14,
   "remote_branches": 12,
@@ -551,16 +551,18 @@
     {
       "branch_name": "codex/semiconductor-grid-testnet-shadow-v4.0",
       "scope": "local",
-      "head_sha": "c6db2884b0948b7a22b1093b8b6a37e42f4ab566",
-      "head_commit_date": "2026-08-26T19:36:24+08:00",
-      "head_subject": "fix: preserve shadow cost basis and event ordering",
+      "head_sha": "a0a54842d5d1bac0df3b1b367682c1af491ec749",
+      "head_commit_date": "2026-08-26T19:44:45+08:00",
+      "head_subject": "fix: make testnet fallback selection deterministic",
       "merge_base_vs_v4_base": "50d681485503415ff339a8c24a3b90fda6049bb7",
       "is_ancestor_of_base": false,
       "is_base_ancestor_of_branch": true,
-      "ahead_count_vs_base": 3,
+      "ahead_count_vs_base": 5,
       "behind_count_vs_base": 0,
-      "unique_commit_count": 3,
+      "unique_commit_count": 5,
       "unique_commit_shas": [
+        "a0a54842d5d1bac0df3b1b367682c1af491ec749",
+        "7f8f9bf3be8b7fb63acac958f1270376f1c30806",
         "c6db2884b0948b7a22b1093b8b6a37e42f4ab566",
         "9f72f5d238c2684ac1f03fbd25ec0e707b6cb23c",
         "67911f0db770f9eea0bba1c41cda74fa5bea87a2"
@@ -589,7 +591,8 @@
         "NOT_EVALUATED",
         "NOT_EVALUATED_FOR_PROFITABILITY",
         "PASS",
-        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY"
+        "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY",
+        "PASS_V4_ENGINEERING_VALIDATION_READY_FOR_LONG_RUN"
       ],
       "classification": "KEEP_ACTIVE",
       "tags_containing_head": []

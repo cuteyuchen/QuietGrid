@@ -26,7 +26,7 @@ Tags: 1
 | codex/semiconductor-grid-leverage-robustness-v3.0 | local | 4bd2ea42308f | KEEP_RESEARCH_REFERENCE | 1 |
 | codex/semiconductor-grid-oos-diagnostics-v2.9.2 | both | abe6ebf4474a | KEEP_RESEARCH_REFERENCE | 1 |
 | codex/semiconductor-grid-staged-derisking-v3.4 | local | 32df63f7a843 | KEEP_RESEARCH_REFERENCE | 4 |
-| codex/semiconductor-grid-testnet-shadow-v4.0 | local | c6db2884b094 | KEEP_ACTIVE | 3 |
+| codex/semiconductor-grid-testnet-shadow-v4.0 | local | a0a54842d5d1 | KEEP_ACTIVE | 5 |
 | master | both | 55e4a1116c9e | KEEP_ACTIVE | 0 |
 | origin/codex/semiconductor-grid-backtest-v2.7 | remote | b40c8d73d3ca | KEEP_RESEARCH_REFERENCE | 12 |
 | origin/v2.1-runtime-autostart | remote | 09140b8aafb1 | MERGED_SAFE_TO_DELETE | 0 |

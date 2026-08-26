@@ -7,12 +7,12 @@
   "freeze_evidence_sha": "f5c2a6a45b28b348dcc50c3cbbda6d206b11e102",
   "freeze_artifact_blob_sha": "8d78533ef4601439cb9d14bb0b4628b596cf4fd0",
   "exposure_cutoff": "2026-08-08T20:45:23.438783+00:00",
-  "lane": "TRADFI_SHADOW_CONSERVATIVE",
+  "lane": "TRADFI_SHADOW_BASELINE",
   "market_data_environment": "PRODUCTION_PUBLIC",
   "order_environment": "PAPER",
   "production_private_permission": "DISABLED",
-  "execution_profile": "PAPER_CONSERVATIVE",
-  "execution_profile_sha": "6eb18d4c094bd49247999c7b5d2edfad776055612ed0deeb8a576fd66236883a",
+  "execution_profile": "PAPER_BASELINE",
+  "execution_profile_sha": "bae4d9c6fd7f725fca57d27c35641aa103e02d7aa3224fdb0ec7f9d90676ad20",
   "symbols": [
     "SNDKUSDT",
     "MUUSDT",
@@ -20,8 +20,8 @@
     "SKHYNIXUSDT"
   ],
   "economic_leverage": 1,
-  "started_at": "2026-08-26T11:39:27.606476+00:00",
-  "ended_at": "2026-08-26T11:39:27.606476+00:00",
+  "started_at": "2026-08-26T11:39:26.079982+00:00",
+  "ended_at": "2026-08-26T11:39:26.079982+00:00",
   "test_suite_result": "TARGETED_PASS",
   "network_probe_status": "TESTNET_TRADFI_UNSUPPORTED_USE_DUAL_LANE"
 }

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-26T10:54:48.901373+00:00",
+  "generated_at": "2026-08-26T11:39:20.640160+00:00",
   "base_sha": "50d681485503415ff339a8c24a3b90fda6049bb7",
   "local_branches": 14,
   "remote_branches": 12,
@@ -551,17 +551,25 @@
     {
       "branch_name": "codex/semiconductor-grid-testnet-shadow-v4.0",
       "scope": "local",
-      "head_sha": "50d681485503415ff339a8c24a3b90fda6049bb7",
-      "head_commit_date": "2026-08-23T10:55:10+08:00",
-      "head_subject": "research: refresh and append forward OOS data",
+      "head_sha": "c6db2884b0948b7a22b1093b8b6a37e42f4ab566",
+      "head_commit_date": "2026-08-26T19:36:24+08:00",
+      "head_subject": "fix: preserve shadow cost basis and event ordering",
       "merge_base_vs_v4_base": "50d681485503415ff339a8c24a3b90fda6049bb7",
-      "is_ancestor_of_base": true,
+      "is_ancestor_of_base": false,
       "is_base_ancestor_of_branch": true,
-      "ahead_count_vs_base": 0,
+      "ahead_count_vs_base": 3,
       "behind_count_vs_base": 0,
-      "unique_commit_count": 0,
-      "unique_commit_shas": [],
-      "report_directories": [],
+      "unique_commit_count": 3,
+      "unique_commit_shas": [
+        "c6db2884b0948b7a22b1093b8b6a37e42f4ab566",
+        "9f72f5d238c2684ac1f03fbd25ec0e707b6cb23c",
+        "67911f0db770f9eea0bba1c41cda74fa5bea87a2"
+      ],
+      "report_directories": [
+        "docs",
+        "reports\\repository-consolidation-v4.0",
+        "reports\\testnet-shadow-v4.0"
+      ],
       "known_evidence_files": [
         "reports/semiconductor-grid-backtest-v2.7.1/acceptance-gates.json",
         "reports/semiconductor-grid-backtest-v2.7.1/final-report.md",
@@ -570,7 +578,8 @@
         "reports/semiconductor-grid-backtest-v2.8/final-report.md",
         "reports/semiconductor-grid-forward-oos-v2.9/acceptance-gates.json",
         "reports/semiconductor-grid-forward-oos-v2.9/forward_oos_status.md",
-        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md"
+        "reports/semiconductor-grid-forward-oos-v2.9/freeze-report.md",
+        "reports/testnet-shadow-v4.0/final-report.md"
       ],
       "conclusion_codes": [
         "FAIL",
@@ -578,6 +587,7 @@
         "INSUFFICIENT_DATA",
         "INSUFFICIENT_FORWARD_OOS",
         "NOT_EVALUATED",
+        "NOT_EVALUATED_FOR_PROFITABILITY",
         "PASS",
         "PASS_STABLE_PARAMETER_REGION_RESEARCH_ONLY"
       ],

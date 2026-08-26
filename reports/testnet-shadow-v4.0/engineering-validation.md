@@ -7,4 +7,6 @@
 - Touch != fill: ENABLED
 - Partial fills: ENABLED
 - Baseline/conservative profiles: ENABLED
-- Network integration: OPT-IN
+- Testnet authenticated engineering: PASS_TESTNET_EXECUTION_ENGINEERING (BTCUSDT fallback; real order smoke skipped)
+- TradFi Testnet capability: TESTNET_TRADFI_UNSUPPORTED_USE_DUAL_LANE
+- Network integration: PUBLIC PROBE PASS; private writes bounded and opt-in

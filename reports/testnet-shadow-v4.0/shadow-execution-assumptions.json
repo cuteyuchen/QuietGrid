@@ -1,5 +1,6 @@
 {
   "profile": "PAPER_CONSERVATIVE",
+  "profile_sha": "6eb18d4c094bd49247999c7b5d2edfad776055612ed0deeb8a576fd66236883a",
   "profile_config": {
     "name": "PAPER_CONSERVATIVE",
     "queue_ahead_fraction": 0.9,

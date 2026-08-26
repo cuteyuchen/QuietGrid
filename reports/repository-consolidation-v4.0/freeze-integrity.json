@@ -2,6 +2,7 @@
   "result": "PASS_FREEZE_INTEGRITY",
   "base_candidate_freeze_blob_sha": "8d78533ef4601439cb9d14bb0b4628b596cf4fd0",
   "evidence_candidate_freeze_blob_sha": "8d78533ef4601439cb9d14bb0b4628b596cf4fd0",
+  "working_candidate_freeze_blob_sha": "8d78533ef4601439cb9d14bb0b4628b596cf4fd0",
   "working_candidate_freeze_sha256": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
   "candidate_id": "31111-NEUTRAL",
   "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",

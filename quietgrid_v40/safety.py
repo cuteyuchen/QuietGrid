@@ -58,6 +58,11 @@ class ExecutionSafetyPolicy:
     _TESTNET_REST_HOSTS = frozenset({"testnet.binancefuture.com", "testnet.binance.vision"})
     _TESTNET_WS_HOSTS = frozenset({"stream.binancefuture.com", "stream.binance.vision"})
     _PRODUCTION_PRIVATE_HOSTS = frozenset({"fapi.binance.com", "fstream.binance.com"})
+    _PUBLIC_PATH_PREFIXES = (
+        "/fapi/v1/time", "/fapi/v1/exchangeInfo", "/fapi/v1/klines",
+        "/fapi/v1/ticker", "/fapi/v1/depth", "/fapi/v1/aggTrades",
+        "/fapi/v1/trades", "/fapi/v1/premiumIndex", "/fapi/v1/fundingRate",
+    )
 
     def __init__(self, lane: ExecutionLane | str | None, *, testnet_env: str | None = None,
                  rest_url: str | None = None, ws_url: str | None = None) -> None:
@@ -110,8 +115,11 @@ class ExecutionSafetyPolicy:
         )
 
     def require_public_read(self, endpoint: str) -> None:
-        host = self._host(endpoint)
-        if host in self._PRODUCTION_PRIVATE_HOSTS:
+        parsed = urlparse(endpoint)
+        host = parsed.hostname or ""
+        path = parsed.path.rstrip("/") or "/"
+        is_public_path = any(path == prefix or path.startswith(prefix + "/") for prefix in self._PUBLIC_PATH_PREFIXES)
+        if host in self._PRODUCTION_PRIVATE_HOSTS and not is_public_path:
             raise ProductionPrivateApiBlocked("production private API is permanently disabled in v4")
         if self.lane is None:
             raise LaneConfigurationError("missing lane => NO_ORDER_CAPABILITY")
@@ -135,10 +143,19 @@ class ExecutionSafetyPolicy:
 
     def describe(self) -> dict[str, object]:
         matrix = self.capability_matrix()
+        if self.lane is ExecutionLane.TESTNET_EXECUTION:
+            data_environment = "TESTNET_PUBLIC"
+            order_environment = "TESTNET_SIGNED"
+        elif self.lane in {ExecutionLane.TRADFI_SHADOW_BASELINE, ExecutionLane.TRADFI_SHADOW_CONSERVATIVE, ExecutionLane.PUBLIC_DATA_ONLY}:
+            data_environment = "PRODUCTION_PUBLIC"
+            order_environment = "PAPER" if self.lane is not ExecutionLane.PUBLIC_DATA_ONLY else "NONE"
+        else:
+            data_environment = "NONE"
+            order_environment = "NONE"
         return {
             "lane": self.lane.value if self.lane else None,
-            "data_environment": "TESTNET_PUBLIC" if self.lane is ExecutionLane.TESTNET_EXECUTION else "PRODUCTION_PUBLIC",
-            "order_environment": "TESTNET_SIGNED" if self.lane is ExecutionLane.TESTNET_EXECUTION else ("PAPER" if self.lane else "NONE"),
+            "data_environment": data_environment,
+            "order_environment": order_environment,
             "candidate": "31111-NEUTRAL",
             "economic_leverage": 1,
             "production_private_api": "DISABLED",

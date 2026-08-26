@@ -18,8 +18,9 @@ def test_frozen_candidate_integrity() -> None:
 
 
 def test_production_private_and_missing_lane_are_fail_closed() -> None:
+    ExecutionSafetyPolicy(ExecutionLane.TRADFI_SHADOW_BASELINE).require_public_read("https://fapi.binance.com/fapi/v1/exchangeInfo")
     try:
-        ExecutionSafetyPolicy(ExecutionLane.TRADFI_SHADOW_BASELINE).require_public_read("https://fapi.binance.com")
+        ExecutionSafetyPolicy(ExecutionLane.TRADFI_SHADOW_BASELINE).require_public_read("https://fapi.binance.com/fapi/v1/account")
     except ProductionPrivateApiBlocked:
         pass
     else:
@@ -30,6 +31,13 @@ def test_production_private_and_missing_lane_are_fail_closed() -> None:
         pass
     else:
         raise AssertionError("missing lane was not blocked")
+    assert ExecutionSafetyPolicy(None).describe()["data_environment"] == "NONE"
+    try:
+        ExecutionSafetyPolicy(ExecutionLane.PUBLIC_DATA_ONLY).require_public_read("https://fapi.binance.com/fapi/v1/tickerfoo")
+    except ProductionPrivateApiBlocked:
+        pass
+    else:
+        raise AssertionError("private path sharing a public prefix was not blocked")
 
 
 def test_shadow_touch_partial_fill_and_idempotency(tmp_path) -> None:

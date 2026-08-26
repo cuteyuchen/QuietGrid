@@ -53,6 +53,7 @@ async def probe(network: bool = True) -> dict[str, Any]:
     if not network:
         result["server_time"] = {"status": "NOT_PROBED"}
         result["symbols"] = [{"symbol": symbol, "status": "NOT_PROBED", "final_capability": "NOT_PROBED"} for symbol in TARGET_SYMBOLS]
+        result["classification"] = "NOT_PROBED"
         return result
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:

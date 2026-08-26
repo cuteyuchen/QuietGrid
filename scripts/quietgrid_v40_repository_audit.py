@@ -109,6 +109,7 @@ def freeze_integrity(root: Path) -> dict[str, Any]:
         "result": "PASS_FREEZE_INTEGRITY" if ok else "FAIL_FREEZE_INTEGRITY",
         "base_candidate_freeze_blob_sha": candidate_blob_base,
         "evidence_candidate_freeze_blob_sha": candidate_blob_evidence,
+        "working_candidate_freeze_blob_sha": git(root, "hash-object", str(candidate)),
         "working_candidate_freeze_sha256": hashlib.sha256(candidate.read_bytes()).hexdigest(),
         "candidate_id": candidate_data.get("candidate_id"),
         "candidate_sha": candidate_sha,
@@ -146,9 +147,9 @@ def main() -> None:
     lines.extend(f"| {item['branch_name']} | {item['scope']} | {item['head_sha'][:12]} | {item['classification']} | {item['unique_commit_count']} |" for item in rows)
     lines += ["", "NO BRANCHES DELETED", "NO EXISTING TAGS MOVED", ""]
     (out / "BRANCH_AUDIT.md").write_text("\n".join(lines), encoding="utf-8")
-    plan = ["# QuietGrid v4.0 Branch Cleanup Plan", "", "PROPOSED ONLY - NOT EXECUTED", "", "本轮只生成建议，不创建 archive tag、不删除 branch、不移动 tag。", ""]
-    plan.extend(f"- {item['branch_name']}: future review required; proposed action is archive tag then delete branch." for item in rows if item["classification"] in {"ARCHIVE_TAG_THEN_DELETE_BRANCH", "MERGED_SAFE_TO_DELETE"})
-    plan += ["", "Missing v3.4/v3.5 evidence must never receive a tag command.", ""]
+    plan = ["# QuietGrid v4.0 Branch Cleanup Plan", "", "PROPOSED ONLY — NOT EXECUTED", "", "本轮只生成建议，不创建 archive tag、不删除 branch、不移动 tag。", "", "## Proposed annotated tags", "", "git tag -a research/v2.8-final 7a24b18c0f027853fcfd939e8d2cb375f2e99c59 -m 'archive v2.8 research'", "git tag -a research/v2.9-freeze f5c2a6a45b28b348dcc50c3cbbda6d206b11e102 -m 'archive v2.9 freeze'", "git tag -a research/v2.9.2-diagnostics abe6ebf4474ac0362707fa631d29e35a81cc81b4 -m 'archive v2.9.2 diagnostics'", "git tag -a research/v3.2-final eb64ed821b09f285041639a1502456d24bb40e2f -m 'archive v3.2 research'", "git tag -a research/v3.3-final 3c15782da79dab306154d02653ca59201370b76f -m 'archive v3.3 research'", "git tag -a research/v3.4-final 32df63f7a843bdf0982d580f427026f416d70118 -m 'archive v3.4 research'", "git tag -a research/v3.5-final 996151e9f910786494c03e7d5e5bfef5a525e964 -m 'archive v3.5 research'", "", "## Proposed branch deletes", ""]
+    plan.extend(f"git branch -d {item['branch_name']}" for item in rows if item["classification"] in {"ARCHIVE_TAG_THEN_DELETE_BRANCH", "MERGED_SAFE_TO_DELETE"} and not item["branch_name"].startswith("origin/"))
+    plan += ["", "All commands above are proposed only. Existing freeze tag is not moved or replaced.", ""]
     (out / "BRANCH_CLEANUP_PLAN.md").write_text("\n".join(plan), encoding="utf-8")
     print(json.dumps({"audit": str(out), "freeze": freeze, "recovery": recovery}, ensure_ascii=False, indent=2))
 

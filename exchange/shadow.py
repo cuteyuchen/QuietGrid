@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -84,7 +85,8 @@ class ShadowBroker:
                 order_id TEXT PRIMARY KEY, symbol TEXT NOT NULL, client_id TEXT UNIQUE NOT NULL,
                 side TEXT NOT NULL, price REAL NOT NULL, qty REAL NOT NULL, status TEXT NOT NULL,
                 created_at TEXT NOT NULL, effective_at TEXT NOT NULL, filled_qty REAL NOT NULL DEFAULT 0,
-                avg_fill_price REAL, reject_reason TEXT
+                avg_fill_price REAL, reject_reason TEXT,
+                cancel_requested_at TEXT, cancel_effective_at TEXT
             );
             CREATE TABLE IF NOT EXISTS shadow_fills (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL, symbol TEXT NOT NULL,
@@ -99,7 +101,18 @@ class ShadowBroker:
                 id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL,
                 event_time TEXT NOT NULL, payload_json TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS shadow_market_events (
+                event_key TEXT PRIMARY KEY, symbol TEXT NOT NULL, event_time TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS shadow_market_state (
+                symbol TEXT PRIMARY KEY, last_event_at TEXT NOT NULL
+            );
             """)
+            columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(shadow_orders)")}
+            for column in ("cancel_requested_at", "cancel_effective_at"):
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE shadow_orders ADD COLUMN {column} TEXT")
 
     @staticmethod
     def _now() -> datetime:
@@ -132,7 +145,7 @@ class ShadowBroker:
 
     async def get_open_orders(self, symbol: str) -> list[dict[str, Any]]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT * FROM shadow_orders WHERE symbol = ? AND status IN ('NEW','PARTIALLY_FILLED')", (symbol,)).fetchall()
+            rows = conn.execute("SELECT * FROM shadow_orders WHERE symbol = ? AND status IN ('NEW','PARTIALLY_FILLED','CANCEL_PENDING')", (symbol,)).fetchall()
         return [self._order_response(dict(row)) for row in rows]
 
     async def get_order(self, symbol: str, order_id: str, client_id: str) -> dict[str, Any]:
@@ -197,16 +210,18 @@ class ShadowBroker:
 
     async def cancel_order(self, symbol: str, order_id: str) -> dict[str, Any]:
         now = self._now()
+        effective = datetime.fromtimestamp(now.timestamp() + self.profile.cancel_latency_ms / 1000, timezone.utc)
         with self._connect() as conn:
-            conn.execute("UPDATE shadow_orders SET status = 'CANCELED' WHERE symbol = ? AND order_id = ? AND status IN ('NEW','PARTIALLY_FILLED')", (symbol, order_id))
+            conn.execute("UPDATE shadow_orders SET status = 'CANCEL_PENDING', cancel_requested_at = ?, cancel_effective_at = ? WHERE symbol = ? AND order_id = ? AND status IN ('NEW','PARTIALLY_FILLED')", (self._iso(now), self._iso(effective), symbol, order_id))
             row = conn.execute("SELECT * FROM shadow_orders WHERE symbol = ? AND order_id = ?", (symbol, order_id)).fetchone()
         self._record_event("ORDER_CANCELED", {"symbol": symbol, "order_id": order_id}, now)
         return self._order_response(dict(row)) if row else {"symbol": symbol, "orderId": order_id, "status": "CANCELED"}
 
     async def cancel_all_orders(self, symbol: str) -> None:
         now = self._now()
+        effective = datetime.fromtimestamp(now.timestamp() + self.profile.cancel_latency_ms / 1000, timezone.utc)
         with self._connect() as conn:
-            conn.execute("UPDATE shadow_orders SET status = 'CANCELED' WHERE symbol = ? AND status IN ('NEW','PARTIALLY_FILLED')", (symbol,))
+            conn.execute("UPDATE shadow_orders SET status = 'CANCEL_PENDING', cancel_requested_at = ?, cancel_effective_at = ? WHERE symbol = ? AND status IN ('NEW','PARTIALLY_FILLED')", (self._iso(now), self._iso(effective), symbol))
         self._record_event("CANCEL_ALL", {"symbol": symbol}, now)
 
     async def process_market_event(self, symbol: str, event: dict[str, Any]) -> list[dict[str, Any]]:
@@ -214,6 +229,18 @@ class ShadowBroker:
         at = event.get("timestamp") or self._now()
         if isinstance(at, str):
             at = datetime.fromisoformat(at)
+        event_key = str(event.get("event_id") or hashlib.sha256(json.dumps({"symbol": symbol, **event}, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest())
+        with self._connect() as conn:
+            try:
+                conn.execute("INSERT INTO shadow_market_events(event_key,symbol,event_time,payload_json) VALUES (?,?,?,?)", (event_key, symbol, self._iso(at), json.dumps(event, default=str, separators=(",", ":"))))
+            except sqlite3.IntegrityError:
+                self._record_event("DUPLICATE_MARKET_EVENT", {"symbol": symbol, "event_key": event_key}, self._now())
+                return []
+            previous = conn.execute("SELECT last_event_at FROM shadow_market_state WHERE symbol = ?", (symbol,)).fetchone()
+            if previous is not None and datetime.fromisoformat(previous["last_event_at"]) >= at:
+                self._record_event("OUT_OF_ORDER_MARKET_EVENT", {"symbol": symbol, "event_key": event_key}, self._now())
+                return []
+            conn.execute("INSERT INTO shadow_market_state(symbol,last_event_at) VALUES (?,?) ON CONFLICT(symbol) DO UPDATE SET last_event_at=excluded.last_event_at", (symbol, self._iso(at)))
         self._last_market[symbol] = {**self._last_market.get(symbol, {}), **event}
         age = (self._now() - at.astimezone(timezone.utc)).total_seconds()
         if age > self.profile.stale_timeout_seconds:
@@ -225,9 +252,13 @@ class ShadowBroker:
             return []
         fills: list[dict[str, Any]] = []
         with self._connect() as conn:
-            rows = conn.execute("SELECT * FROM shadow_orders WHERE symbol = ? AND status IN ('NEW','PARTIALLY_FILLED')", (symbol,)).fetchall()
+            rows = conn.execute("SELECT * FROM shadow_orders WHERE symbol = ? AND status IN ('NEW','PARTIALLY_FILLED','CANCEL_PENDING')", (symbol,)).fetchall()
         for row in rows:
             if datetime.fromisoformat(row["effective_at"]) > at:
+                continue
+            if row["status"] == "CANCEL_PENDING" and row["cancel_effective_at"] and datetime.fromisoformat(row["cancel_effective_at"]) <= at:
+                with self._connect() as conn:
+                    conn.execute("UPDATE shadow_orders SET status = 'CANCELED' WHERE order_id = ?", (row["order_id"],))
                 continue
             eligible = (row["side"] == "BUY" and float(trade_price) <= row["price"]) or (row["side"] == "SELL" and float(trade_price) >= row["price"])
             if self.profile.require_trade_through:

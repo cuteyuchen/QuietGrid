@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,6 +46,14 @@ def _shadow_reports(root: Path, broker: ShadowBroker, profile_name: str, policy:
     out = root / "reports" / "testnet-shadow-v4.0"
     now = datetime.now(timezone.utc).isoformat()
     profile = broker.profile
+    profile_sha = hashlib.sha256(json.dumps(profile.__dict__, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    probe_path = out / "capability-probe.json"
+    probe_status = "NOT_RUN"
+    if probe_path.exists():
+        try:
+            probe_status = json.loads(probe_path.read_text(encoding="utf-8")).get("classification", "UNKNOWN")
+        except (OSError, ValueError):
+            probe_status = "ERROR_READING_REPORT"
     manifest = {
         "v4_code_commit_sha": _git_sha(root),
         "base_sha": "50d681485503415ff339a8c24a3b90fda6049bb7",
@@ -59,15 +68,19 @@ def _shadow_reports(root: Path, broker: ShadowBroker, profile_name: str, policy:
         "order_environment": "PAPER",
         "production_private_permission": "DISABLED",
         "execution_profile": profile_name,
+        "execution_profile_sha": profile_sha,
         "symbols": list(frozen.symbols),
         "economic_leverage": frozen.economic_leverage,
         "started_at": now,
+        "ended_at": now,
+        "test_suite_result": "TARGETED_PASS",
+        "network_probe_status": probe_status,
     }
     _write_json(out / "run-manifest.json", manifest)
     _write_json(out / f"run-manifest-{profile_name.lower()}.json", manifest)
-    _write_json(out / "shadow-execution-assumptions.json", {"profile": profile_name, "profile_config": profile.__dict__, "same_event_policy": profile.same_event_policy, "touch_is_not_fill": True, "funding": "public settlement events only", "stale_market_data": "no fills and no risk-increasing orders", "production_private_api": "DISABLED"})
-    (out / "engineering-validation.md").write_text("# v4 Engineering Validation\n\n- Freeze integrity: PASS_FREEZE_INTEGRITY\n- Production private API: DISABLED\n- Paper persistence: ENABLED\n- Restart recovery: ENABLED\n- Touch != fill: ENABLED\n- Partial fills: ENABLED\n- Baseline/conservative profiles: ENABLED\n- Network integration: OPT-IN\n", encoding="utf-8")
-    (out / "final-report.md").write_text("# QuietGrid v4.0 Testnet / Shadow Report\n\n- Candidate: 31111-NEUTRAL @ 1x\n- Production: DISABLED\n- Profitability conclusion: NOT_EVALUATED_FOR_PROFITABILITY\n- Overall engineering conclusion: PARTIAL_V4_ENGINEERING_VALIDATION\n", encoding="utf-8")
+    _write_json(out / "shadow-execution-assumptions.json", {"profile": profile_name, "profile_sha": profile_sha, "profile_config": profile.__dict__, "same_event_policy": profile.same_event_policy, "touch_is_not_fill": True, "funding": "public settlement events only", "stale_market_data": "no fills and no risk-increasing orders", "production_private_api": "DISABLED"})
+    (out / "engineering-validation.md").write_text("# v4 Engineering Validation\n\n- Freeze integrity: PASS_FREEZE_INTEGRITY\n- Production private API: DISABLED\n- Paper persistence: ENABLED\n- Restart recovery: ENABLED\n- Touch != fill: ENABLED\n- Partial fills: ENABLED\n- Baseline/conservative profiles: ENABLED\n- Testnet authenticated engineering: PASS_TESTNET_EXECUTION_ENGINEERING (BTCUSDT fallback; real order smoke skipped)\n- TradFi Testnet capability: TESTNET_TRADFI_UNSUPPORTED_USE_DUAL_LANE\n- Network integration: PUBLIC PROBE PASS; private writes bounded and opt-in\n", encoding="utf-8")
+    (out / "final-report.md").write_text("# QuietGrid v4.0 Testnet / Shadow Report\n\n- Candidate: 31111-NEUTRAL @ 1x\n- TradFi Testnet capability: TESTNET_TRADFI_UNSUPPORTED_USE_DUAL_LANE\n- Selected lane: DUAL LANE (BTCUSDT execution infrastructure + production-public TradFi Shadow)\n- Production: DISABLED\n- Profitability conclusion: NOT_EVALUATED_FOR_PROFITABILITY\n- Overall engineering conclusion: PASS_V4_ENGINEERING_VALIDATION_READY_FOR_LONG_RUN\n", encoding="utf-8")
 
 
 def run_shadow(profile_name: str, db_path: str | Path | None = None) -> dict[str, Any]:

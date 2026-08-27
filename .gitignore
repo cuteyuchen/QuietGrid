@@ -15,9 +15,12 @@ reports/**/*.json
 !reports/repository-consolidation-v4.0/*.json
 !reports/testnet-shadow-v4.0/
 !reports/testnet-shadow-v4.0/*.json
+!reports/testnet-shadow-v4.1/
+!reports/testnet-shadow-v4.1/*.json
 data/backtests/
 data/shadow/
 data/runtime/
+data/runtime/v41/
 output/
 dist/
 frontend/dist/

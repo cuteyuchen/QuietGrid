@@ -1,0 +1,23 @@
+{
+  "status": "COMPLETED",
+  "stop_reason": "SOURCE_EXHAUSTED",
+  "events_processed": 1,
+  "fills_processed": 0,
+  "controller_ticks": 1,
+  "started_at": "2026-08-27T16:29:03.406456+00:00",
+  "ended_at": "2026-08-27T16:29:03.414557+00:00",
+  "duration_seconds": 0.008101,
+  "candidate_id": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "economic_leverage": 1,
+  "execution_profile": "PAPER_BASELINE",
+  "production_private_api": "DISABLED",
+  "reconcile": {
+    "result": "RECONCILED",
+    "status": "RECONCILED",
+    "violations": [],
+    "orders": 0,
+    "fills": 0,
+    "positions": {}
+  }
+}

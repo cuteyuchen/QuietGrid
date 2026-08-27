@@ -1,0 +1,98 @@
+{
+  "version": "4.1",
+  "candidate_id": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "economic_leverage": 1,
+  "forward_oos": "2 / 8",
+  "runtime": {
+    "status": "COMPLETED",
+    "stop_reason": "SOURCE_EXHAUSTED",
+    "events_processed": 1,
+    "fills_processed": 0,
+    "controller_ticks": 1,
+    "started_at": "2026-08-27T16:24:43.957744+00:00",
+    "ended_at": "2026-08-27T16:24:43.971565+00:00",
+    "duration_seconds": 0.013821,
+    "candidate_id": "31111-NEUTRAL",
+    "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+    "economic_leverage": 1,
+    "execution_profile": "PAPER_BASELINE",
+    "production_private_api": "DISABLED",
+    "reconcile": {
+      "result": "RECONCILED",
+      "status": "RECONCILED",
+      "violations": [],
+      "orders": 0,
+      "fills": 0,
+      "positions": {}
+    },
+    "conclusion": "PARTIAL_CONTINUOUS_SHADOW_RUNTIME",
+    "execution_conclusion": "PASS_SHADOW_EXECUTION_CORRECTNESS",
+    "bounded_soak": "SKIPPED_NETWORK_UNAVAILABLE",
+    "validation": "SYNTHETIC_DETERMINISTIC_TEST"
+  },
+  "recovery": {
+    "status": "PASS_SHADOW_RESTART_RECOVERY",
+    "validation": "DETERMINISTIC_TESTS_PASS"
+  },
+  "production_public": {
+    "generated_at": "2026-08-27T16:24:43.648431+00:00",
+    "endpoint": "https://fapi.binance.com",
+    "websocket_endpoint": "wss://fstream.binance.com/stream",
+    "symbols": [
+      {
+        "symbol": "SNDKUSDT",
+        "status": "ERROR_RETRYABLE",
+        "final_capability": "NOT_PROBED"
+      },
+      {
+        "symbol": "MUUSDT",
+        "status": "ERROR_RETRYABLE",
+        "final_capability": "NOT_PROBED"
+      },
+      {
+        "symbol": "SOXLUSDT",
+        "status": "ERROR_RETRYABLE",
+        "final_capability": "NOT_PROBED"
+      },
+      {
+        "symbol": "SKHYNIXUSDT",
+        "status": "ERROR_RETRYABLE",
+        "final_capability": "NOT_PROBED"
+      }
+    ],
+    "production_private_api": "DISABLED",
+    "signed_requests": "DISABLED",
+    "safety": {
+      "lane": "PUBLIC_DATA_ONLY",
+      "data_environment": "PRODUCTION_PUBLIC",
+      "order_environment": "NONE",
+      "candidate": "31111-NEUTRAL",
+      "economic_leverage": 1,
+      "production_private_api": "DISABLED",
+      "capabilities": {
+        "production_public_rest": true,
+        "production_public_websocket": true,
+        "production_signed_rest": false,
+        "testnet_signed_rest": false,
+        "testnet_websocket": false,
+        "paper_order_mutation": false,
+        "real_order_mutation": false
+      }
+    },
+    "server_time": {
+      "status": "SKIPPED_NETWORK_UNAVAILABLE"
+    },
+    "websocket": {
+      "status": "SKIPPED_NETWORK_UNAVAILABLE"
+    },
+    "classification": "PRODUCTION_PUBLIC_TRADFI_UNSUPPORTED",
+    "conclusion": "SKIPPED_NETWORK_UNAVAILABLE"
+  },
+  "testnet": {
+    "status": "SKIPPED_TESTNET_ORDER_LIFECYCLE_NOT_AUTHORIZED",
+    "conclusion": "EXECUTION_INFRA_ONLY"
+  },
+  "production_private_api": "DISABLED",
+  "profitability": "NOT_EVALUATED_FOR_PROFITABILITY"
+}

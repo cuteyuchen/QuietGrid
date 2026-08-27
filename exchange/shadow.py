@@ -312,7 +312,7 @@ class ShadowBroker:
         if qty <= 1e-12:
             return {"symbol": symbol, "flattened": True, "qty": 0.0}
         side = "SELL" if float(pos["qty"]) > 0 else "BUY"
-        result = await self.place_market_order(symbol, side, qty, reduce_only=True, client_id=f"qg-v40-force-flat-{symbol.lower()}")
+        result = await self.place_market_order(symbol, side, qty, reduce_only=True, client_id=f"qg-v41-force-flat-{symbol.lower()}-legacy-1")
         return {"symbol": symbol, "flattened": True, "qty": qty, "order": result}
 
     def status(self) -> dict[str, Any]:
@@ -349,8 +349,21 @@ class ShadowExchangeClient(ExchangeClient):
     async def get_order_trades(self, symbol, order_id): return await self.broker.get_order_trades(symbol, order_id)
     async def place_limit_order_post_only(self, *args, **kwargs): return await self.broker.place_limit_order_post_only(*args, **kwargs)
     async def place_market_order(self, *args, **kwargs): return await self.broker.place_market_order(*args, **kwargs)
-    async def place_stop_market_order(self, symbol, side, stop_price, client_id, close_position=True):
-        return await self.broker.place_limit_order_post_only(symbol, side, stop_price, 0.0, client_id)
+    async def place_stop_market_order(self, symbol, side, stop_price, client_id, close_position=True, quantity=None, position_side=None, working_type="CONTRACT_PRICE"):
+        return await self.broker.place_stop_market_order(
+            symbol,
+            side,
+            stop_price,
+            client_id,
+            close_position=close_position,
+            quantity=quantity,
+            position_side=position_side,
+            working_type=working_type,
+        )
     async def cancel_order(self, *args, **kwargs): return await self.broker.cancel_order(*args, **kwargs)
     async def cancel_all_orders(self, *args, **kwargs): return await self.broker.cancel_all_orders(*args, **kwargs)
     async def get_commission_rate(self, symbol): return {"maker": self.broker.profile.maker_fee_rate, "taker": self.broker.profile.taker_fee_rate}
+
+
+# v4.1 keeps the v4.0 import surface while replacing the paper execution core.
+from exchange.shadow_v41 import ShadowBroker as ShadowBroker  # noqa: E402

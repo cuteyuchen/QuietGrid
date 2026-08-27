@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-08-27T16:24:43.648431+00:00",
+  "endpoint": "https://fapi.binance.com",
+  "websocket_endpoint": "wss://fstream.binance.com/stream",
+  "symbols": [
+    {
+      "symbol": "SNDKUSDT",
+      "status": "ERROR_RETRYABLE",
+      "final_capability": "NOT_PROBED"
+    },
+    {
+      "symbol": "MUUSDT",
+      "status": "ERROR_RETRYABLE",
+      "final_capability": "NOT_PROBED"
+    },
+    {
+      "symbol": "SOXLUSDT",
+      "status": "ERROR_RETRYABLE",
+      "final_capability": "NOT_PROBED"
+    },
+    {
+      "symbol": "SKHYNIXUSDT",
+      "status": "ERROR_RETRYABLE",
+      "final_capability": "NOT_PROBED"
+    }
+  ],
+  "production_private_api": "DISABLED",
+  "signed_requests": "DISABLED",
+  "safety": {
+    "lane": "PUBLIC_DATA_ONLY",
+    "data_environment": "PRODUCTION_PUBLIC",
+    "order_environment": "NONE",
+    "candidate": "31111-NEUTRAL",
+    "economic_leverage": 1,
+    "production_private_api": "DISABLED",
+    "capabilities": {
+      "production_public_rest": true,
+      "production_public_websocket": true,
+      "production_signed_rest": false,
+      "testnet_signed_rest": false,
+      "testnet_websocket": false,
+      "paper_order_mutation": false,
+      "real_order_mutation": false
+    }
+  },
+  "server_time": {
+    "status": "SKIPPED_NETWORK_UNAVAILABLE"
+  },
+  "websocket": {
+    "status": "SKIPPED_NETWORK_UNAVAILABLE"
+  },
+  "classification": "PRODUCTION_PUBLIC_TRADFI_UNSUPPORTED",
+  "conclusion": "SKIPPED_NETWORK_UNAVAILABLE"
+}

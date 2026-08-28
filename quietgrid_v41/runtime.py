@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 import time
 from collections.abc import AsyncIterator, Iterable, Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
+from db.database import init_db
 from exchange.shadow import PAPER_BASELINE, ShadowBroker, ShadowExchangeClient, ShadowExecutionProfile
 from quietgrid_v41.events import MarketEvent
 from quietgrid_v41.sessions import session_context
@@ -16,6 +18,35 @@ from strategy.frozen_31111_compiler import (
     assert_frozen_runtime_parity,
 )
 from strategy.frozen_31111_runtime import Frozen31111Runtime
+
+
+CORE_RUNTIME_TABLES = (
+    "windows",
+    "sessions",
+    "orders",
+    "trades",
+    "state_logs",
+    "system_logs",
+    "control_state",
+    "selection_candidates",
+    "round_candidates",
+)
+
+
+class RuntimeDatabaseInitializationError(RuntimeError):
+    pass
+
+
+def _ensure_runtime_db_schema(db_path: Path) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    finally:
+        conn.close()
+    present = {str(row[0]) for row in rows}
+    missing = sorted(set(CORE_RUNTIME_TABLES) - present)
+    if missing:
+        raise RuntimeDatabaseInitializationError(f"runtime database missing core tables: {missing}")
 
 
 def _frozen_controller_config(frozen: Frozen31111Runtime, database_path: Path, repo_root: str | Path = "."):
@@ -194,6 +225,8 @@ class ContinuousShadowRuntime:
         root = Path(repo_root).resolve()
         frozen = Frozen31111Runtime.load(root)
         runtime_db = Path(db_path or root / "data" / "runtime" / "v41" / f"shadow-{profile.name.lower()}.sqlite")
+        init_db(runtime_db)
+        _ensure_runtime_db_schema(runtime_db)
         broker = ShadowBroker(runtime_db, profile, initial_cash=initial_cash)
         exchange = ShadowExchangeClient(market_data, broker)
         if controller is None:

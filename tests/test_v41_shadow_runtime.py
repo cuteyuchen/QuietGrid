@@ -3,12 +3,15 @@ from __future__ import annotations
 import asyncio
 import httpx
 import json
+import sqlite3
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from exchange.shadow import PAPER_BASELINE, PAPER_CONSERVATIVE, ShadowBroker, ShadowExecutionProfile, ShadowExchangeClient
+from quietgrid_v41 import cli
 from quietgrid_v41.client_ids import ClientOrderIdFactory
 from quietgrid_v41.events import MarketEvent
 from quietgrid_v41.production_probe import probe
@@ -21,6 +24,55 @@ from strategy.frozen_31111_runtime import Frozen31111Runtime
 
 
 UTC = timezone.utc
+
+CORE_RUNTIME_TABLES = {
+    "windows",
+    "sessions",
+    "orders",
+    "trades",
+    "state_logs",
+    "system_logs",
+    "control_state",
+    "selection_candidates",
+    "round_candidates",
+}
+
+SHADOW_RUNTIME_TABLES = {
+    "shadow_orders",
+    "shadow_fills",
+    "shadow_positions",
+    "shadow_events",
+    "shadow_market_events",
+    "shadow_market_state",
+}
+
+
+def _table_names(path: Path) -> set[str]:
+    conn = sqlite3.connect(path)
+    try:
+        return {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    finally:
+        conn.close()
+
+
+class _FakePublicMarketData:
+    async def get_symbols(self) -> list[dict[str, object]]:
+        return []
+
+    async def get_symbol_rules(self, symbol: str) -> dict[str, object]:
+        return {"tick_size": 0.01, "step_size": 1.0, "min_qty": 1.0, "min_notional": 5.0}
+
+    async def get_klines(self, symbol: str, interval: str, limit: int) -> list[dict[str, object]]:
+        return []
+
+    async def get_24h_ticker(self, symbol: str) -> dict[str, object]:
+        return {"lastPrice": "100.0", "openTime": 1, "closeTime": 2}
+
+    async def get_orderbook_depth(self, symbol: str, limit: int) -> dict[str, object]:
+        return {"bids": [], "asks": []}
+
+    async def get_funding_rate(self, symbol: str) -> float:
+        return 0.0
 
 
 def _at(seconds: float = 1.0) -> datetime:
@@ -363,6 +415,168 @@ def test_v41_frozen_compiler_maps_real_controller_and_sha(tmp_path: Path) -> Non
     assert runtime.controller.inventory.config.caution_utilization == pytest.approx(0.4)
     assert runtime.controller.inventory.config.critical_utilization == pytest.approx(0.8)
     assert runtime.controller._capital_for_symbol("SOXLUSDT") == pytest.approx(config.capital_per_symbol * 0.5)
+
+
+def test_v41_fresh_runtime_db_initializes_core_schema(tmp_path: Path) -> None:
+    db = tmp_path / "fresh-core.db"
+    ContinuousShadowRuntime.create(
+        repo_root=".",
+        market_data=object(),
+        db_path=db,
+        report_output_dir=tmp_path / "reports",
+    )
+    tables = _table_names(db)
+    assert CORE_RUNTIME_TABLES <= tables
+    assert SHADOW_RUNTIME_TABLES <= tables
+
+
+def test_v41_fresh_db_real_controller_first_market_event(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        db = tmp_path / "fresh-event.db"
+        runtime = ContinuousShadowRuntime.create(
+            repo_root=".",
+            market_data=_FakePublicMarketData(),
+            db_path=db,
+            journal_path=tmp_path / "events.jsonl",
+            report_output_dir=tmp_path / "reports",
+        )
+        event = MarketEvent.from_mapping(
+            {
+                "symbol": "MUUSDT",
+                "event_type": "TRADE",
+                "exchange_timestamp": _at(),
+                "event_id": "fresh-real-1",
+                "price": 100.0,
+                "quantity": 1.0,
+            }
+        )
+        result = await runtime.run(IterableMarketEventSource([event]), max_events=1, bootstrap_rest=False)
+        assert result["events_processed"] == 1
+        assert result["controller_ticks"] >= 1
+        assert result["reconcile"]["result"] == "RECONCILED"
+
+    asyncio.run(scenario())
+
+
+def test_v41_existing_shadow_only_db_is_upgraded_non_destructively(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        db = tmp_path / "shadow-only.db"
+        broker = ShadowBroker(db, PAPER_BASELINE)
+        broker._last_market["MUUSDT"] = {"bid": 99, "ask": 101, "last": 100}
+        await broker.place_market_order("MUUSDT", "BUY", 1, reduce_only=False, client_id="preserve-seed")
+        assert (await broker.get_position("MUUSDT"))["qty"] == 1
+
+        runtime = ContinuousShadowRuntime.create(
+            repo_root=".",
+            market_data=object(),
+            db_path=db,
+            report_output_dir=tmp_path / "reports",
+        )
+        tables = _table_names(db)
+        assert CORE_RUNTIME_TABLES <= tables
+        assert SHADOW_RUNTIME_TABLES <= tables
+        assert (await runtime.broker.get_position("MUUSDT"))["qty"] == 1
+        order = await runtime.broker.get_order("MUUSDT", "", "preserve-seed")
+        assert order["status"] == "FILLED"
+
+    asyncio.run(scenario())
+
+
+def test_v41_runtime_db_schema_init_is_idempotent_across_restart(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        db = tmp_path / "restart.db"
+        runtime = ContinuousShadowRuntime.create(
+            repo_root=".",
+            market_data=object(),
+            db_path=db,
+            report_output_dir=tmp_path / "reports",
+        )
+        runtime.broker._last_market["MUUSDT"] = {"bid": 99, "ask": 101, "last": 100}
+        await runtime.broker.place_market_order("MUUSDT", "BUY", 2, reduce_only=False, client_id="restart-seed")
+        runtime.controller.repository.set_control_state("restart_marker", {"value": 1}, datetime.now(UTC))
+        before = _table_names(db)
+
+        runtime2 = ContinuousShadowRuntime.create(
+            repo_root=".",
+            market_data=object(),
+            db_path=db,
+            report_output_dir=tmp_path / "reports-2",
+        )
+        after = _table_names(db)
+        assert after == before
+        assert (await runtime2.broker.get_position("MUUSDT"))["qty"] == 2
+        assert runtime2.controller.repository.get_control_state()["restart_marker"]["value"] == {"value": 1}
+
+    asyncio.run(scenario())
+
+
+def test_v41_baseline_conservative_db_isolation_with_core_and_shadow(tmp_path: Path) -> None:
+    baseline_db = tmp_path / "baseline.db"
+    conservative_db = tmp_path / "conservative.db"
+    baseline = ContinuousShadowRuntime.create(
+        repo_root=".",
+        market_data=object(),
+        profile=PAPER_BASELINE,
+        db_path=baseline_db,
+        report_output_dir=tmp_path / "baseline-reports",
+    )
+    conservative = ContinuousShadowRuntime.create(
+        repo_root=".",
+        market_data=object(),
+        profile=PAPER_CONSERVATIVE,
+        db_path=conservative_db,
+        report_output_dir=tmp_path / "conservative-reports",
+    )
+    assert baseline.broker.db_path != conservative.broker.db_path
+    for db in (baseline_db, conservative_db):
+        tables = _table_names(db)
+        assert CORE_RUNTIME_TABLES <= tables
+        assert SHADOW_RUNTIME_TABLES <= tables
+
+
+def test_v41_official_cli_fresh_db_does_not_need_manual_schema_init(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    event = MarketEvent.from_mapping(
+        {
+            "symbol": "MUUSDT",
+            "event_type": "TRADE",
+            "exchange_timestamp": _at(),
+            "event_id": "cli-fresh-1",
+            "price": 100.0,
+            "quantity": 1.0,
+        }
+    )
+    captured: dict[str, object] = {}
+    original_runtime_cls = cli.ContinuousShadowRuntime
+
+    class _CLIRuntime:
+        @classmethod
+        def create(cls, **kwargs):
+            kwargs["report_output_dir"] = tmp_path / "cli-reports"
+            kwargs["journal_path"] = tmp_path / "cli-events.jsonl"
+            return original_runtime_cls.create(**kwargs)
+
+    def fake_write(root, **kwargs):
+        captured["runtime"] = kwargs.get("runtime")
+
+    monkeypatch.setattr(cli, "ProductionPublicMarketData", _FakePublicMarketData)
+    monkeypatch.setattr(cli, "BinancePublicTradeStream", lambda *args, **kwargs: IterableMarketEventSource([event]))
+    monkeypatch.setattr(cli, "write_v41_reports", fake_write)
+    monkeypatch.setattr(cli, "ContinuousShadowRuntime", _CLIRuntime)
+    db = tmp_path / "cli-fresh.db"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["quietgrid_v41", "--shadow-baseline", "--max-events", "1", "--db-path", str(db)],
+    )
+    cli.main()
+    result = captured["runtime"]
+    assert result is not None
+    assert result["status"] == "COMPLETED"
+    assert result["events_processed"] == 1
+    assert result["controller_ticks"] >= 1
+    assert CORE_RUNTIME_TABLES <= _table_names(db)
 
 
 def test_v41_market_event_identity_and_native_trade_id(tmp_path: Path) -> None:

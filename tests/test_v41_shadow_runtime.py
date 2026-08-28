@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import httpx
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -502,6 +503,48 @@ def test_v41_probe_is_public_only_and_partial_is_a_string(monkeypatch: pytest.Mo
     result = asyncio.run(probe(network=True, websocket=True, market_data=PublicMarket()))
     assert result["classification"] == "PRODUCTION_PUBLIC_TRADFI_SUPPORTED"
     assert all(item["final_capability"] == "SUPPORTED" for item in result["symbols"])
+
+
+def test_v41_probe_records_rate_limit_without_marking_symbol_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
+    class RateLimitedMarket:
+        async def get_symbols(self):
+            return [{"symbol": symbol, "status": "TRADING", "contractType": "TRADIFI_PERPETUAL"} for symbol in ("SNDKUSDT", "MUUSDT", "SOXLUSDT", "SKHYNIXUSDT")]
+
+        async def get_server_time(self):
+            return 1
+
+        async def get_symbol_rules(self, symbol):
+            return {"tick_size": 0.01, "step_size": 0.01, "min_qty": 0.01, "min_notional": 5}
+
+        async def get_24h_ticker(self, symbol):
+            request = httpx.Request("GET", "https://fapi.binance.com/fapi/v1/ticker/24hr")
+            response = httpx.Response(418, request=request)
+            raise httpx.HTTPStatusError("418", request=request, response=response)
+
+        async def get_orderbook_depth(self, symbol, limit):
+            raise AssertionError("rate limit should stop the burst before depth")
+
+        async def get_klines(self, symbol, interval, limit):
+            raise AssertionError("rate limit should stop the burst before klines")
+
+        async def get_funding_context(self, symbol):
+            raise AssertionError("rate limit should stop the burst before funding context")
+
+        async def get_funding_rate(self, symbol):
+            raise AssertionError("rate limit should stop the burst before funding rate")
+
+        async def close(self):
+            return None
+
+    async def fake_ws(symbols, timeout):
+        return {"status": "SUPPORTED", "message_received": True}
+
+    monkeypatch.setattr("quietgrid_v41.production_probe._public_websocket_probe", fake_ws)
+    result = asyncio.run(probe(network=True, websocket=True, market_data=RateLimitedMarket()))
+    assert result["classification"] == "PRODUCTION_PUBLIC_TRADFI_PARTIAL_RATE_LIMITED"
+    assert all(item["final_capability"] == "PARTIAL_RATE_LIMITED" for item in result["symbols"])
+    assert result["rate_limited_stages"]
+    assert result["rate_limited_stages"][0]["status_code"] == 418
 
 
 def test_v41_probe_incomplete_when_network_is_unavailable_or_before_rest(monkeypatch: pytest.MonkeyPatch) -> None:

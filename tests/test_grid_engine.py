@@ -14,6 +14,7 @@ from core.models import (
     OrderStatus,
     SymbolSession,
 )
+from exchange.public_market import ProductionPublicMarketData
 from exchange.mock import MockExchangeClient
 from strategy.grid_calculator import GridConfig, calculate_grid_params
 from strategy.grid_engine import GridEngine, GridEngineConfig
@@ -1099,6 +1100,54 @@ def test_grid_engine_rejects_notional_below_exchange_minimum_before_placing_orde
             assert "最小名义金额" in str(exc)
         else:
             raise AssertionError("notional below minimum should be rejected")
+
+        assert exchange.orders.get("AAPLUSDT", []) == []
+        assert exchange.stop_orders.get("AAPLUSDT", []) == []
+        assert exchange.margin_type_calls == 0
+        assert exchange.leverage_calls == 0
+        assert session.orders == []
+
+    asyncio.run(run())
+
+
+def test_public_market_min_notional_reaches_grid_engine_sizing_path() -> None:
+    rules = ProductionPublicMarketData().get_symbol_rules_from_exchange_info(
+        {
+            "symbol": "SNDKUSDT",
+            "filters": [
+                {"filterType": "PRICE_FILTER", "tickSize": "0.01000"},
+                {"filterType": "LOT_SIZE", "stepSize": "0.01", "minQty": "0.01"},
+                {"filterType": "MIN_NOTIONAL", "notional": "5"},
+            ],
+        }
+    )
+
+    class ParsedRulesExchange(MockExchangeClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.margin_type_calls = 0
+            self.leverage_calls = 0
+
+        async def get_symbol_rules(self, symbol: str):
+            return rules
+
+        async def set_margin_type(self, symbol: str, margin_type: str) -> None:
+            self.margin_type_calls += 1
+            return await super().set_margin_type(symbol, margin_type)
+
+        async def set_leverage(self, symbol: str, leverage: int) -> None:
+            self.leverage_calls += 1
+            return await super().set_leverage(symbol, leverage)
+
+    async def run() -> None:
+        exchange = ParsedRulesExchange()
+        session = _session()
+        session.capital = 2
+        session.leverage = 2
+        engine = GridEngine(exchange)
+
+        with pytest.raises(ValueError, match="最小名义金额"):
+            await engine.start(session, current_price=100.0)
 
         assert exchange.orders.get("AAPLUSDT", []) == []
         assert exchange.stop_orders.get("AAPLUSDT", []) == []

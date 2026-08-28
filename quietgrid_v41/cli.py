@@ -48,7 +48,7 @@ def main() -> None:
         parser.error("--max-seconds must be positive")
     root = _root()
     if args.production_public_probe:
-        result = asyncio.run(probe(network=not args.no_network))
+        result = asyncio.run(probe(network=not args.no_network, pacing_seconds=0.4))
         write_probe_reports(result, root / "reports" / "testnet-shadow-v4.1")
     elif args.v41_testnet_order_lifecycle:
         from core.config import load_config

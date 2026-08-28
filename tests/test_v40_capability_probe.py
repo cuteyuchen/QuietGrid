@@ -37,3 +37,46 @@ def test_public_market_adapter_uses_public_endpoints_without_auth() -> None:
         await client.aclose()
 
     asyncio.run(scenario())
+
+
+def test_public_market_caches_exchange_info_across_symbol_rule_parses() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        if request.url.path.endswith("/exchangeInfo"):
+            calls += 1
+            return httpx.Response(
+                200,
+                json={
+                    "symbols": [
+                        {
+                            "symbol": "SNDKUSDT",
+                            "filters": [
+                                {"filterType": "PRICE_FILTER", "tickSize": "0.01000"},
+                                {"filterType": "LOT_SIZE", "stepSize": "0.01", "minQty": "0.01"},
+                                {"filterType": "MIN_NOTIONAL", "notional": "5"},
+                            ],
+                        },
+                        {
+                            "symbol": "MUUSDT",
+                            "filters": [
+                                {"filterType": "PRICE_FILTER", "tickSize": "0.01000"},
+                                {"filterType": "LOT_SIZE", "stepSize": "0.01", "minQty": "0.01"},
+                                {"filterType": "MIN_NOTIONAL", "notional": "5"},
+                            ],
+                        },
+                    ]
+                },
+            )
+        return httpx.Response(404, json={"message": "unexpected request"})
+
+    async def scenario() -> None:
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        adapter = ProductionPublicMarketData(base_url="https://fapi.binance.com", client=client)
+        assert (await adapter.get_symbol_rules("SNDKUSDT"))["min_notional"] == 5.0
+        assert (await adapter.get_symbol_rules("MUUSDT"))["min_notional"] == 5.0
+        await client.aclose()
+
+    asyncio.run(scenario())
+    assert calls == 1

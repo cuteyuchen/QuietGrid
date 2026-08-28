@@ -1,10 +1,47 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import httpx
 
 from quietgrid_v40.safety import ExecutionLane, ExecutionSafetyPolicy
+
+
+class PublicMarketRuleParseError(ValueError):
+    """Raised when a present public market trading rule cannot be parsed safely."""
+
+
+_NOTIONAL_FILTER_FIELDS = {
+    "MIN_NOTIONAL": ("notional", "minNotional"),
+    "NOTIONAL": ("minNotional", "notional"),
+}
+
+
+def _parse_min_notional_filter(filters: dict[str, dict[str, Any]], symbol: str) -> tuple[float, str | None, str | None]:
+    for filter_type in ("MIN_NOTIONAL", "NOTIONAL"):
+        row = filters.get(filter_type)
+        if not isinstance(row, dict):
+            continue
+        for field in _NOTIONAL_FILTER_FIELDS[filter_type]:
+            raw = row.get(field)
+            if raw in (None, ""):
+                continue
+            try:
+                value = float(raw)
+            except (TypeError, ValueError) as exc:
+                raise PublicMarketRuleParseError(
+                    f"symbol={symbol} filterType={filter_type} field={field} invalid notional value: {raw!r}"
+                ) from exc
+            if not math.isfinite(value) or value <= 0:
+                raise PublicMarketRuleParseError(
+                    f"symbol={symbol} filterType={filter_type} field={field} invalid notional value: {raw!r}"
+                )
+            return value, filter_type, field
+        raise PublicMarketRuleParseError(
+            f"symbol={symbol} filterType={filter_type} missing required notional field"
+        )
+    return 0.0, None, None
 
 
 class ProductionPublicMarketData:
@@ -15,6 +52,7 @@ class ProductionPublicMarketData:
         self._client = client
         self._timeout = timeout
         self._owns_client = client is None
+        self._exchange_info_cache: list[dict[str, Any]] | None = None
         self._policy = ExecutionSafetyPolicy(ExecutionLane.PUBLIC_DATA_ONLY, rest_url=self.base_url)
 
     async def _get(self, path: str, **params: Any) -> Any:
@@ -36,27 +74,41 @@ class ProductionPublicMarketData:
         return int(payload["serverTime"])
 
     async def get_symbols(self) -> list[dict[str, Any]]:
+        if self._exchange_info_cache is not None:
+            return self._exchange_info_cache
         payload = await self._get("/fapi/v1/exchangeInfo")
-        return list(payload.get("symbols", []))
+        self._exchange_info_cache = list(payload.get("symbols", []))
+        return self._exchange_info_cache
 
     async def get_symbol_rules(self, symbol: str) -> dict[str, Any]:
         for item in await self.get_symbols():
             if str(item.get("symbol")).upper() == symbol.upper():
-                filters = {str(item.get("filterType")): item for item in item.get("filters", [])}
-                price = filters.get("PRICE_FILTER", {})
-                lot = filters.get("LOT_SIZE", {})
-                notional = filters.get("NOTIONAL", filters.get("MIN_NOTIONAL", {}))
-                return {
-                    "tick_size": float(price.get("tickSize", 0) or 0),
-                    "step_size": float(lot.get("stepSize", 0) or 0),
-                    "min_qty": float(lot.get("minQty", 0) or 0),
-                    "max_qty": float(lot.get("maxQty", 0) or 0),
-                    "min_notional": float(notional.get("minNotional", 0) or 0),
-                    "price_precision": item.get("pricePrecision"),
-                    "quantity_precision": item.get("quantityPrecision"),
-                    "contract_type": item.get("contractType"),
-                }
+                return self.get_symbol_rules_from_exchange_info(item)
         raise ValueError(f"未找到公开交易规则: {symbol}")
+
+    def get_symbol_rules_from_exchange_info(self, symbol_info: dict[str, Any]) -> dict[str, Any]:
+        symbol = str(symbol_info.get("symbol", "")).upper()
+        filters = {
+            str(row.get("filterType")): row
+            for row in symbol_info.get("filters", [])
+            if isinstance(row, dict)
+        }
+        price = filters.get("PRICE_FILTER", {})
+        lot = filters.get("LOT_SIZE", filters.get("MARKET_LOT_SIZE", {}))
+        min_notional, filter_type, source_field = _parse_min_notional_filter(filters, symbol)
+        return {
+            "tick_size": float(price.get("tickSize", 0) or 0),
+            "step_size": float(lot.get("stepSize", 0) or 0),
+            "min_qty": float(lot.get("minQty", 0) or 0),
+            "max_qty": float(lot.get("maxQty", 0) or 0),
+            "min_notional": min_notional,
+            "min_notional_available": filter_type is not None,
+            "min_notional_filter_type": filter_type,
+            "min_notional_source_field": source_field,
+            "price_precision": symbol_info.get("pricePrecision"),
+            "quantity_precision": symbol_info.get("quantityPrecision"),
+            "contract_type": symbol_info.get("contractType"),
+        }
 
     async def get_klines(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
         rows = await self._get("/fapi/v1/klines", symbol=symbol.upper(), interval=interval, limit=max(1, min(int(limit), 1500)))
@@ -99,3 +151,4 @@ class ProductionPublicMarketData:
         if self._client is not None and self._owns_client:
             await self._client.aclose()
             self._client = None
+        self._exchange_info_cache = None

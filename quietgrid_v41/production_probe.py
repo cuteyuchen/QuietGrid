@@ -18,9 +18,23 @@ PRODUCTION_WS = "wss://fstream.binance.com/stream"
 
 
 def _status_for_error(exc: Exception) -> str:
+    if _rate_limit_details(exc) is not None:
+        return "PARTIAL_RATE_LIMITED"
     if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500:
         return CapabilityStatus.ERROR_FATAL.value
     return CapabilityStatus.ERROR_RETRYABLE.value
+
+
+def _rate_limit_details(exc: Exception) -> dict[str, Any] | None:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return None
+    status_code = exc.response.status_code
+    if status_code not in (418, 429):
+        return None
+    return {
+        "status_code": status_code,
+        "retry_after": exc.response.headers.get("Retry-After"),
+    }
 
 
 async def _public_websocket_probe(symbols: tuple[str, ...], timeout: float) -> dict[str, Any]:
@@ -55,13 +69,18 @@ async def _public_websocket_probe(symbols: tuple[str, ...], timeout: float) -> d
         return {"status": CapabilityStatus.ERROR_RETRYABLE.value, "error": str(exc)}
 
 
-async def probe(*, network: bool = True, websocket: bool = True, timeout: float = 15.0, market_data: Any | None = None) -> dict[str, Any]:
+async def probe(*, network: bool = True, websocket: bool = True, timeout: float = 15.0, market_data: Any | None = None, pacing_seconds: float = 0.0) -> dict[str, Any]:
     policy = ExecutionSafetyPolicy(ExecutionLane.PUBLIC_DATA_ONLY, rest_url=PRODUCTION_REST, ws_url=PRODUCTION_WS)
     result: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "endpoint": PRODUCTION_REST,
         "websocket_endpoint": PRODUCTION_WS,
         "symbols": [],
+        "rate_limited_stages": [],
+        "request_pacing": {
+            "pacing_seconds": pacing_seconds,
+            "exchange_info_calls": 1 if network else 0,
+        },
         "production_private_api": "DISABLED",
         "signed_requests": "DISABLED",
         "safety": policy.describe(),
@@ -80,6 +99,8 @@ async def probe(*, network: bool = True, websocket: bool = True, timeout: float 
         server_time = await data.get_server_time() if hasattr(data, "get_server_time") else None
         result["server_time"] = {"status": CapabilityStatus.SUPPORTED.value, "serverTime": server_time}
         for symbol in TARGET_SYMBOLS:
+            if pacing_seconds > 0:
+                await asyncio.sleep(pacing_seconds)
             item = symbols.get(symbol)
             if item is None:
                 result["symbols"].append({"symbol": symbol, "exists": False, "status": CapabilityStatus.UNSUPPORTED.value, "final_capability": "UNSUPPORTED", "checks": {"symbol_existence": False}})
@@ -110,6 +131,8 @@ async def probe(*, network: bool = True, websocket: bool = True, timeout: float 
                 ("mark_price", lambda: data.get_funding_context(symbol) if hasattr(data, "get_funding_context") else data.get_24h_ticker(symbol)),
                 ("funding", lambda: data.get_funding_rate(symbol)),
             ):
+                if pacing_seconds > 0:
+                    await asyncio.sleep(pacing_seconds)
                 try:
                     value = await getter()
                     if name == "mark_price" and isinstance(value, dict):
@@ -117,6 +140,15 @@ async def probe(*, network: bool = True, websocket: bool = True, timeout: float 
                     else:
                         checks[name] = value is not None and value != {} and value != []
                 except Exception as exc:
+                    rate_limit = _rate_limit_details(exc)
+                    if rate_limit is not None:
+                        detail = {**rate_limit, "stage": f"{symbol}:{name}"}
+                        result["rate_limited_stages"].append(detail)
+                        errors[name] = (
+                            f"PARTIAL_RATE_LIMITED status={detail['status_code']} "
+                            f"retry_after={detail.get('retry_after')} stage={detail['stage']}"
+                        )
+                        break
                     errors[name] = str(exc)
             rest_ok = all(checks.get(name, False) for name in ("symbol_existence", "filters", "tick_size", "step_size", "min_qty", "min_notional", "ticker", "depth", "kline", "mark_price", "funding")) and checks["status"] == "TRADING"
             result["symbols"].append({
@@ -134,11 +166,24 @@ async def probe(*, network: bool = True, websocket: bool = True, timeout: float 
             result["websocket"] = {"status": CapabilityStatus.SKIPPED_NOT_REQUESTED.value}
     except Exception as exc:
         status = _status_for_error(exc)
+        rate_limit = _rate_limit_details(exc)
+        if rate_limit is not None:
+            result["rate_limited_stages"].append({**rate_limit, "stage": "exchange_info_or_server_time"})
         result["server_time"] = {"status": status, "error": str(exc)}
-        result["symbols"] = [{"symbol": symbol, "status": status, "final_capability": "ERROR_RETRYABLE" if status == CapabilityStatus.ERROR_RETRYABLE.value else "ERROR_FATAL"} for symbol in TARGET_SYMBOLS]
+        result["symbols"] = [
+            {
+                "symbol": symbol,
+                "status": status,
+                "final_capability": "PARTIAL_RATE_LIMITED" if rate_limit is not None else (
+                    "ERROR_RETRYABLE" if status == CapabilityStatus.ERROR_RETRYABLE.value else "ERROR_FATAL"
+                ),
+            }
+            for symbol in TARGET_SYMBOLS
+        ]
     probe_failed_before_classification = result.get("server_time", {}).get("status") in {
         CapabilityStatus.ERROR_RETRYABLE.value,
         CapabilityStatus.ERROR_FATAL.value,
+        "PARTIAL_RATE_LIMITED",
     }
     websocket_ok = result.get("websocket", {}).get("status") == CapabilityStatus.SUPPORTED.value
     for item in result["symbols"]:
@@ -147,15 +192,27 @@ async def probe(*, network: bool = True, websocket: bool = True, timeout: float 
         elif item.get("rest_capability") == "SUPPORTED" and websocket_ok:
             item["final_capability"] = "SUPPORTED"
         elif item.get("rest_capability") == "SUPPORTED" or item.get("status") == "PARTIAL":
-            item["final_capability"] = "PARTIAL"
+            symbol = str(item.get("symbol", ""))
+            if any(str(stage.get("stage", "")).startswith(f"{symbol}:") for stage in result.get("rate_limited_stages", [])):
+                item["final_capability"] = "PARTIAL_RATE_LIMITED"
+            else:
+                item["final_capability"] = "PARTIAL"
+        elif item.get("status") == "PARTIAL_RATE_LIMITED":
+            item["final_capability"] = "PARTIAL_RATE_LIMITED"
         else:
             item.setdefault("final_capability", "ERROR_RETRYABLE")
     final = [str(item.get("final_capability")) for item in result["symbols"]]
     if probe_failed_before_classification:
-        result["classification"] = "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
+        result["classification"] = (
+            "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED"
+            if result.get("rate_limited_stages")
+            else "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
+        )
+    elif result.get("rate_limited_stages"):
+        result["classification"] = "PRODUCTION_PUBLIC_TRADFI_PARTIAL_RATE_LIMITED"
     elif final and all(value == "SUPPORTED" for value in final):
         result["classification"] = "PRODUCTION_PUBLIC_TRADFI_SUPPORTED"
-    elif any(value in {"SUPPORTED", "PARTIAL"} for value in final):
+    elif any(value in {"SUPPORTED", "PARTIAL", "PARTIAL_RATE_LIMITED"} for value in final):
         result["classification"] = "PRODUCTION_PUBLIC_TRADFI_PARTIAL"
     elif any(value == "ERROR_FATAL" for value in final):
         result["classification"] = "PRODUCTION_PUBLIC_TRADFI_UNSUPPORTED"

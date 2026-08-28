@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-08-28T04:06:45.749182+00:00",
+  "endpoint": "https://fapi.binance.com",
+  "websocket_endpoint": "wss://fstream.binance.com/stream",
+  "symbols": [
+    {
+      "symbol": "SNDKUSDT",
+      "status": "PARTIAL_RATE_LIMITED",
+      "final_capability": "PARTIAL_RATE_LIMITED"
+    },
+    {
+      "symbol": "MUUSDT",
+      "status": "PARTIAL_RATE_LIMITED",
+      "final_capability": "PARTIAL_RATE_LIMITED"
+    },
+    {
+      "symbol": "SOXLUSDT",
+      "status": "PARTIAL_RATE_LIMITED",
+      "final_capability": "PARTIAL_RATE_LIMITED"
+    },
+    {
+      "symbol": "SKHYNIXUSDT",
+      "status": "PARTIAL_RATE_LIMITED",
+      "final_capability": "PARTIAL_RATE_LIMITED"
+    }
+  ],
+  "rate_limited_stages": [
+    {
+      "status_code": 418,
+      "retry_after": "3894",
+      "stage": "exchange_info_or_server_time"
+    }
+  ],
+  "request_pacing": {
+    "pacing_seconds": 0.4,
+    "exchange_info_calls": 1
+  },
+  "production_private_api": "DISABLED",
+  "signed_requests": "DISABLED",
+  "safety": {
+    "lane": "PUBLIC_DATA_ONLY",
+    "data_environment": "PRODUCTION_PUBLIC",
+    "order_environment": "NONE",
+    "candidate": "31111-NEUTRAL",
+    "economic_leverage": 1,
+    "production_private_api": "DISABLED",
+    "capabilities": {
+      "production_public_rest": true,
+      "production_public_websocket": true,
+      "production_signed_rest": false,
+      "testnet_signed_rest": false,
+      "testnet_websocket": false,
+      "paper_order_mutation": false,
+      "real_order_mutation": false
+    }
+  },
+  "server_time": {
+    "status": "PARTIAL_RATE_LIMITED",
+    "error": "Client error '418 I'm a teapot' for url 'https://fapi.binance.com/fapi/v1/time'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/418"
+  },
+  "classification": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED",
+  "no_credentials_used": true
+}

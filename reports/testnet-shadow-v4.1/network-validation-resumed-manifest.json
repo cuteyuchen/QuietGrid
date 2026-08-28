@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-28T12:07:40.196584+08:00",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "pre_fix_commit": "c918dbe1a674c3620a6f1712721b137d430ebd7b",
+  "hotfix_commit": "a407f9d67926b2603f9b0db25ab828199fe21f66",
+  "candidate": {
+    "id": "31111-NEUTRAL",
+    "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+    "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+    "forward_oos": "2 / 8",
+    "freeze_tag": "semiconductor-grid-forward-oos-v2.9-freeze",
+    "semantics": {
+      "direction": "NEUTRAL",
+      "economic_leverage": 1,
+      "c1": "DISABLED",
+      "live_symbols": ["SNDKUSDT", "MUUSDT", "SOXLUSDT"],
+      "research_only_symbols": ["SKHYNIXUSDT"]
+    }
+  },
+  "regression": {
+    "pytest_count": "861 passed",
+    "compileall_project_source": "PASS",
+    "git_diff_check": "PASS",
+    "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+    "sha_drift": false
+  },
+  "probe": {
+    "classification": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED",
+    "http_status": 418,
+    "retry_after_seconds": 3894,
+    "rate_limit_stage": "server_time",
+    "request_pacing_seconds": 0.4,
+    "symbols": {
+      "SNDKUSDT": "PARTIAL_RATE_LIMITED",
+      "MUUSDT": "PARTIAL_RATE_LIMITED",
+      "SOXLUSDT": "PARTIAL_RATE_LIMITED",
+      "SKHYNIXUSDT": "PARTIAL_RATE_LIMITED"
+    }
+  },
+  "stages": {
+    "paper_baseline_public_smoke": {
+      "result": "NOT_RUN",
+      "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED"
+    },
+    "paper_conservative_public_smoke": {
+      "result": "NOT_RUN",
+      "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED"
+    },
+    "websocket_disconnect_reconnect": {
+      "result": "NOT_RUN",
+      "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED"
+    },
+    "process_restart_recovery": {
+      "result": "NOT_RUN",
+      "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED"
+    },
+    "bounded_shadow_soak": {
+      "result": "NOT_RUN",
+      "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED"
+    }
+  },
+  "safety": {
+    "production_private_api_calls": 0,
+    "real_order_count": 0,
+    "credentials_used": false
+  },
+  "overall": "PARTIAL_V41_NETWORK_VALIDATION",
+  "long_shadow_observation": "NOT_READY_FOR_LONG_SHADOW_OBSERVATION",
+  "profitability": "NOT_EVALUATED_FOR_PROFITABILITY"
+}

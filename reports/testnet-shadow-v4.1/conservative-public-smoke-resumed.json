@@ -1,0 +1,7 @@
+{
+  "generated_at": "2026-08-28T12:07:40.196584+08:00",
+  "status": "NOT_RUN",
+  "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED",
+  "probe_classification": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED",
+  "conclusion": "NOT_PASS"
+}

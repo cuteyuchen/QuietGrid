@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-08-28T18:22:41.162513+00:00",
+  "git_commit": "d402c51626d2ef9bc1eab9b4bccea63fa51b2c73",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "runtime": {
+    "status": "COMPLETED",
+    "stop_reason": "BOUNDED_TIMEOUT",
+    "events_processed": 13800,
+    "fills_processed": 0,
+    "controller_ticks": 36,
+    "started_at": "2026-08-28T18:06:53.439124+00:00",
+    "ended_at": "2026-08-28T18:16:53.451425+00:00",
+    "duration_seconds": 600.012301,
+    "candidate_id": "31111-NEUTRAL",
+    "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+    "economic_leverage": 1,
+    "execution_profile": "PAPER_BASELINE",
+    "production_private_api": "DISABLED",
+    "reconcile": {
+      "result": "RECONCILED",
+      "status": "RECONCILED",
+      "violations": [],
+      "orders": 0,
+      "fills": 0,
+      "positions": {}
+    }
+  },
+  "journal": {
+    "path": "data/runtime/v41/market-events-paper_baseline.jsonl",
+    "event_type_counts": {
+      "TRADE": 13800,
+      "BOOK_TICKER": 0,
+      "REST_RECOVERY": 24
+    },
+    "duplicate_event_ids": 0,
+    "missing_exchange_timestamp": 0,
+    "trade_events_with_native_t_id": 13800
+  },
+  "result": "FAIL_PUBLIC_BASELINE_SMOKE",
+  "defect": "BLOCKED_BY_RUNTIME_DEFECT_BOOKTICKER_STREAM",
+  "detail": "runtime consumed TRADE events but zero BOOK_TICKER events while real production bookTicker stream delivered them"
+}

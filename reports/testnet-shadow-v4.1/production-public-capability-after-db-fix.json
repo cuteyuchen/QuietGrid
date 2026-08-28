@@ -1,0 +1,162 @@
+{
+  "generated_at": "2026-08-28T18:04:53.059931+00:00",
+  "endpoint": "https://fapi.binance.com",
+  "websocket_endpoint": "wss://fstream.binance.com/stream",
+  "symbols": [
+    {
+      "symbol": "SNDKUSDT",
+      "exists": true,
+      "status": "SUPPORTED",
+      "contractType": "TRADIFI_PERPETUAL",
+      "checks": {
+        "symbol_existence": true,
+        "status": "TRADING",
+        "contract_type": "TRADIFI_PERPETUAL",
+        "filters": true,
+        "ticker": true,
+        "depth": true,
+        "kline": true,
+        "mark_price": true,
+        "funding": true,
+        "tick_size": true,
+        "step_size": true,
+        "min_qty": true,
+        "min_notional": true
+      },
+      "errors": {},
+      "rest_capability": "SUPPORTED",
+      "final_capability": "SUPPORTED"
+    },
+    {
+      "symbol": "MUUSDT",
+      "exists": true,
+      "status": "SUPPORTED",
+      "contractType": "TRADIFI_PERPETUAL",
+      "checks": {
+        "symbol_existence": true,
+        "status": "TRADING",
+        "contract_type": "TRADIFI_PERPETUAL",
+        "filters": true,
+        "ticker": true,
+        "depth": true,
+        "kline": true,
+        "mark_price": true,
+        "funding": true,
+        "tick_size": true,
+        "step_size": true,
+        "min_qty": true,
+        "min_notional": true
+      },
+      "errors": {},
+      "rest_capability": "SUPPORTED",
+      "final_capability": "SUPPORTED"
+    },
+    {
+      "symbol": "SOXLUSDT",
+      "exists": true,
+      "status": "SUPPORTED",
+      "contractType": "TRADIFI_PERPETUAL",
+      "checks": {
+        "symbol_existence": true,
+        "status": "TRADING",
+        "contract_type": "TRADIFI_PERPETUAL",
+        "filters": true,
+        "ticker": true,
+        "depth": true,
+        "kline": true,
+        "mark_price": true,
+        "funding": true,
+        "tick_size": true,
+        "step_size": true,
+        "min_qty": true,
+        "min_notional": true
+      },
+      "errors": {},
+      "rest_capability": "SUPPORTED",
+      "final_capability": "SUPPORTED"
+    },
+    {
+      "symbol": "SKHYNIXUSDT",
+      "exists": true,
+      "status": "RESEARCH_ONLY",
+      "contractType": "TRADIFI_PERPETUAL",
+      "checks": {
+        "symbol_existence": true,
+        "status": "TRADING",
+        "contract_type": "TRADIFI_PERPETUAL",
+        "filters": true,
+        "ticker": false,
+        "depth": false,
+        "kline": false,
+        "mark_price": false,
+        "funding": false,
+        "tick_size": true,
+        "step_size": true,
+        "min_qty": true,
+        "min_notional": true
+      },
+      "errors": {},
+      "rest_capability": "RESEARCH_ONLY",
+      "final_capability": "RESEARCH_ONLY",
+      "research_only": true,
+      "skipped_rest_checks": [
+        "ticker",
+        "depth",
+        "kline",
+        "mark_price",
+        "funding"
+      ]
+    }
+  ],
+  "rate_limited_stages": [],
+  "request_pacing": {
+    "pacing_seconds": 0.4,
+    "exchange_info_calls": 1
+  },
+  "production_private_api": "DISABLED",
+  "signed_requests": "DISABLED",
+  "safety": {
+    "lane": "PUBLIC_DATA_ONLY",
+    "data_environment": "PRODUCTION_PUBLIC",
+    "order_environment": "NONE",
+    "candidate": "31111-NEUTRAL",
+    "economic_leverage": 1,
+    "production_private_api": "DISABLED",
+    "capabilities": {
+      "production_public_rest": true,
+      "production_public_websocket": true,
+      "production_signed_rest": false,
+      "testnet_signed_rest": false,
+      "testnet_websocket": false,
+      "paper_order_mutation": false,
+      "real_order_mutation": false
+    }
+  },
+  "rate_limited": false,
+  "cooldown": null,
+  "server_time": {
+    "status": "SUPPORTED",
+    "serverTime": 1787940298195
+  },
+  "websocket": {
+    "status": "SUPPORTED",
+    "received": {
+      "trade": true,
+      "bookTicker": true
+    }
+  },
+  "classification": "PRODUCTION_PUBLIC_TRADFI_SUPPORTED",
+  "live_shadow_gate": "PASS",
+  "no_credentials_used": true,
+  "provenance": {
+    "generated_at": "2026-08-28T18:04:53.059931+00:00",
+    "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+    "git_commit": "d402c51626d2ef9bc1eab9b4bccea63fa51b2c73",
+    "candidate": "31111-NEUTRAL",
+    "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+    "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+    "egress_qualification": "PASS_PROXY_EGRESS_QUALIFICATION",
+    "egress_stability": "STABLE_PROXY_EGRESS",
+    "egress_ip": "141.148.210.128"
+  }
+}

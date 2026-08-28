@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-08-28T18:22:40.329512+00:00",
+  "git_commit": "d402c51626d2ef9bc1eab9b4bccea63fa51b2c73",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "candidate_id": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+  "fresh_db": "C:\\Users\\Windows\\AppData\\Local\\Temp\\tmp69v86sbs\\schema.db",
+  "core_tables_present": [
+    "control_state",
+    "orders",
+    "round_candidates",
+    "selection_candidates",
+    "sessions",
+    "state_logs",
+    "system_logs",
+    "trades",
+    "windows"
+  ],
+  "shadow_tables_present": [
+    "shadow_events",
+    "shadow_fills",
+    "shadow_market_events",
+    "shadow_market_state",
+    "shadow_orders",
+    "shadow_positions"
+  ],
+  "missing_core_tables": [],
+  "missing_shadow_tables": [],
+  "result": "PASS_RUNTIME_DB_SCHEMA_INITIALIZATION"
+}

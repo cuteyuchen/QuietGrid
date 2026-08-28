@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-08-28T18:22:41.050461+00:00",
+  "git_commit": "d402c51626d2ef9bc1eab9b4bccea63fa51b2c73",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "scenario": "fresh sqlite + real TradingController + single synthetic TRADE event + bootstrap_rest=False",
+  "before": {
+    "error": "sqlite3.OperationalError: no such table: control_state"
+  },
+  "after": {
+    "events_processed": 1,
+    "controller_ticks": 1,
+    "reconcile": "RECONCILED",
+    "status": "COMPLETED"
+  },
+  "result": "PASS_FRESH_DB_REAL_CONTROLLER_FIRST_EVENT"
+}

@@ -21,7 +21,7 @@ from exchange.shadow import PAPER_BASELINE, ShadowExecutionProfile
 
 EPSILON = 1e-12
 ACTIVE_STATUSES = ("NEW", "PARTIALLY_FILLED", "CANCEL_PENDING", "STOP_PENDING", "STOP_TRIGGERED")
-TERMINAL_STATUSES = ("FILLED", "CANCELED", "REJECTED")
+TERMINAL_STATUSES = ("FILLED", "CANCELED", "REJECTED", "EXPIRED_NO_POSITION")
 
 
 @dataclass
@@ -181,6 +181,14 @@ class ShadowBroker:
                     sequence INTEGER NOT NULL DEFAULT 0,
                     payload_json TEXT
                 );
+                CREATE TABLE IF NOT EXISTS shadow_market_freshness (
+                    symbol TEXT NOT NULL,
+                    stream_type TEXT NOT NULL,
+                    event_key TEXT NOT NULL,
+                    exchange_at TEXT NOT NULL,
+                    receive_at TEXT NOT NULL,
+                    PRIMARY KEY(symbol, stream_type)
+                );
                 CREATE TABLE IF NOT EXISTS shadow_funding_settlements (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     symbol TEXT NOT NULL,
@@ -201,6 +209,7 @@ class ShadowBroker:
                     episode_id TEXT NOT NULL,
                     status TEXT NOT NULL,
                     force_flat_latch INTEGER NOT NULL DEFAULT 1,
+                    max_attempts INTEGER NOT NULL DEFAULT 3,
                     sequence INTEGER NOT NULL DEFAULT 0,
                     requested_at TEXT NOT NULL,
                     completed_at TEXT,
@@ -241,6 +250,9 @@ class ShadowBroker:
                 conn.execute("ALTER TABLE shadow_market_state ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0")
             if "payload_json" not in market_columns:
                 conn.execute("ALTER TABLE shadow_market_state ADD COLUMN payload_json TEXT")
+            force_flat_columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(shadow_force_flat)")}
+            if "max_attempts" not in force_flat_columns:
+                conn.execute("ALTER TABLE shadow_force_flat ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 3")
 
     def _load_market_state(self) -> None:
         with self._connect() as conn:
@@ -252,6 +264,13 @@ class ShadowBroker:
                 continue
             if isinstance(payload, dict):
                 self._last_market[str(row["symbol"])] = payload
+        with self._connect() as conn:
+            rows = conn.execute("SELECT symbol,stream_type,event_key,exchange_at,receive_at FROM shadow_market_freshness").fetchall()
+        for row in rows:
+            state = self._last_market.setdefault(str(row["symbol"]), {})
+            state[f"_{str(row['stream_type']).lower()}_at"] = _dt(row["exchange_at"])
+            state[f"_{str(row['stream_type']).lower()}_received_at"] = _dt(row["receive_at"])
+            state[f"_{str(row['stream_type']).lower()}_event_key"] = row["event_key"]
 
     def _record(self, event_type: str, payload: dict[str, Any], at: datetime | None = None) -> None:
         with self._connect() as conn:
@@ -263,19 +282,30 @@ class ShadowBroker:
     def _latch(self, symbol: str) -> bool:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT force_flat_latch FROM shadow_force_flat WHERE symbol=? AND status IN ('FORCE_FLAT_REQUESTED','FAIL_FORCE_FLAT')",
+                "SELECT force_flat_latch FROM shadow_force_flat WHERE symbol=? AND status IN ('FORCE_FLAT_REQUESTED','WAIT_CANCEL_TERMINAL','WAIT_FLATTEN','FAIL_FORCE_FLAT')",
                 (symbol.upper(),),
             ).fetchone()
         return bool(row and row["force_flat_latch"])
 
-    def _market_is_stale(self, symbol: str) -> bool:
+    def _market_is_stale(self, symbol: str, *, book: bool = False) -> bool:
         quote = self._last_market.get(symbol.upper(), {})
         if quote.get("_stale"):
             return True
-        received = quote.get("receive_timestamp")
+        received = quote.get("_book_received_at" if book else "_trade_received_at", quote.get("receive_timestamp"))
         if received is None:
             return False
         return (_now() - _dt(received)).total_seconds() > self.profile.stale_timeout_seconds
+
+    def _book_is_fresh(self, symbol: str) -> bool:
+        quote = self._last_market.get(symbol.upper(), {})
+        if not (_positive(quote.get("bid")) and _positive(quote.get("ask"))):
+            return False
+        received = quote.get("_book_received_at", quote.get("receive_timestamp"))
+        if received is not None:
+            return (_now() - _dt(received)).total_seconds() <= self.profile.stale_timeout_seconds
+        # Legacy fixtures and explicit REST bootstrap quotes carry a valid top of book
+        # but no stream timestamp.
+        return True
 
     def _insert_order(self, order: ShadowOrder) -> None:
         with self._connect() as conn:
@@ -377,8 +407,8 @@ class ShadowBroker:
         elif self._latch(normalized) and not await self._would_reduce(normalized, normalized_side):
             reason = "FORCE_FLAT_LATCHED"
         quote = self._last_market.get(normalized, {})
-        if self._market_is_stale(normalized) and not await self._would_reduce(normalized, normalized_side):
-            reason = "MARKET_DATA_STALE"
+        if not self._book_is_fresh(normalized) and not await self._would_reduce(normalized, normalized_side):
+            reason = "BOOK_DATA_STALE"
         bid, ask = _positive(quote.get("bid")), _positive(quote.get("ask"))
         marketable = (normalized_side == "BUY" and ask and limit_price >= ask) or (normalized_side == "SELL" and bid and limit_price <= bid)
         if marketable:
@@ -523,6 +553,11 @@ class ShadowBroker:
         self._record("STOP_TRIGGERED", {"order_id": row["order_id"], "symbol": row["symbol"], "trigger_price": value, "trigger_source": source}, at)
         position = await self.get_position(row["symbol"])
         current_qty = float(position.get("qty", 0.0) or 0.0)
+        if abs(current_qty) <= EPSILON:
+            with self._connect() as conn:
+                conn.execute("UPDATE shadow_orders SET status='EXPIRED_NO_POSITION',triggered_at=? WHERE order_id=?", (_iso(at), row["order_id"]))
+            self._record("STOP_EXPIRED_NO_POSITION", {"order_id": row["order_id"], "symbol": row["symbol"], "trigger_price": value}, at)
+            return {"order_id": row["order_id"], "qty": 0.0, "price": value, "status": "EXPIRED_NO_POSITION", "trigger_source": source}
         requested = _positive(row["qty"])
         executable = min(requested or abs(current_qty), current_qty) if row["side"] == "SELL" and current_qty > EPSILON else min(requested or abs(current_qty), abs(current_qty)) if row["side"] == "BUY" and current_qty < -EPSILON else 0.0
         filled = await self._apply_fill(row["order_id"], row["symbol"], row["side"], value, executable, at, reduce_only=True, liquidity="TAKER") if executable > EPSILON else 0.0
@@ -535,9 +570,15 @@ class ShadowBroker:
         normalized = symbol.upper()
         at = _dt(event.get("exchange_timestamp", event.get("timestamp")))
         received = _dt(event.get("receive_timestamp"), fallback=_now())
-        raw_key = str(event.get("raw_event_id") or event.get("event_id") or hashlib.sha256(_json({"symbol": normalized, **event}).encode()).hexdigest())
-        key = f"{normalized}:{raw_key}"
-        sequence = int(event.get("sequence") or 0)
+        stream_type = str(event.get("event_type") or "TRADE").upper()
+        source = str(event.get("source") or "UNKNOWN").upper()
+        raw_key = str(event.get("raw_event_id") or event.get("event_id") or "")
+        if not raw_key:
+            raw_key = f"EVENT_ID_FALLBACK_HASH:{hashlib.sha256(_json({'symbol': normalized, **event}).encode('utf-8')).hexdigest()}"
+            event = {**event, "raw_event_id": raw_key, "event_id_mode": "EVENT_ID_FALLBACK_HASH"}
+        key = f"{source}:{normalized}:{stream_type}:{raw_key}"
+        sequence = event.get("sequence")
+        sequence_number = int(sequence) if sequence is not None else 0
         duplicate = False
         out_of_order = False
         gap_detected = False
@@ -550,12 +591,18 @@ class ShadowBroker:
             if not duplicate and previous is not None:
                 previous_at = _dt(previous["last_event_at"])
                 previous_sequence = int(previous["sequence"] or 0)
-                out_of_order = at < previous_at or (
-                    sequence > 0 and previous_sequence > 0 and sequence < previous_sequence
-                )
-                gap_detected = sequence > 0 and previous_sequence > 0 and sequence > previous_sequence + 1
+                if sequence_number and previous_sequence:
+                    out_of_order = sequence_number < previous_sequence
+                    gap_detected = sequence_number > previous_sequence + 1
+                else:
+                    out_of_order = at < previous_at
             if not duplicate and not out_of_order:
-                conn.execute("INSERT INTO shadow_market_state(symbol,last_event_at,sequence,payload_json) VALUES (?,?,?,?) ON CONFLICT(symbol) DO UPDATE SET last_event_at=excluded.last_event_at,sequence=excluded.sequence,payload_json=excluded.payload_json", (normalized, _iso(at), sequence, _json(event)))
+                conn.execute("INSERT INTO shadow_market_state(symbol,last_event_at,sequence,payload_json) VALUES (?,?,?,?) ON CONFLICT(symbol) DO UPDATE SET last_event_at=excluded.last_event_at,sequence=excluded.sequence,payload_json=excluded.payload_json", (normalized, _iso(at), sequence_number, _json(event)))
+                conn.execute(
+                    "INSERT INTO shadow_market_freshness(symbol,stream_type,event_key,exchange_at,receive_at) VALUES (?,?,?,?,?) "
+                    "ON CONFLICT(symbol,stream_type) DO UPDATE SET event_key=excluded.event_key,exchange_at=excluded.exchange_at,receive_at=excluded.receive_at",
+                    (normalized, stream_type, key, _iso(at), _iso(received)),
+                )
         if duplicate:
             self._record("DUPLICATE_MARKET_EVENT", {"symbol": normalized, "event_key": key}, received)
             return []
@@ -564,15 +611,40 @@ class ShadowBroker:
             return []
         if gap_detected:
             self._record("MARKET_EVENT_GAP", {"symbol": normalized, "event_key": key, "previous_sequence": previous_sequence, "sequence": sequence}, received)
+        state = dict(self._last_market.get(normalized, {}))
+        if stream_type == "TRADE":
+            for name in ("price", "quantity", "trade_price", "trade_qty", "last"):
+                state.pop(name, None)
+            state.update({name: event[name] for name in ("price", "quantity", "trade_price", "trade_qty") if name in event})
+            state["last"] = _positive(event.get("trade_price", event.get("price")))
+            state["_trade_at"] = at
+            state["_trade_received_at"] = received
+        elif stream_type == "BOOK_TICKER":
+            for name in ("bid", "ask", "bid_qty", "ask_qty", "bidQty", "askQty"):
+                state.pop(name, None)
+            state.update({name: event[name] for name in ("bid", "ask", "bid_qty", "ask_qty") if name in event})
+            state["_book_at"] = at
+            state["_book_received_at"] = received
+        elif stream_type in {"MARK_PRICE", "FUNDING"}:
+            state.update({name: event[name] for name in ("mark_price", "funding_rate") if name in event})
+            state[f"_{stream_type.lower()}_at"] = at
+            state[f"_{stream_type.lower()}_received_at"] = received
+        else:
+            state.update(event)
+        state["_event_type"] = stream_type
         age = max(0.0, (received - at).total_seconds())
-        self._last_market[normalized] = {
-            **self._last_market.get(normalized, {}),
-            **event,
-            "_stale": age > self.profile.stale_timeout_seconds,
-        }
+        state["_stale"] = max(0.0, (received - at).total_seconds()) > self.profile.stale_timeout_seconds
+        self._last_market[normalized] = state
         if age > self.profile.stale_timeout_seconds:
+            await self._advance_force_flat(normalized, at, received)
             self._record("MARKET_DATA_STALE", {"symbol": normalized, "age": age}, received)
             return []
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE shadow_market_state SET payload_json=? WHERE symbol=?",
+                (_json(state), normalized),
+            )
+        await self._advance_force_flat(normalized, at, received)
         fills: list[dict[str, Any]] = []
         # Equal-time cancellation/trigger events use adverse-first ordering.
         with self._connect() as conn:
@@ -588,6 +660,8 @@ class ShadowBroker:
                     fills.append(result)
             elif cancel_at is not None and cancel_at <= at:
                 self._settle_cancel(row["order_id"], at)
+        if stream_type != "TRADE":
+            return fills
         trade_price = _positive(event.get("trade_price", event.get("price")))
         trade_qty = _positive(event.get("trade_qty", event.get("quantity")))
         if trade_price <= EPSILON or trade_qty <= EPSILON:
@@ -694,40 +768,91 @@ class ShadowBroker:
                 return json.loads(row["last_result_json"])
             if row is None or row["status"] == "COMPLETE" or (episode_id and row["episode_id"] != episode_id):
                 active_episode = episode_id or uuid4().hex[:12]
-                conn.execute("INSERT INTO shadow_force_flat(symbol,episode_id,status,force_flat_latch,sequence,requested_at) VALUES (?,?,?,?,?,?) ON CONFLICT(symbol) DO UPDATE SET episode_id=excluded.episode_id,status=excluded.status,force_flat_latch=1,sequence=0,requested_at=excluded.requested_at,completed_at=NULL,failure=NULL,last_result_json=NULL", (normalized, active_episode, "FORCE_FLAT_REQUESTED", 1, 0, _iso(now)))
+                conn.execute("INSERT INTO shadow_force_flat(symbol,episode_id,status,force_flat_latch,max_attempts,sequence,requested_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(symbol) DO UPDATE SET episode_id=excluded.episode_id,status=excluded.status,force_flat_latch=1,max_attempts=excluded.max_attempts,sequence=0,requested_at=excluded.requested_at,completed_at=NULL,failure=NULL,last_result_json=NULL", (normalized, active_episode, "WAIT_CANCEL_TERMINAL", 1, max(1, int(max_attempts)), 0, _iso(now)))
             else:
                 active_episode = str(row["episode_id"])
-                conn.execute("UPDATE shadow_force_flat SET status='FORCE_FLAT_REQUESTED',force_flat_latch=1,failure=NULL WHERE symbol=?", (normalized,))
+                conn.execute("UPDATE shadow_force_flat SET status='WAIT_CANCEL_TERMINAL',force_flat_latch=1,max_attempts=?,failure=NULL WHERE symbol=?", (max(1, int(max_attempts)), normalized))
         await self.cancel_all_orders(normalized)
-        # Resolve the modeled cancel latency before checking the terminal invariant.
-        cancel_drain_at = datetime.fromtimestamp(
-            _now().timestamp() + self.profile.cancel_latency_ms / 1000,
-            timezone.utc,
-        )
-        self._settle_all_cancels(normalized, cancel_drain_at)
-        attempts: list[dict[str, Any]] = []
-        for _ in range(max(1, int(max_attempts))):
-            self._settle_all_cancels(normalized, cancel_drain_at)
-            position_qty = float((await self.get_position(normalized)).get("qty", 0.0) or 0.0)
-            if abs(position_qty) <= EPSILON and await self._active_risk_count(normalized) == 0:
-                result = {"symbol": normalized, "episode_id": active_episode, "status": "COMPLETE", "flattened": True, "qty": 0.0, "attempts": attempts}
-                self._complete_flat(normalized, result)
-                return result
-            side = "SELL" if position_qty > 0 else "BUY"
-            with self._connect() as conn:
-                sequence = int(conn.execute("SELECT sequence FROM shadow_force_flat WHERE symbol=?", (normalized,)).fetchone()[0]) + 1
-                conn.execute("UPDATE shadow_force_flat SET sequence=? WHERE symbol=?", (sequence, normalized))
-            client_id = f"qg-v41-force-flat-{normalized.lower()}-{active_episode}-{sequence}"
-            try:
-                order = await self.place_market_order(normalized, side, abs(position_qty), reduce_only=True, client_id=client_id)
-                attempts.append({"client_order_id": client_id, "order": order})
-            except Exception as exc:
-                attempts.append({"client_order_id": client_id, "status": "ERROR", "error": str(exc)})
-        result = {"symbol": normalized, "episode_id": active_episode, "status": "FAIL_FORCE_FLAT", "flattened": False, "attempts": attempts}
         with self._connect() as conn:
-            conn.execute("UPDATE shadow_force_flat SET status='FAIL_FORCE_FLAT',force_flat_latch=1,failure=?,last_result_json=? WHERE symbol=?", ("bounded retries exhausted", _json(result), normalized))
-        self._record("FAIL_FORCE_FLAT", result)
+            row = conn.execute("SELECT * FROM shadow_force_flat WHERE symbol=?", (normalized,)).fetchone()
+            cancel_effective_at = None
+            if row:
+                cancel = conn.execute(
+                    "SELECT MAX(cancel_effective_at) AS effective_at FROM shadow_orders WHERE symbol=? AND cancel_requested_at IS NOT NULL AND cancel_requested_at >= ?",
+                    (normalized, str(row["requested_at"])),
+                ).fetchone()
+                cancel_effective_at = cancel["effective_at"] if cancel else None
+        if await self._active_risk_count(normalized) == 0 and abs(float((await self.get_position(normalized)).get("qty", 0.0) or 0.0)) <= EPSILON:
+            result = {"symbol": normalized, "episode_id": active_episode, "status": "COMPLETE", "flattened": True, "qty": 0.0, "attempts": [], "cancel_effective_at": cancel_effective_at}
+            self._complete_flat(normalized, result)
+            return result
+        result = {
+            "symbol": normalized,
+            "episode_id": active_episode,
+            "status": "WAIT_CANCEL_TERMINAL",
+            "flattened": False,
+            "cancel_effective_at": cancel_effective_at,
+            "max_attempts": max(1, int(max_attempts)),
+            "attempts": [],
+        }
+        with self._connect() as conn:
+            conn.execute("UPDATE shadow_force_flat SET last_result_json=? WHERE symbol=?", (_json(result), normalized))
+        self._record("FORCE_FLAT_CANCEL_REQUESTED", result, now)
         return result
+
+    async def _advance_force_flat(self, symbol: str, at: datetime, received: datetime) -> None:
+        normalized = symbol.upper()
+        with self._connect() as conn:
+            episode = conn.execute("SELECT * FROM shadow_force_flat WHERE symbol=?", (normalized,)).fetchone()
+        if episode is None or episode["status"] not in {"WAIT_CANCEL_TERMINAL", "WAIT_FLATTEN"}:
+            return
+        with self._connect() as conn:
+            pending = conn.execute(
+                "SELECT order_id,cancel_effective_at,status,order_type,reduce_only FROM shadow_orders WHERE symbol=? AND status='CANCEL_PENDING'",
+                (normalized,),
+            ).fetchall()
+        for row in pending:
+            cancel_at = _dt(row["cancel_effective_at"])
+            if at >= cancel_at:
+                self._settle_cancel(row["order_id"], at)
+        if await self._active_risk_count(normalized) > 0:
+            return
+        position_qty = float((await self.get_position(normalized)).get("qty", 0.0) or 0.0)
+        if abs(position_qty) <= EPSILON:
+            result = {"symbol": normalized, "episode_id": str(episode["episode_id"]), "status": "COMPLETE", "flattened": True, "qty": 0.0, "attempts": []}
+            self._complete_flat(normalized, result)
+            return
+        with self._connect() as conn:
+            if str(episode["status"]) == "WAIT_FLATTEN" and str(episode["last_result_json"]):
+                previous = json.loads(str(episode["last_result_json"]))
+                attempts = list(previous.get("attempts", []))
+            else:
+                attempts = []
+        bounded_attempts = max(1, int(episode["max_attempts"] or 3))
+        sequence = int(episode["sequence"] or 0) + 1
+        with self._connect() as conn:
+            conn.execute("UPDATE shadow_force_flat SET status='WAIT_FLATTEN',sequence=? WHERE symbol=?", (sequence, normalized))
+        side = "SELL" if position_qty > 0 else "BUY"
+        client_id = f"qg-v41-force-flat-{normalized.lower()}-{episode['episode_id']}-{sequence}"
+        try:
+            order = await self.place_market_order(normalized, side, abs(position_qty), reduce_only=True, client_id=client_id)
+            attempts.append({"client_order_id": client_id, "order": order})
+        except Exception as exc:
+            if len(attempts) >= bounded_attempts:
+                failure = {"symbol": normalized, "episode_id": str(episode["episode_id"]), "status": "FAIL_FORCE_FLAT", "flattened": False, "attempts": attempts, "error": str(exc)}
+                with self._connect() as conn:
+                    conn.execute("UPDATE shadow_force_flat SET status='FAIL_FORCE_FLAT',failure=?,last_result_json=? WHERE symbol=?", ("bounded retries exhausted", _json(failure), normalized))
+                self._record("FAIL_FORCE_FLAT", failure, received)
+                return
+            attempts.append({"client_order_id": client_id, "status": "ERROR", "error": str(exc)})
+        position_qty = float((await self.get_position(normalized)).get("qty", 0.0) or 0.0)
+        if abs(position_qty) <= EPSILON:
+            result = {"symbol": normalized, "episode_id": str(episode["episode_id"]), "status": "COMPLETE", "flattened": True, "qty": 0.0, "attempts": attempts}
+            self._complete_flat(normalized, result)
+            return
+        result = {"symbol": normalized, "episode_id": str(episode["episode_id"]), "status": "WAIT_FLATTEN", "flattened": False, "qty": position_qty, "attempts": attempts}
+        with self._connect() as conn:
+            conn.execute("UPDATE shadow_force_flat SET last_result_json=? WHERE symbol=?", (_json(result), normalized))
 
     async def _active_risk_count(self, symbol: str) -> int:
         with self._connect() as conn:
@@ -775,6 +900,12 @@ class ShadowBroker:
                 violations.append(f"FILLED has remaining quantity: {order['order_id']}")
             if order.get("order_type") == "STOP_MARKET" and float(order.get("queue_ahead_remaining") or 0.0) > EPSILON:
                 violations.append(f"STOP_MARKET entered maker queue: {order['order_id']}")
+            if (
+                order.get("order_type") == "STOP_MARKET"
+                and order.get("status") == "FILLED"
+                and float(order.get("filled_qty") or 0.0) <= EPSILON
+            ):
+                violations.append(f"zero-position stop cannot be FILLED: {order['order_id']}")
             if float(order.get("queue_ahead_remaining") or 0.0) < -EPSILON or float(order.get("queue_ahead_remaining") or 0.0) > float(order.get("queue_ahead_initial") or 0.0) + EPSILON:
                 violations.append(f"negative queue remaining: {order['order_id']}")
         order_map = {row["order_id"]: row for row in orders}
@@ -805,6 +936,14 @@ class ShadowBroker:
         for cursor in cursors:
             if not cursor.get("last_event_at"):
                 violations.append(f"market cursor missing: {cursor['symbol']}")
+            if active_risk.get(str(cursor["symbol"]), 0) > 0:
+                with self._connect() as conn:
+                    freshness = conn.execute(
+                        "SELECT receive_at FROM shadow_market_freshness WHERE symbol=? AND stream_type='BOOK_TICKER'",
+                        (str(cursor["symbol"]),),
+                    ).fetchone()
+                if freshness is None:
+                    violations.append(f"active maker order has no book evidence: {cursor['symbol']}")
         for episode in force_flat:
             episode_symbol = str(episode["symbol"])
             if normalized and episode_symbol != normalized:
@@ -812,6 +951,9 @@ class ShadowBroker:
             if episode["status"] == "COMPLETE":
                 if int(episode.get("force_flat_latch") or 0) != 0 or abs(positions.get(episode_symbol, 0.0)) > EPSILON or active_risk.get(episode_symbol, 0) > 0:
                     violations.append(f"force-flat terminal invariant: {episode_symbol}")
+            elif episode["status"] in {"WAIT_CANCEL_TERMINAL", "WAIT_FLATTEN"}:
+                if int(episode.get("force_flat_latch") or 0) != 1:
+                    violations.append(f"force-flat active latch missing: {episode_symbol}")
             elif int(episode.get("force_flat_latch") or 0) == 0:
                 violations.append(f"force-flat latch missing: {episode_symbol}")
         result = "INCONSISTENT_BLOCKED" if violations else "RECONCILED"

@@ -27,10 +27,28 @@ async def _public_websocket_probe(symbols: tuple[str, ...], timeout: float) -> d
     try:
         import websockets
 
-        streams = "/".join(f"{symbol.lower()}@trade" for symbol in symbols)
+        streams = "/".join(
+            f"{symbol.lower()}@trade/{symbol.lower()}@bookTicker"
+            for symbol in symbols
+        )
         async with websockets.connect(f"{PRODUCTION_WS}?streams={streams}", open_timeout=timeout, close_timeout=timeout) as socket:
-            raw = await asyncio.wait_for(socket.recv(), timeout=timeout)
-            return {"status": CapabilityStatus.SUPPORTED.value, "message_received": bool(raw)}
+            received = {"trade": False, "bookTicker": False}
+            deadline = asyncio.get_running_loop().time() + timeout
+            while not all(received.values()):
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    return {
+                        "status": CapabilityStatus.ERROR_RETRYABLE.value,
+                        "error": "probe timeout before both trade and bookTicker streams were observed",
+                        "received": received,
+                    }
+                raw = json.loads(await asyncio.wait_for(socket.recv(), timeout=remaining))
+                stream = str(raw.get("stream", ""))
+                if stream.endswith("@trade"):
+                    received["trade"] = True
+                elif stream.endswith("@bookTicker"):
+                    received["bookTicker"] = True
+            return {"status": CapabilityStatus.SUPPORTED.value, "received": received}
     except asyncio.CancelledError:
         raise
     except Exception as exc:
@@ -52,7 +70,7 @@ async def probe(*, network: bool = True, websocket: bool = True, timeout: float 
         result["server_time"] = {"status": "SKIPPED_NETWORK_UNAVAILABLE"}
         result["websocket"] = {"status": "SKIPPED_NETWORK_UNAVAILABLE"}
         result["symbols"] = [{"symbol": symbol, "status": "ERROR_RETRYABLE", "final_capability": "NOT_PROBED"} for symbol in TARGET_SYMBOLS]
-        result["classification"] = "PRODUCTION_PUBLIC_TRADFI_UNSUPPORTED"
+        result["classification"] = "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
         result["conclusion"] = "SKIPPED_NETWORK_UNAVAILABLE"
         return result
     owned = market_data is None
@@ -118,6 +136,10 @@ async def probe(*, network: bool = True, websocket: bool = True, timeout: float 
         status = _status_for_error(exc)
         result["server_time"] = {"status": status, "error": str(exc)}
         result["symbols"] = [{"symbol": symbol, "status": status, "final_capability": "ERROR_RETRYABLE" if status == CapabilityStatus.ERROR_RETRYABLE.value else "ERROR_FATAL"} for symbol in TARGET_SYMBOLS]
+    probe_failed_before_classification = result.get("server_time", {}).get("status") in {
+        CapabilityStatus.ERROR_RETRYABLE.value,
+        CapabilityStatus.ERROR_FATAL.value,
+    }
     websocket_ok = result.get("websocket", {}).get("status") == CapabilityStatus.SUPPORTED.value
     for item in result["symbols"]:
         if item.get("exists") is False:
@@ -129,7 +151,9 @@ async def probe(*, network: bool = True, websocket: bool = True, timeout: float 
         else:
             item.setdefault("final_capability", "ERROR_RETRYABLE")
     final = [str(item.get("final_capability")) for item in result["symbols"]]
-    if final and all(value == "SUPPORTED" for value in final):
+    if probe_failed_before_classification:
+        result["classification"] = "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
+    elif final and all(value == "SUPPORTED" for value in final):
         result["classification"] = "PRODUCTION_PUBLIC_TRADFI_SUPPORTED"
     elif any(value in {"SUPPORTED", "PARTIAL"} for value in final):
         result["classification"] = "PRODUCTION_PUBLIC_TRADFI_PARTIAL"

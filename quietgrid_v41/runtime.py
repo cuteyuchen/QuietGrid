@@ -1,46 +1,30 @@
 from __future__ import annotations
 
 import asyncio
-from copy import deepcopy
 import json
 import time
 from collections.abc import AsyncIterator, Iterable, Mapping
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from exchange.shadow import PAPER_BASELINE, ShadowBroker, ShadowExchangeClient, ShadowExecutionProfile
 from quietgrid_v41.events import MarketEvent
 from quietgrid_v41.sessions import session_context
+from strategy.frozen_31111_compiler import (
+    Frozen31111ControllerCompiler,
+    assert_frozen_runtime_parity,
+)
 from strategy.frozen_31111_runtime import Frozen31111Runtime
 
 
-def _frozen_controller_config(frozen: Frozen31111Runtime, database_path: Path):
+def _frozen_controller_config(frozen: Frozen31111Runtime, database_path: Path, repo_root: str | Path = "."):
     """Build the controller input from the attested config, with runtime-only wiring."""
     from core.config import AppConfig
 
-    sections = deepcopy(frozen.frozen.config.get("frozen_sections", {}))
-    selection = dict(sections.get("selection", {}))
-    selection.update(
-        {
-            "symbol_allowlist": list(frozen.symbols),
-            "symbol_blacklist": [],
-            "scan_candidate_count": len(frozen.symbols),
-            "volume_weight": float(selection.get("volume_weight", 0.7)),
-            "depth_weight": float(selection.get("depth_weight", 0.3)),
-            "depth_levels": int(selection.get("depth_levels", 5)),
-        }
-    )
-    sections["selection"] = selection
-    sections["features"] = {
-        "regime_v2": True,
-        "inventory_manager": True,
-        "adaptive_grid_v2": True,
-        "risk_manager_v2": True,
-    }
-    sections["database"] = {"path": str(database_path)}
-    sections.setdefault("notifications", {})
-    sections.setdefault("proxy", {"enabled": False})
+    manifest = Frozen31111ControllerCompiler(frozen, repo_root, database_path).compile()
+    assert_frozen_runtime_parity(manifest)
+    sections = manifest["effective_raw_config"]
     return AppConfig(
         raw=sections,
         binance_api_key="",
@@ -78,7 +62,10 @@ class BinancePublicTradeStream:
     async def __aiter__(self) -> AsyncIterator[MarketEvent]:
         import websockets
 
-        streams = "/".join(f"{symbol.lower()}@trade" for symbol in self.symbols)
+        streams = "/".join(
+            f"{symbol.lower()}@trade/{symbol.lower()}@bookTicker"
+            for symbol in self.symbols
+        )
         if not streams:
             return
         url = f"{self.ws_url}?streams={streams}"
@@ -88,24 +75,43 @@ class BinancePublicTradeStream:
                     async for raw in websocket:
                         payload = json.loads(raw)
                         data = payload.get("data", payload)
-                        if str(data.get("e", "")).lower() != "trade":
-                            continue
                         received = datetime.now(timezone.utc)
-                        yield MarketEvent.from_mapping(
-                            {
-                                "source": "PUBLIC_WEBSOCKET",
-                                "symbol": data.get("s"),
-                                "event_type": "TRADE",
-                                "exchange_timestamp": data.get("T", data.get("E")),
-                                "receive_timestamp": received,
-                                "sequence": data.get("a", 0),
-                                "event_id": data.get("a", data.get("E", "")),
-                                "raw_event_id": data.get("a", data.get("E", "")),
-                                "price": data.get("p"),
-                                "quantity": data.get("q"),
-                                "payload": data,
-                            }
-                        )
+                        if str(data.get("e", "")).lower() == "trade":
+                            trade_id = data.get("t")
+                            if trade_id in (None, ""):
+                                raise ValueError("Binance @trade event missing trade id t")
+                            yield MarketEvent.from_mapping(
+                                {
+                                    "source": "PUBLIC_WEBSOCKET",
+                                    "symbol": data.get("s"),
+                                    "event_type": "TRADE",
+                                    "exchange_timestamp": data.get("T", data.get("E")),
+                                    "receive_timestamp": received,
+                                    "event_id": trade_id,
+                                    "raw_event_id": trade_id,
+                                    "price": data.get("p"),
+                                    "quantity": data.get("q"),
+                                    "payload": data,
+                                }
+                            )
+                        elif str(data.get("e", "")).lower() == "bookTicker":
+                            book_id = data.get("u")
+                            yield MarketEvent.from_mapping(
+                                {
+                                    "source": "PUBLIC_WEBSOCKET",
+                                    "symbol": data.get("s"),
+                                    "event_type": "BOOK_TICKER",
+                                    "exchange_timestamp": data.get("T", data.get("E")),
+                                    "receive_timestamp": received,
+                                    "event_id": book_id if book_id not in (None, "") else "",
+                                    "raw_event_id": book_id if book_id not in (None, "") else "",
+                                    "bid": data.get("b"),
+                                    "bid_qty": data.get("B"),
+                                    "ask": data.get("a"),
+                                    "ask_qty": data.get("A"),
+                                    "payload": data,
+                                }
+                            )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -136,6 +142,7 @@ class ContinuousShadowRuntime:
         controller: Any,
         market_data: Any | None = None,
         journal_path: str | Path | None = None,
+        report_output_dir: str | Path | None = None,
     ) -> None:
         if frozen.candidate_id != "31111-NEUTRAL":
             raise ValueError("v4.1 runtime requires frozen candidate 31111-NEUTRAL")
@@ -151,10 +158,24 @@ class ContinuousShadowRuntime:
         self.exchange = exchange
         self.controller = controller
         self.market_data = market_data
+        compiler = Frozen31111ControllerCompiler(
+            frozen,
+            self.repo_root,
+            broker.db_path,
+        )
+        self.strategy_manifest = compiler.compile()
         self.journal_path = Path(journal_path) if journal_path else self.repo_root / "data" / "runtime" / "v41" / f"market-events-{broker.profile.name.lower()}.jsonl"
         self.journal_path.parent.mkdir(parents=True, exist_ok=True)
         self.controller_ticks = 0
+        self._next_controller_tick_at: datetime | None = None
+        self.report_output_dir = (
+            Path(report_output_dir).resolve()
+            if report_output_dir is not None
+            else self.repo_root / "reports" / "testnet-shadow-v4.1"
+        )
         self._bind_controller()
+        assert_frozen_runtime_parity(self.strategy_manifest, self.controller)
+        self._write_strategy_manifest()
 
     @classmethod
     def create(
@@ -168,6 +189,7 @@ class ContinuousShadowRuntime:
         controller_factory: Any | None = None,
         journal_path: str | Path | None = None,
         initial_cash: float = 10_000.0,
+        report_output_dir: str | Path | None = None,
     ) -> "ContinuousShadowRuntime":
         root = Path(repo_root).resolve()
         frozen = Frozen31111Runtime.load(root)
@@ -182,10 +204,10 @@ class ContinuousShadowRuntime:
 
                 controller = _build_controller(
                     exchange,
-                    _frozen_controller_config(frozen, runtime_db),
+                    _frozen_controller_config(frozen, runtime_db, root),
                     live_observation=False,
                 )
-        return cls(repo_root=root, frozen=frozen, broker=broker, exchange=exchange, controller=controller, market_data=market_data, journal_path=journal_path)
+        return cls(repo_root=root, frozen=frozen, broker=broker, exchange=exchange, controller=controller, market_data=market_data, journal_path=journal_path, report_output_dir=report_output_dir)
 
     def _bind_controller(self) -> None:
         binder = getattr(self.controller, "bind_frozen_runtime", None)
@@ -195,6 +217,7 @@ class ContinuousShadowRuntime:
             setattr(self.controller, "frozen_runtime", self.frozen)
         setattr(self.controller, "frozen_candidate_id", self.frozen.candidate_id)
         setattr(self.controller, "frozen_candidate_sha", self.frozen.candidate_sha)
+        setattr(self.controller, "effective_strategy_manifest", self.strategy_manifest)
 
     async def recover_from_rest(self, symbols: Iterable[str] | None = None) -> list[MarketEvent]:
         if self.market_data is None:
@@ -224,7 +247,16 @@ class ContinuousShadowRuntime:
             recovered.append(event)
         return recovered
 
+    def _controller_tick_is_due(self, event: MarketEvent) -> bool:
+        if self._next_controller_tick_at is None:
+            return True
+        return event.receive_timestamp >= self._next_controller_tick_at
+
     async def _controller_tick(self, event: MarketEvent) -> Any:
+        if not self._controller_tick_is_due(event):
+            return None
+        interval = float(getattr(getattr(self.controller, "config", None), "loop_interval_seconds", 0.0) or 0.0)
+        self._next_controller_tick_at = event.receive_timestamp + timedelta(seconds=interval if interval > 0 else 0.0)
         handler = getattr(self.controller, "on_market_event", None)
         if callable(handler):
             result = handler(event)
@@ -319,6 +351,11 @@ class ContinuousShadowRuntime:
         return result
 
     def _write_manifest(self, result: dict[str, Any]) -> None:
-        path = self.repo_root / "reports" / "testnet-shadow-v4.1" / f"run-manifest-{self.broker.profile.name.lower()}.json"
+        path = self.report_output_dir / f"run-manifest-{self.broker.profile.name.lower()}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+
+    def _write_strategy_manifest(self) -> None:
+        path = self.report_output_dir / "effective-strategy-manifest.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.strategy_manifest, ensure_ascii=False, indent=2, sort_keys=True, default=str), encoding="utf-8")

@@ -2867,6 +2867,7 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
             leverage=int(trading["leverage"]),
             max_concurrent=int(trading["max_concurrent"]),
             take_profit_usdt=float(trading["take_profit_usdt"]),
+            profit_protection_enabled=bool(trading.get("profit_protection_enabled", True)),
             total_capital_limit=float(trading["total_capital_limit"]),
             max_maker_fee_rate=float(trading.get("max_maker_fee_rate", 0.0)),
             maker_fee_check_interval_seconds=float(trading.get("maker_fee_check_interval_seconds", 300.0)),
@@ -2896,6 +2897,12 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
                     grid.get("range_multiplier_by_symbol", {}) or {}
                 ).items()
             },
+            grid_max_range_pct_by_symbol={
+                str(symbol).strip().upper(): float(value)
+                for symbol, value in (
+                    grid.get("max_range_pct_by_symbol", {}) or {}
+                ).items()
+            },
             grid_min_step_pct_by_symbol={
                 str(symbol).strip().upper(): float(value)
                 for symbol, value in (
@@ -2922,6 +2929,12 @@ def _build_controller(exchange, config, live_observation: bool | None = None) ->
                 str(symbol).strip().upper(): float(value)
                 for symbol, value in (
                     grid.get("reduce_target_step_fraction_by_symbol", {}) or {}
+                ).items()
+            },
+            capital_multiplier_by_symbol={
+                str(symbol).strip().upper(): float(value)
+                for symbol, value in (
+                    trading.get("capital_multiplier_by_symbol", {}) or {}
                 ).items()
             },
             seed_execution=str(entry.get("seed_execution", "MARKET")).strip().upper(),

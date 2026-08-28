@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from exchange.shadow import PAPER_BASELINE, PAPER_CONSERVATIVE, ShadowBroker, Sh
 from quietgrid_v41.client_ids import ClientOrderIdFactory
 from quietgrid_v41.events import MarketEvent
 from quietgrid_v41.production_probe import probe
+from quietgrid_v41.reports import write_v41_reports
 from quietgrid_v41.runtime import BinancePublicTradeStream, ContinuousShadowRuntime, IterableMarketEventSource
 from quietgrid_v41.sessions import capital_multiplier, session_context
 from quietgrid_v41.testnet import run_testnet_order_lifecycle
@@ -133,24 +135,43 @@ def test_v41_force_flat_is_latched_episode_scoped_and_idempotent(tmp_path: Path)
         await broker.place_market_order("MUUSDT", "BUY", 5, reduce_only=False, client_id="seed")
         resting = await broker.place_limit_order_post_only("MUUSDT", "BUY", 98, 4, "risk-order")
         result = await broker.force_flat("MUUSDT", episode_id="episode-1")
-        assert result["status"] == "COMPLETE"
+        assert result["status"] == "WAIT_CANCEL_TERMINAL"
+        assert result["cancel_effective_at"] is not None
+        blocked = await broker.place_limit_order_post_only("MUUSDT", "BUY", 98, 1, "blocked")
+        assert blocked["status"] == "REJECTED"
+        assert blocked["rejectReason"] == "FORCE_FLAT_LATCHED"
+        settle_at = datetime.fromisoformat(result["cancel_effective_at"])
+        await broker.process_market_event("MUUSDT", _event(settle_at, event_id="cancel-settles", price=100, quantity=1))
+        completed = await broker.force_flat("MUUSDT", episode_id="episode-1")
+        assert completed["status"] == "COMPLETE"
         assert (await broker.get_position("MUUSDT"))["qty"] == 0
         assert (await broker.get_order("MUUSDT", resting["orderId"], ""))["status"] == "CANCELED"
-        with broker._connect() as conn:
-            conn.execute(
-                "UPDATE shadow_force_flat SET status='FORCE_FLAT_REQUESTED',force_flat_latch=1 WHERE symbol=?",
-                ("MUUSDT",),
-            )
-        assert (await broker.place_limit_order_post_only("MUUSDT", "BUY", 98, 1, "blocked"))["status"] == "REJECTED"
-        with broker._connect() as conn:
-            conn.execute(
-                "UPDATE shadow_force_flat SET status='COMPLETE',force_flat_latch=0 WHERE symbol=?",
-                ("MUUSDT",),
-            )
         retry = await broker.force_flat("MUUSDT", episode_id="episode-1")
-        assert retry == result
+        assert retry == completed
         second = await broker.force_flat("MUUSDT", episode_id="episode-2")
         assert second["episode_id"] == "episode-2" and second["status"] == "COMPLETE"
+
+    asyncio.run(scenario())
+
+
+def test_v41_force_flat_cancel_fill_race_reruns_position(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        profile = ShadowExecutionProfile("FORCE_RACE", 0.0, 1.0, 0, 500, 90.0)
+        broker = ShadowBroker(tmp_path / "force-race.db", profile)
+        _market(broker)
+        await broker.place_market_order("MUUSDT", "BUY", 5, reduce_only=False, client_id="seed")
+        resting = await broker.place_limit_order_post_only("MUUSDT", "BUY", 98, 2, "race-order")
+        requested = await broker.force_flat("MUUSDT", episode_id="race-1")
+        cancel_at = datetime.fromisoformat(requested["cancel_effective_at"])
+        before_cancel = cancel_at - timedelta(milliseconds=250)
+        await broker.process_market_event("MUUSDT", _event(before_cancel, event_id="fills-before-cancel", price=97.9, quantity=3))
+        assert (await broker.get_position("MUUSDT"))["qty"] == 7
+        assert (await broker.get_order("MUUSDT", resting["orderId"], ""))["status"] == "FILLED"
+        await broker.process_market_event("MUUSDT", _event(cancel_at, event_id="cancel-terminal", price=100, quantity=1))
+        completed = await broker.force_flat("MUUSDT", episode_id="race-1")
+        assert completed["status"] == "COMPLETE"
+        assert (await broker.get_position("MUUSDT"))["qty"] == 0
+        assert completed["attempts"][0]["order"]["executedQty"] == 7
 
     asyncio.run(scenario())
 
@@ -270,6 +291,7 @@ def test_v41_runtime_drives_frozen_controller_through_shadow_client(tmp_path: Pa
             db_path=tmp_path / "runtime.db",
             journal_path=tmp_path / "events.jsonl",
             controller=controller,
+            report_output_dir=tmp_path / "reports",
         )
         event = MarketEvent.from_mapping({"symbol": "MUUSDT", "event_type": "TRADE", "exchange_timestamp": _at(), "event_id": "runtime-1", "price": 100, "quantity": 1})
         result = await runtime.run(IterableMarketEventSource([event]), max_events=1)
@@ -300,12 +322,148 @@ def test_v41_default_controller_path_uses_frozen_config(monkeypatch: pytest.Monk
         market_data=object(),
         db_path=tmp_path / "default-controller.db",
         controller=None,
+        report_output_dir=tmp_path / "reports",
     )
     config = captured["config"]
-    assert config.raw["selection"]["symbol_allowlist"] == ["SNDKUSDT", "MUUSDT", "SOXLUSDT", "SKHYNIXUSDT"]
+    assert config.raw["selection"]["symbol_allowlist"] == ["SNDKUSDT", "MUUSDT", "SOXLUSDT"]
     assert config.raw["trading"]["leverage"] == 1
     assert config.raw["features"]["regime_v2"] is True
     assert captured["live_observation"] is False
+
+
+def test_v41_frozen_compiler_maps_real_controller_and_sha(tmp_path: Path) -> None:
+    runtime = ContinuousShadowRuntime.create(
+        repo_root=".",
+        market_data=object(),
+        db_path=tmp_path / "frozen-controller.db",
+        report_output_dir=tmp_path / "reports",
+    )
+    manifest = runtime.strategy_manifest
+    semantics = manifest["strategy_semantics"]
+    config = runtime.controller.config
+    assert manifest["effective_strategy_sha"] == "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3"
+    assert manifest["candidate_sha"] == "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774"
+    assert semantics["direction"] == "NEUTRAL"
+    assert semantics["symbol_profiles"]["SKHYNIXUSDT"]["runtime_role"] == "RESEARCH_ONLY"
+    assert semantics["symbol_profiles"]["SNDKUSDT"]["runtime_role"] == "SHADOW_ELIGIBLE"
+    assert config.take_profit_usdt == 0.0
+    assert runtime.controller.risk.config.profit_protection_enabled is False
+    assert config.leverage == 1
+    assert config.grid_range_multiplier_by_symbol["MUUSDT"] == 2.0
+    assert config.grid_min_step_pct_by_symbol["MUUSDT"] == pytest.approx(
+        semantics["grid"]["min_step_pct_by_symbol"]["MUUSDT"]
+    )
+    generator = runtime.controller._adaptive_grid_for_symbol("MUUSDT")
+    assert generator.config.min_grid_num == 5
+    assert generator.config.max_grid_num == 10
+    assert generator.config.k_atr_range == pytest.approx(semantics["range"]["effective_k_atr_range"])
+    assert generator.config.k_sigma_range == pytest.approx(semantics["range"]["effective_k_sigma_range"])
+    assert generator.config.max_range_pct == pytest.approx(semantics["range"]["effective_max_range_pct"])
+    assert runtime.controller.inventory.config.caution_utilization == pytest.approx(0.4)
+    assert runtime.controller.inventory.config.critical_utilization == pytest.approx(0.8)
+    assert runtime.controller._capital_for_symbol("SOXLUSDT") == pytest.approx(config.capital_per_symbol * 0.5)
+
+
+def test_v41_market_event_identity_and_native_trade_id(tmp_path: Path) -> None:
+    event = MarketEvent.from_mapping(
+        {"symbol": "MUUSDT", "event_type": "TRADE", "t": "12345", "exchange_timestamp": _at(), "price": 100, "quantity": 1}
+    )
+    assert event.event_id == "12345"
+    assert event.raw_event_id == "12345"
+    fallback = MarketEvent.from_mapping({"symbol": "MUUSDT", "exchange_timestamp": _at(), "price": 100, "quantity": 1})
+    assert fallback.event_id.startswith("EVENT_ID_FALLBACK_HASH:")
+    assert fallback.payload.get("event_id_mode") == "EVENT_ID_FALLBACK_HASH"
+
+    async def scenario() -> None:
+        broker = ShadowBroker(tmp_path / "identity.db", PAPER_BASELINE)
+        broker._last_market["MUUSDT"] = {"bid": 99, "ask": 101, "last": 100}
+        broker._last_market["SNDKUSDT"] = {"bid": 99, "ask": 101, "last": 100}
+        at = _at()
+        trade = {
+            "source": "PUBLIC_WEBSOCKET",
+            "symbol": "MUUSDT",
+            "event_type": "TRADE",
+            "exchange_timestamp": at,
+            "receive_timestamp": at,
+            "event_id": "same-id",
+            "trade_price": 100,
+            "trade_qty": 1,
+        }
+        assert await broker.process_market_event("MUUSDT", trade) == []
+        assert await broker.process_market_event("MUUSDT", trade) == []
+        assert await broker.process_market_event("SNDKUSDT", {**trade, "symbol": "SNDKUSDT"}) == []
+        assert await broker.process_market_event("MUUSDT", {**trade, "event_type": "BOOK_TICKER", "bid": 99, "ask": 101}) == []
+        second = {
+            **trade,
+            "event_id": "same-id-2",
+            "exchange_timestamp": at + timedelta(microseconds=1),
+        }
+        assert await broker.process_market_event("MUUSDT", second) == []
+
+    asyncio.run(scenario())
+
+
+def test_v41_book_freshness_separates_trade_and_book_and_blocks_maker(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        broker = ShadowBroker(tmp_path / "freshness.db", PAPER_BASELINE)
+        assert broker._book_is_fresh("MUUSDT") is False
+        broker._last_market["MUUSDT"] = {"bid": 99, "ask": 101}
+        assert broker._book_is_fresh("MUUSDT") is True
+        at = _at()
+        await broker.place_market_order("MUUSDT", "BUY", 1, reduce_only=False, client_id="freshness-seed")
+        await broker.process_market_event(
+            "MUUSDT",
+            {
+                "source": "PUBLIC_WEBSOCKET",
+                "symbol": "MUUSDT",
+                "event_type": "BOOK_TICKER",
+                "exchange_timestamp": at,
+                "receive_timestamp": at,
+                "event_id": "book-1",
+                "bid": 99,
+                "bid_qty": 50,
+                "ask": 101,
+                "ask_qty": 40,
+            },
+        )
+        assert broker._book_is_fresh("MUUSDT") is True
+        await broker.process_market_event(
+            "MUUSDT",
+            {
+                "source": "PUBLIC_WEBSOCKET",
+                "symbol": "MUUSDT",
+                "event_type": "TRADE",
+                "exchange_timestamp": at + timedelta(seconds=1),
+                "receive_timestamp": at + timedelta(seconds=1),
+                "event_id": "trade-1",
+                "trade_price": 100,
+                "trade_qty": 1,
+            },
+        )
+        assert broker._book_is_fresh("MUUSDT") is True
+        broker._last_market["MUUSDT"]["_book_received_at"] = datetime.now(UTC) - timedelta(seconds=broker.profile.stale_timeout_seconds + 1)
+        stale_rejected = await broker.place_limit_order_post_only("MUUSDT", "BUY", 99, 1, "stale-blocked")
+        assert stale_rejected["status"] == "REJECTED"
+        assert stale_rejected["rejectReason"] == "BOOK_DATA_STALE"
+        reduced = await broker.place_limit_order_post_only("MUUSDT", "SELL", 101, 1, "stale-reduce", position_side="LONG")
+        assert reduced["status"] == "NEW"
+
+    asyncio.run(scenario())
+
+
+def test_v41_reports_do_not_overwrite_and_can_target_temp_dir(tmp_path: Path) -> None:
+    reports = tmp_path / "reports"
+    write_v41_reports(tmp_path, output_dir=reports, probe={"classification": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE", "symbols": []})
+    probe_json = reports / "production-public-capability.json"
+    assert probe_json.exists()
+    write_v41_reports(tmp_path, output_dir=reports, runtime={"status": "SKIPPED"})
+    assert json.loads(probe_json.read_text(encoding="utf-8"))["classification"] == "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
+    baseline_manifest = reports / "run-manifest-paper_baseline.json"
+    conservative_manifest = reports / "run-manifest-paper_conservative.json"
+    assert baseline_manifest != conservative_manifest
+    assert baseline_manifest.exists() is False
+    assert conservative_manifest.exists() is False
+    assert (reports / "run-manifest.json").exists()
 
 
 def test_v41_probe_is_public_only_and_partial_is_a_string(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -344,6 +502,21 @@ def test_v41_probe_is_public_only_and_partial_is_a_string(monkeypatch: pytest.Mo
     result = asyncio.run(probe(network=True, websocket=True, market_data=PublicMarket()))
     assert result["classification"] == "PRODUCTION_PUBLIC_TRADFI_SUPPORTED"
     assert all(item["final_capability"] == "SUPPORTED" for item in result["symbols"])
+
+
+def test_v41_probe_incomplete_when_network_is_unavailable_or_before_rest(monkeypatch: pytest.MonkeyPatch) -> None:
+    skipped = asyncio.run(probe(network=False))
+    assert skipped["classification"] == "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
+
+    class BrokenMarket:
+        async def get_symbols(self):
+            raise OSError("network unavailable")
+
+        async def close(self):
+            return None
+
+    failed = asyncio.run(probe(network=True, websocket=False, market_data=BrokenMarket()))
+    assert failed["classification"] == "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
 
 
 def test_v41_testnet_lifecycle_requires_explicit_authorization(monkeypatch: pytest.MonkeyPatch) -> None:

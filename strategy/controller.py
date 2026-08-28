@@ -83,6 +83,7 @@ class ControllerConfig:
     max_concurrent: int
     take_profit_usdt: float
     total_capital_limit: float
+    profit_protection_enabled: bool = True
     max_maker_fee_rate: float = 0.0
     maker_fee_check_interval_seconds: float = 300.0
     loop_interval_seconds: float = 10
@@ -97,7 +98,9 @@ class ControllerConfig:
     direction_mode: GridDirectionMode = GridDirectionMode.NEUTRAL
     direction_overrides: dict[str, GridDirectionMode] = field(default_factory=dict)
     grid_range_multiplier_by_symbol: dict[str, float] = field(default_factory=dict)
+    grid_max_range_pct_by_symbol: dict[str, float] = field(default_factory=dict)
     grid_min_step_pct_by_symbol: dict[str, float] = field(default_factory=dict)
+    capital_multiplier_by_symbol: dict[str, float] = field(default_factory=dict)
     entry_filters_by_symbol: dict[str, EntryFilterConfig] = field(default_factory=dict)
     max_unpaired_lots_per_side_by_symbol: dict[str, int] = field(default_factory=dict)
     reduce_target_step_fraction_by_symbol: dict[str, float] = field(default_factory=dict)
@@ -205,6 +208,7 @@ class TradingController:
             scheduler,
             RiskConfig(
                 take_profit_usdt=controller_config.take_profit_usdt,
+                profit_protection_enabled=controller_config.profit_protection_enabled,
                 total_capital_limit=controller_config.total_capital_limit,
                 max_concurrent=controller_config.max_concurrent,
                 effective_leverage_cap=(
@@ -281,7 +285,7 @@ class TradingController:
             return result
         if (
             not _positive_finite_number(self.config.leverage)
-            or not _positive_finite_number(self.config.take_profit_usdt)
+            or (self.config.profit_protection_enabled and not _positive_finite_number(self.config.take_profit_usdt))
             or not _non_negative_finite_number(self.config.max_maker_fee_rate)
             or not _non_negative_finite_number(self.config.maker_fee_check_interval_seconds)
             or not 0 <= float(self.config.seed_max_slippage_pct) < 1
@@ -516,7 +520,7 @@ class TradingController:
                 window_id=window_id,
                 symbol=symbol,
                 state=GridState.OBSERVING.value,
-                capital=self.config.capital_per_symbol,
+                capital=self._capital_for_symbol(symbol),
                 leverage=self.config.leverage,
                 open_time=current_time,
                 direction_mode=direction_mode,
@@ -624,7 +628,7 @@ class TradingController:
                 )
                 continue
             allowed = effective_risk.can_open_new_symbol(
-                list(self.active_sessions.values()), self.config.capital_per_symbol,
+                list(self.active_sessions.values()), self._capital_for_symbol(symbol),
                 consecutive_session_losses=self.repository.consecutive_session_losses(self.current_window_id),
             )
             if allowed.action != RiskAction.NONE:
@@ -647,7 +651,7 @@ class TradingController:
                 params=params,
                 orders=[],
                 realized_pnl=0.0,
-                capital=self.config.capital_per_symbol,
+                capital=self._capital_for_symbol(symbol),
                 leverage=self.config.leverage,
                 open_time=current_time,
                 state_entered_at=current_time,
@@ -1230,7 +1234,7 @@ class TradingController:
                     funding_cost_rate=projected_funding_cost,
                     maker_fee_rate=maker_fee_rate,
                     regime_score=structural_decision.grid_score if structural_decision else 100.0,
-                    capital=self.config.capital_per_symbol,
+                    capital=self._capital_for_symbol(item.symbol),
                     leverage=self.config.leverage,
                     tick_size=_non_negative_float(
                         symbol_rules.get("tick_size", 0.0),
@@ -1443,6 +1447,10 @@ class TradingController:
             normalized,
             base.min_step_pct,
         )
+        max_range_pct = self.config.grid_max_range_pct_by_symbol.get(
+            normalized,
+            base.max_range_pct,
+        )
         if not _positive_finite_number(range_multiplier):
             raise ValueError(f"{normalized} 网格区间倍率必须为正的有限数。")
         if not _positive_finite_number(min_step_pct):
@@ -1452,6 +1460,7 @@ class TradingController:
             k_atr_range=base.k_atr_range * float(range_multiplier),
             k_sigma_range=base.k_sigma_range * float(range_multiplier),
             min_step_pct=float(min_step_pct),
+            max_range_pct=float(max_range_pct),
         )
         if effective_config == base:
             return self.adaptive_grid
@@ -1641,7 +1650,7 @@ class TradingController:
         params = replace(params, direction_mode=direction_mode)
         entry_risk = self.risk.can_open_new_symbol(
             list(self.active_sessions.values()),
-            self.config.capital_per_symbol,
+            self._capital_for_symbol(symbol),
             regime_allowed=(
                 not self.feature_flags.regime_v2
                 or bool(self._regime_by_symbol.get(symbol) and self._regime_by_symbol[symbol].allowed)
@@ -1700,7 +1709,7 @@ class TradingController:
             self.current_window_id,
             symbol,
             GridState.OBSERVING.value,
-            self.config.capital_per_symbol,
+            self._capital_for_symbol(symbol),
             self.config.leverage,
             at,
             direction_mode,
@@ -1718,7 +1727,7 @@ class TradingController:
             params=params,
             orders=[],
             realized_pnl=0.0,
-            capital=self.config.capital_per_symbol,
+            capital=self._capital_for_symbol(symbol),
             leverage=self.config.leverage,
             open_time=at,
             state_entered_at=at,
@@ -1874,6 +1883,13 @@ class TradingController:
         if isinstance(selected, GridDirectionMode):
             return selected
         return GridDirectionMode(str(selected).strip().upper())
+
+    def _capital_for_symbol(self, symbol: str) -> float:
+        normalized = str(symbol).strip().upper()
+        multiplier = self.config.capital_multiplier_by_symbol.get(normalized, 1.0)
+        if not _positive_finite_number(multiplier):
+            raise ValueError(f"{normalized} capital multiplier must be positive")
+        return float(self.config.capital_per_symbol) * float(multiplier)
 
     def _direction_source_for_symbol(self, symbol: str) -> str:
         normalized = str(symbol).strip().upper()

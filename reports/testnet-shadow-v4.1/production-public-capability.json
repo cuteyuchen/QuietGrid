@@ -1,27 +1,27 @@
 {
-  "generated_at": "2026-08-27T16:24:43.648431+00:00",
+  "generated_at": "2026-08-28T03:00:25.906454+00:00",
   "endpoint": "https://fapi.binance.com",
   "websocket_endpoint": "wss://fstream.binance.com/stream",
   "symbols": [
     {
       "symbol": "SNDKUSDT",
-      "status": "ERROR_RETRYABLE",
-      "final_capability": "NOT_PROBED"
+      "status": "ERROR_FATAL",
+      "final_capability": "ERROR_FATAL"
     },
     {
       "symbol": "MUUSDT",
-      "status": "ERROR_RETRYABLE",
-      "final_capability": "NOT_PROBED"
+      "status": "ERROR_FATAL",
+      "final_capability": "ERROR_FATAL"
     },
     {
       "symbol": "SOXLUSDT",
-      "status": "ERROR_RETRYABLE",
-      "final_capability": "NOT_PROBED"
+      "status": "ERROR_FATAL",
+      "final_capability": "ERROR_FATAL"
     },
     {
       "symbol": "SKHYNIXUSDT",
-      "status": "ERROR_RETRYABLE",
-      "final_capability": "NOT_PROBED"
+      "status": "ERROR_FATAL",
+      "final_capability": "ERROR_FATAL"
     }
   ],
   "production_private_api": "DISABLED",
@@ -44,11 +44,9 @@
     }
   },
   "server_time": {
-    "status": "SKIPPED_NETWORK_UNAVAILABLE"
+    "status": "ERROR_FATAL",
+    "error": "Client error '451 ' for url 'https://fapi.binance.com/fapi/v1/exchangeInfo'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/451"
   },
-  "websocket": {
-    "status": "SKIPPED_NETWORK_UNAVAILABLE"
-  },
-  "classification": "PRODUCTION_PUBLIC_TRADFI_UNSUPPORTED",
-  "conclusion": "SKIPPED_NETWORK_UNAVAILABLE"
+  "classification": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE",
+  "no_credentials_used": true
 }

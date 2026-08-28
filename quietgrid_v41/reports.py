@@ -14,20 +14,13 @@ def write_v41_reports(
     runtime: dict[str, Any] | None = None,
     recovery: dict[str, Any] | None = None,
     testnet: dict[str, Any] | None = None,
+    output_dir: str | Path | None = None,
 ) -> Path:
-    out = Path(repo_root).resolve() / "reports" / "testnet-shadow-v4.1"
+    out = Path(output_dir).resolve() if output_dir is not None else Path(repo_root).resolve() / "reports" / "testnet-shadow-v4.1"
     out.mkdir(parents=True, exist_ok=True)
     if probe is not None:
         write_probe_reports(probe, out)
-    else:
-        write_probe_reports(
-            {
-                "classification": "NOT_RUN",
-                "symbols": [{"symbol": symbol, "status": "NOT_PROBED", "final_capability": "NOT_PROBED"} for symbol in ("SNDKUSDT", "MUUSDT", "SOXLUSDT", "SKHYNIXUSDT")],
-                "production_private_api": "DISABLED",
-            },
-            out,
-        )
+    probe_result = probe or {"classification": "NOT_RUN", "symbols": []}
     runtime = runtime or {"status": "NOT_RUN", "reconcile": {"result": "NOT_RUN"}}
     recovery = recovery or {"status": "NOT_RUN"}
     testnet = testnet or {"status": "SKIPPED_TESTNET_ORDER_LIFECYCLE_NOT_AUTHORIZED", "conclusion": "EXECUTION_INFRA_ONLY"}
@@ -90,13 +83,13 @@ def write_v41_reports(
         "forward_oos": "2 / 8",
         "runtime": runtime,
         "recovery": recovery,
-        "production_public": probe or {"classification": "NOT_RUN"},
+        "production_public": probe_result,
         "testnet": testnet,
         "production_private_api": "DISABLED",
         "profitability": "NOT_EVALUATED_FOR_PROFITABILITY",
     }
     (out / "run-manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-    production_ready = (probe or {}).get("classification") == "PRODUCTION_PUBLIC_TRADFI_SUPPORTED"
+    production_ready = probe_result.get("classification") == "PRODUCTION_PUBLIC_TRADFI_SUPPORTED"
     runtime_ready = runtime.get("conclusion") == "PASS_CONTINUOUS_SHADOW_RUNTIME"
     recovery_ready = recovery.get("status") == "PASS_SHADOW_RESTART_RECOVERY"
     bounded_ready = runtime.get("bounded_soak") == "PASS_BOUNDED_SOAK"
@@ -112,7 +105,7 @@ def write_v41_reports(
         "# QuietGrid v4.1 Shadow Runtime Report\n\n"
         f"- Branch gate: PASS_BRANCH_CONSOLIDATION\n"
         f"- Freeze: PASS_FREEZE_INTEGRITY\n"
-        f"- Production public: {(probe or {}).get('classification', 'NOT_RUN')}\n"
+        f"- Production public: {probe_result.get('classification', 'NOT_RUN')}\n"
         f"- Execution: {execution_code}\n"
         f"- Runtime: {runtime.get('conclusion', runtime.get('status', 'NOT_RUN'))}\n"
         f"- Overall: {overall}\n"

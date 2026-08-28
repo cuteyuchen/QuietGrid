@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-28T03:00:25.906454+00:00",
+  "generated_at": "2026-08-28T03:29:18.697240+00:00",
   "endpoint": "https://fapi.binance.com",
   "websocket_endpoint": "wss://fstream.binance.com/stream",
   "symbols": [

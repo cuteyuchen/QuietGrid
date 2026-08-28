@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-28T11:31:03.627612+08:00",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "git_commit": "5f7c58c08717039a13e45a4483185a1d9ce6e9ef",
+  "candidate": {
+    "id": "31111-NEUTRAL",
+    "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+    "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+    "freeze_tag": "semiconductor-grid-forward-oos-v2.9-freeze",
+    "freeze_artifact_blob_sha": "8d78533ef4601439cb9d14bb0b4628b596cf4fd0",
+    "semantics": {
+      "direction": "NEUTRAL",
+      "economic_leverage": 1,
+      "c1": "DISABLED",
+      "live_symbols": ["SNDKUSDT", "MUUSDT", "SOXLUSDT"],
+      "research_only_symbols": ["SKHYNIXUSDT"]
+    }
+  },
+  "stages": {
+    "preflight": {
+      "result": "PASS_PRE_FLIGHT_REGRESSION",
+      "tests": "844 passed",
+      "compileall_project_source": "PASS",
+      "compileall_note": "bare compileall . also scans .venv and reports syntax errors in ccxt static dependency files; all project source compiles clean",
+      "git_diff_check": "PASS",
+      "worktree": "clean"
+    },
+    "production_public_probe": {
+      "result": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE",
+      "classification": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE",
+      "reason": "HTTP 451 from https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "symbols": {
+        "SNDKUSDT": "ERROR_FATAL",
+        "MUUSDT": "ERROR_FATAL",
+        "SOXLUSDT": "ERROR_FATAL",
+        "SKHYNIXUSDT": "ERROR_FATAL"
+      },
+      "symbol_conclusion": "NO_CAPABILITY_EVIDENCE"
+    },
+    "paper_baseline_public_smoke": {
+      "result": "SKIPPED",
+      "conclusion": "NOT_PASS",
+      "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
+    },
+    "paper_conservative_public_smoke": {
+      "result": "SKIPPED",
+      "conclusion": "NOT_PASS",
+      "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
+    },
+    "websocket_disconnect_reconnect": {
+      "result": "NOT_RUN",
+      "conclusion": "NOT_PASS",
+      "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
+    },
+    "process_restart_recovery": {
+      "result": "NOT_RUN",
+      "conclusion": "NOT_PASS",
+      "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
+    },
+    "bounded_shadow_soak": {
+      "result": "NOT_RUN",
+      "conclusion": "NOT_PASS",
+      "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE"
+    }
+  },
+  "acceptance_gates": {
+    "PASS_PRE_FLIGHT_REGRESSION": "PASS",
+    "PASS_PRODUCTION_PUBLIC_PROBE": "NOT_PASS",
+    "PASS_PUBLIC_BASELINE_SMOKE": "NOT_PASS",
+    "PASS_PUBLIC_CONSERVATIVE_SMOKE": "NOT_PASS",
+    "PASS_PUBLIC_STREAM_RECOVERY": "NOT_PASS",
+    "PASS_SHADOW_PROCESS_RESTART_RECOVERY": "NOT_PASS",
+    "PASS_BOUNDED_SHADOW_SOAK": "NOT_PASS",
+    "PASS_FROZEN_RUNTIME_PARITY": "PASS_PREVIOUS_EVIDENCE",
+    "PASS_NO_PRODUCTION_PRIVATE_API": "PASS",
+    "PASS_NO_REAL_ORDER_MUTATION": "PASS"
+  },
+  "overall": "BLOCKED_V41_NETWORK_VALIDATION",
+  "long_shadow_observation": "NOT_READY_FOR_LONG_SHADOW_OBSERVATION",
+  "profitability": "NOT_EVALUATED_FOR_PROFITABILITY"
+}

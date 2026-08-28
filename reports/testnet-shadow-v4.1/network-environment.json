@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-28T11:31:03.627612+08:00",
+  "environment_classification": "HTTP_451_REGIONAL_OR_LEGAL_RESTRICTION",
+  "network": {
+    "target": "BINANCE_FUTURES_PRODUCTION_PUBLIC",
+    "rest_endpoint": "https://fapi.binance.com",
+    "websocket_endpoint": "wss://fstream.binance.com/stream",
+    "failed_request": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+    "http_status": 451,
+    "probe_classification": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE",
+    "public_rest_evidence": "INCOMPLETE",
+    "public_websocket_evidence": "NOT_ATTEMPTED",
+    "dns_resolution_confirmed": false,
+    "tls_handshake_confirmed": false
+  },
+  "safety": {
+    "vpn_proxy_tunnel_used": false,
+    "host_or_dns_override_used": false,
+    "third_party_relay_used": false,
+    "credentials_used": false,
+    "production_private_api_called": false,
+    "signed_requests": "DISABLED",
+    "production_private_api": "DISABLED",
+    "real_order_mutation": false,
+    "paper_order_mutation": false
+  }
+}

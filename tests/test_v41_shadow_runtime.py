@@ -502,10 +502,16 @@ def test_v41_probe_is_public_only_and_partial_is_a_string(monkeypatch: pytest.Mo
     monkeypatch.setattr("quietgrid_v41.production_probe._public_websocket_probe", fake_ws)
     result = asyncio.run(probe(network=True, websocket=True, market_data=PublicMarket()))
     assert result["classification"] == "PRODUCTION_PUBLIC_TRADFI_SUPPORTED"
-    assert all(item["final_capability"] == "SUPPORTED" for item in result["symbols"])
+    assert all(
+        item["final_capability"] == "SUPPORTED"
+        for item in result["symbols"]
+        if item["symbol"] != "SKHYNIXUSDT"
+    )
+    research_only = next(item for item in result["symbols"] if item["symbol"] == "SKHYNIXUSDT")
+    assert research_only["final_capability"] == "RESEARCH_ONLY"
 
 
-def test_v41_probe_records_rate_limit_without_marking_symbol_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_v41_probe_records_rate_limit_without_marking_symbol_unsupported(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     class RateLimitedMarket:
         async def get_symbols(self):
             return [{"symbol": symbol, "status": "TRADING", "contractType": "TRADIFI_PERPETUAL"} for symbol in ("SNDKUSDT", "MUUSDT", "SOXLUSDT", "SKHYNIXUSDT")]
@@ -539,10 +545,21 @@ def test_v41_probe_records_rate_limit_without_marking_symbol_unsupported(monkeyp
     async def fake_ws(symbols, timeout):
         return {"status": "SUPPORTED", "message_received": True}
 
+    monkeypatch.setattr(
+        "quietgrid_v41.production_probe.COOLDOWN_FILE",
+        tmp_path / "production-public-cooldown.json",
+    )
     monkeypatch.setattr("quietgrid_v41.production_probe._public_websocket_probe", fake_ws)
     result = asyncio.run(probe(network=True, websocket=True, market_data=RateLimitedMarket()))
-    assert result["classification"] == "PRODUCTION_PUBLIC_TRADFI_PARTIAL_RATE_LIMITED"
-    assert all(item["final_capability"] == "PARTIAL_RATE_LIMITED" for item in result["symbols"])
+    assert result["classification"] == "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED"
+    assert result["websocket"]["status"] == "SKIPPED_DUE_TO_RATE_LIMIT"
+    sndk = next(item for item in result["symbols"] if item["symbol"] == "SNDKUSDT")
+    assert sndk["final_capability"] == "PARTIAL_RATE_LIMITED"
+    assert all(
+        item["final_capability"] == "NOT_RUN_DUE_TO_RATE_LIMIT"
+        for item in result["symbols"]
+        if item["symbol"] != "SNDKUSDT"
+    )
     assert result["rate_limited_stages"]
     assert result["rate_limited_stages"][0]["status_code"] == 418
 

@@ -1,7 +1,8 @@
 {
+  "generated_at": "2026-08-28T11:43:03.262439+08:00",
   "status": "SKIPPED",
-  "reason": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE",
-  "probe_classification": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE",
-  "network": "binance_fapi_http_451",
+  "reason": "BLOCKED_BY_RUNTIME_DEFECT",
+  "probe_classification": "PRODUCTION_PUBLIC_TRADFI_PARTIAL",
+  "network": "binance_fapi_production_public",
   "conclusion": "NOT_PASS"
 }

@@ -1,27 +1,109 @@
 {
-  "generated_at": "2026-08-28T03:29:18.697240+00:00",
+  "generated_at": "2026-08-28T03:39:00.200661+00:00",
   "endpoint": "https://fapi.binance.com",
   "websocket_endpoint": "wss://fstream.binance.com/stream",
   "symbols": [
     {
       "symbol": "SNDKUSDT",
-      "status": "ERROR_FATAL",
-      "final_capability": "ERROR_FATAL"
+      "exists": true,
+      "status": "PARTIAL",
+      "contractType": "TRADIFI_PERPETUAL",
+      "checks": {
+        "symbol_existence": true,
+        "status": "TRADING",
+        "contract_type": "TRADIFI_PERPETUAL",
+        "filters": true,
+        "ticker": true,
+        "depth": true,
+        "kline": true,
+        "mark_price": true,
+        "funding": true,
+        "tick_size": true,
+        "step_size": true,
+        "min_qty": true,
+        "min_notional": false
+      },
+      "errors": {},
+      "rest_capability": "PARTIAL",
+      "final_capability": "PARTIAL"
     },
     {
       "symbol": "MUUSDT",
-      "status": "ERROR_FATAL",
-      "final_capability": "ERROR_FATAL"
+      "exists": true,
+      "status": "PARTIAL",
+      "contractType": "TRADIFI_PERPETUAL",
+      "checks": {
+        "symbol_existence": true,
+        "status": "TRADING",
+        "contract_type": "TRADIFI_PERPETUAL",
+        "filters": true,
+        "ticker": true,
+        "depth": true,
+        "kline": false,
+        "mark_price": true,
+        "funding": true,
+        "tick_size": true,
+        "step_size": true,
+        "min_qty": true,
+        "min_notional": false
+      },
+      "errors": {
+        "kline": "Client error '418 I'm a teapot' for url 'https://fapi.binance.com/fapi/v1/klines?symbol=MUUSDT&interval=1m&limit=2'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/418"
+      },
+      "rest_capability": "PARTIAL",
+      "final_capability": "PARTIAL"
     },
     {
       "symbol": "SOXLUSDT",
-      "status": "ERROR_FATAL",
-      "final_capability": "ERROR_FATAL"
+      "exists": true,
+      "status": "PARTIAL",
+      "contractType": "TRADIFI_PERPETUAL",
+      "checks": {
+        "symbol_existence": true,
+        "status": "TRADING",
+        "contract_type": "TRADIFI_PERPETUAL",
+        "filters": true,
+        "ticker": true,
+        "depth": true,
+        "kline": true,
+        "mark_price": false,
+        "funding": true,
+        "tick_size": true,
+        "step_size": true,
+        "min_qty": true,
+        "min_notional": false
+      },
+      "errors": {
+        "mark_price": "Client error '418 I'm a teapot' for url 'https://fapi.binance.com/fapi/v1/premiumIndex?symbol=SOXLUSDT'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/418"
+      },
+      "rest_capability": "PARTIAL",
+      "final_capability": "PARTIAL"
     },
     {
       "symbol": "SKHYNIXUSDT",
-      "status": "ERROR_FATAL",
-      "final_capability": "ERROR_FATAL"
+      "exists": true,
+      "status": "PARTIAL",
+      "contractType": "TRADIFI_PERPETUAL",
+      "checks": {
+        "symbol_existence": true,
+        "status": "TRADING",
+        "contract_type": "TRADIFI_PERPETUAL",
+        "filters": true,
+        "ticker": true,
+        "depth": true,
+        "kline": false,
+        "mark_price": true,
+        "funding": true,
+        "tick_size": true,
+        "step_size": true,
+        "min_qty": true,
+        "min_notional": false
+      },
+      "errors": {
+        "kline": "Client error '418 I'm a teapot' for url 'https://fapi.binance.com/fapi/v1/klines?symbol=SKHYNIXUSDT&interval=1m&limit=2'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/418"
+      },
+      "rest_capability": "PARTIAL",
+      "final_capability": "PARTIAL"
     }
   ],
   "production_private_api": "DISABLED",
@@ -44,9 +126,16 @@
     }
   },
   "server_time": {
-    "status": "ERROR_FATAL",
-    "error": "Client error '451 ' for url 'https://fapi.binance.com/fapi/v1/exchangeInfo'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/451"
+    "status": "SUPPORTED",
+    "serverTime": 1787888344944
   },
-  "classification": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE",
+  "websocket": {
+    "status": "SUPPORTED",
+    "received": {
+      "trade": true,
+      "bookTicker": true
+    }
+  },
+  "classification": "PRODUCTION_PUBLIC_TRADFI_PARTIAL",
   "no_credentials_used": true
 }

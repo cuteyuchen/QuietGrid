@@ -1,18 +1,29 @@
 {
-  "schema_version": 1,
-  "generated_at": "2026-08-28T11:31:03.627612+08:00",
-  "environment_classification": "HTTP_451_REGIONAL_OR_LEGAL_RESTRICTION",
+  "schema_version": 2,
+  "generated_at": "2026-08-28T11:43:03.262439+08:00",
+  "environment_classification": "PRODUCTION_PUBLIC_ACCESSIBLE_PARTIAL",
   "network": {
     "target": "BINANCE_FUTURES_PRODUCTION_PUBLIC",
     "rest_endpoint": "https://fapi.binance.com",
     "websocket_endpoint": "wss://fstream.binance.com/stream",
-    "failed_request": "https://fapi.binance.com/fapi/v1/exchangeInfo",
-    "http_status": 451,
-    "probe_classification": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE",
-    "public_rest_evidence": "INCOMPLETE",
-    "public_websocket_evidence": "NOT_ATTEMPTED",
-    "dns_resolution_confirmed": false,
-    "tls_handshake_confirmed": false
+    "exchange_info_http_status": 200,
+    "server_time_status": "SUPPORTED",
+    "public_websocket_status": "SUPPORTED",
+    "websocket_streams_received": {
+      "trade": true,
+      "bookTicker": true
+    },
+    "transient_http_418": true,
+    "http_418_endpoint_examples": [
+      "/fapi/v1/premiumIndex?symbol=SOXLUSDT",
+      "/fapi/v1/depth?symbol=SKHYNIXUSDT&limit=5",
+      "/fapi/v1/fundingRate?symbol=SKHYNIXUSDT&limit=1",
+      "/fapi/v1/klines?symbol=MUUSDT&interval=1m&limit=2",
+      "/fapi/v1/klines?symbol=SKHYNIXUSDT&interval=1m&limit=2"
+    ],
+    "slow_rest_recheck": "200_FOR_PREVIOUS_418_ENDPOINTS",
+    "probe_classification": "PRODUCTION_PUBLIC_TRADFI_PARTIAL",
+    "runtime_defect": "BLOCKED_BY_RUNTIME_DEFECT"
   },
   "safety": {
     "vpn_proxy_tunnel_used": false,

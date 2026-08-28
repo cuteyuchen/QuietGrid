@@ -1,6 +1,6 @@
 # QuietGrid v4.1 Network Validation Final Report
 
-- Generated at: `2026-08-28T11:31:03+08:00`
+- Generated at: `2026-08-28T11:43:03+08:00`
 - Branch: `codex/semiconductor-grid-continuous-shadow-runtime-v4.1`
 - HEAD: `5f7c58c08717039a13e45a4483185a1d9ce6e9ef`
 - Worktree: clean before probe
@@ -17,14 +17,22 @@
 
 ## Production Public Probe
 
-Status: `PRODUCTION_PUBLIC_PROBE_INCOMPLETE`
+Status: `PRODUCTION_PUBLIC_TRADFI_PARTIAL`
 
-- SNDKUSDT: `ERROR_FATAL` / no capability evidence
-- MUUSDT: `ERROR_FATAL` / no capability evidence
-- SOXLUSDT: `ERROR_FATAL` / no capability evidence
-- SKHYNIXUSDT: `ERROR_FATAL` / no capability evidence
+- SNDKUSDT: `PARTIAL` / `TRADING` / `TRADIFI_PERPETUAL`
+- MUUSDT: `PARTIAL` / `TRADING` / `TRADIFI_PERPETUAL`
+- SOXLUSDT: `PARTIAL` / `TRADING` / `TRADIFI_PERPETUAL`
+- SKHYNIXUSDT: `PARTIAL` / `TRADING` / `TRADIFI_PERPETUAL` / `RESEARCH_ONLY`
 
-Fatal reason: `HTTP 451` from `https://fapi.binance.com/fapi/v1/exchangeInfo`. Per validation rules, this is recorded as incomplete and not as symbol unsupported. No proxy, VPN, tunnel, host/DNS override, third-party relay, credential, or private API call was used.
+Server time: `SUPPORTED`. Public WebSocket: `SUPPORTED`, both `@trade` and `@bookTicker` observed. No proxy, VPN, tunnel, host/DNS override, third-party relay, credential, or private API call was used.
+
+## Blocking Defect
+
+Status: `BLOCKED_BY_RUNTIME_DEFECT`
+
+Binance Production `exchangeInfo` returns the `MIN_NOTIONAL` filter as `{"filterType":"MIN_NOTIONAL","notional":"5"}` for all four symbols. Frozen `ProductionPublicMarketData.get_symbol_rules()` reads `minNotional` instead of `notional`, so the frozen runtime observes `min_notional=0.0`. Controller and grid engine code treats `0` as no min-notional constraint, so the Production Public runtime would not apply Binance's 5 USDT minimum notional.
+
+Minimal reproduction and evidence: `reports/testnet-shadow-v4.1/runtime-defect-min-notional-key.md`.
 
 ## Later Stages
 
@@ -45,5 +53,6 @@ Fatal reason: `HTTP 451` from `https://fapi.binance.com/fapi/v1/exchangeInfo`. P
 ## Conclusion
 
 - Overall: `BLOCKED_V41_NETWORK_VALIDATION`
+- Blocking condition: `BLOCKED_BY_RUNTIME_DEFECT`
 - Long shadow observation: `NOT_READY_FOR_LONG_SHADOW_OBSERVATION`
 - Profitability: `NOT_EVALUATED_FOR_PROFITABILITY`

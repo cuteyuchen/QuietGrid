@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-29T01:27:00+08:00",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "git_commit": "d1cdcd736b3f97121a0b003fc0a52163e2f86636",
+  "candidate": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+  "forward_oos": "2 / 8",
+  "regression": {
+    "pytest_passed": 868,
+    "pytest_failed": 0,
+    "compileall": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "egress_qualification": {
+    "result": "PASS_PROXY_EGRESS_QUALIFICATION",
+    "stability": "STABLE_PROXY_EGRESS",
+    "proxy": "Clash Verge / Mihomo",
+    "proxy_group_type": "select",
+    "pinned_node": "印度孟买",
+    "tun_enabled": true,
+    "egress_ip": "141.148.210.128",
+    "egress_provider": "AS31898 Oracle Corporation, Mumbai, IN",
+    "shared_status": "UNKNOWN_OR_POSSIBLY_SHARED",
+    "operational_egress_risk": "PRESENT",
+    "other_binance_consumers": "NONE",
+    "cooldown_expired": true,
+    "binance_requests_for_egress_check": 0
+  },
+  "stages": {
+    "production_public_probe": {
+      "result": "PASS_PRODUCTION_PUBLIC_PROBE",
+      "classification": "PRODUCTION_PUBLIC_TRADFI_SUPPORTED",
+      "live_shadow_gate": "PASS",
+      "SNDKUSDT": "SUPPORTED",
+      "MUUSDT": "SUPPORTED",
+      "SOXLUSDT": "SUPPORTED",
+      "SKHYNIXUSDT": "RESEARCH_ONLY",
+      "trade_websocket": "SUPPORTED",
+      "bookticker_websocket": "SUPPORTED",
+      "rate_limited_count": 0
+    },
+    "paper_baseline_smoke": {
+      "result": "FAIL_PUBLIC_BASELINE_SMOKE",
+      "failure": "BLOCKED_BY_RUNTIME_DEFECT",
+      "error": "sqlite3.OperationalError: no such table: control_state",
+      "production_private_api_calls": 0,
+      "signed_requests": 0,
+      "real_orders": 0
+    },
+    "paper_conservative_smoke": "NOT_STARTED",
+    "websocket_recovery": "NOT_STARTED",
+    "process_restart_recovery": "NOT_STARTED",
+    "bounded_shadow_soak": "NOT_STARTED"
+  },
+  "final_result": "BLOCKED_V41_NETWORK_VALIDATION",
+  "long_shadow_readiness": "NOT_READY_FOR_LONG_SHADOW_OBSERVATION",
+  "profitability_status": "NOT_EVALUATED_FOR_PROFITABILITY"
+}

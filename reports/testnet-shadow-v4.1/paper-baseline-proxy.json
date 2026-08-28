@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-08-29T01:27:00+08:00",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "git_commit": "d1cdcd736b3f97121a0b003fc0a52163e2f86636",
+  "candidate": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+  "forward_oos": "2 / 8",
+  "egress_qualification": "PASS_PROXY_EGRESS_QUALIFICATION",
+  "egress_stability": "STABLE_PROXY_EGRESS",
+  "egress_ip": "141.148.210.128",
+  "profile": "PAPER_BASELINE",
+  "started_at": "2026-08-28T17:21:11.368318+00:00",
+  "failed_at": "2026-08-28T17:21:32.958406+00:00",
+  "result": "FAIL_PUBLIC_BASELINE_SMOKE",
+  "failure_reason": "BLOCKED_BY_RUNTIME_DEFECT",
+  "defect": {
+    "summary": "sqlite3.OperationalError: no such table: control_state",
+    "trigger": "Fresh shadow DB + real TradingController + first market event",
+    "stack": [
+      "quietgrid_v41/runtime.py:329 in run -> fills = await self._consume(event)",
+      "quietgrid_v41/runtime.py:291 in _consume -> await self._controller_tick(event)",
+      "quietgrid_v41/runtime.py:272 in _controller_tick -> result = await result",
+      "strategy/controller.py:458 in run_once -> self._apply_runtime_config_draft(current_time)",
+      "strategy/controller.py:1923 in _apply_runtime_config_draft -> draft = self.repository.strategy_config_draft()",
+      "db/repository.py:1298 in strategy_config_draft -> state = self.get_control_state().get(\"strategy_config_draft\")",
+      "db/repository.py:599 in get_control_state -> SELECT key, value, updated_at FROM control_state"
+    ],
+    "deterministic_repro": "ContinuousShadowRuntime.create(fresh db, real controller) then run one Trade event with IterableMarketEventSource -> sqlite3.OperationalError"
+  },
+  "events_before_failure": {
+    "REST_RECOVERY": 4,
+    "TRADE": 1
+  },
+  "controller_ticks": 0,
+  "orders_created": 0,
+  "orders_rejected": 0,
+  "post_only_rejections": 0,
+  "partial_fills": 0,
+  "full_fills": 0,
+  "cancels": 0,
+  "stops": 0,
+  "reduce_only_actions": 0,
+  "force_flat_actions": 0,
+  "funding_events": 0,
+  "positions": {},
+  "production_private_api_calls": 0,
+  "signed_requests": 0,
+  "real_orders": 0
+}

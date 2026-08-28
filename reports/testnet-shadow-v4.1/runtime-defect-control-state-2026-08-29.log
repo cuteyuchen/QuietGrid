@@ -1,0 +1,38 @@
+QuietGrid v4.1 Proxy-Based Production Public Network Validation
+RUNTIME DEFECT LOG
+Date: 2026-08-29T01:21Z/08:00
+
+Deterministic repro command:
+ContinuousShadowRuntime.create(fresh db, real controller) then run one Trade event
+via IterableMarketEventSource with max_events=1, bootstrap_rest=False.
+
+Traceback:
+Traceback (most recent call last):
+  File "<stdin>", line 31, in <module>
+  File "asyncio/runners.py", line 196, in run
+  File "asyncio/base_events.py", line 725, in run_until_complete
+  File "<stdin>", line 28, in main
+  File "E:\project\QuietGrid\quietgrid_v41\runtime.py", line 329, in run
+    fills = await self._consume(event)
+  File "E:\project\QuietGrid\quietgrid_v41\runtime.py", line 291, in _consume
+    await self._controller_tick(event)
+  File "E:\project\QuietGrid\quietgrid_v41\runtime.py", line 272, in _controller_tick
+    result = await result
+  File "E:\project\QuietGrid\strategy\controller.py", line 458, in run_once
+    self._apply_runtime_config_draft(current_time)
+  File "E:\project\QuietGrid\strategy\controller.py", line 1923, in _apply_runtime_config_draft
+    draft = self.repository.strategy_config_draft()
+  File "E:\project\QuietGrid\db\repository.py", line 1298, in strategy_config_draft
+    state = self.get_control_state().get("strategy_config_draft")
+  File "E:\project\QuietGrid\db\repository.py", line 599, in get_control_state
+    rows = conn.execute("SELECT key, value, updated_at FROM control_state ORDER BY key").fetchall()
+sqlite3.OperationalError: no such table: control_state
+
+First live public smoke attempt (same code path):
+started_at=2026-08-28T17:21:11.368318+00:00
+failed_at=2026-08-28T17:21:32.958406+00:00
+events_before_failure: REST_RECOVERY=4, TRADE=1
+
+Production private API calls: 0
+Signed requests: 0
+Real orders: 0

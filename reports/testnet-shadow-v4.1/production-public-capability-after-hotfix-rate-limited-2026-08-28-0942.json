@@ -1,0 +1,128 @@
+{
+  "generated_at": "2026-08-28T09:42:16.411471+00:00",
+  "endpoint": "https://fapi.binance.com",
+  "websocket_endpoint": "wss://fstream.binance.com/stream",
+  "symbols": [
+    {
+      "symbol": "SNDKUSDT",
+      "exists": true,
+      "status": "PARTIAL_RATE_LIMITED",
+      "contractType": "TRADIFI_PERPETUAL",
+      "checks": {
+        "symbol_existence": true,
+        "status": "TRADING",
+        "contract_type": "TRADIFI_PERPETUAL",
+        "filters": true,
+        "ticker": false,
+        "depth": false,
+        "kline": false,
+        "mark_price": false,
+        "funding": false,
+        "tick_size": true,
+        "step_size": true,
+        "min_qty": true,
+        "min_notional": true
+      },
+      "errors": {
+        "ticker": "PARTIAL_RATE_LIMITED status=418 retry_after=14732 stage=SNDKUSDT:ticker"
+      },
+      "rest_capability": "PARTIAL",
+      "final_capability": "PARTIAL_RATE_LIMITED"
+    },
+    {
+      "symbol": "MUUSDT",
+      "exists": null,
+      "status": "NOT_RUN_DUE_TO_RATE_LIMIT",
+      "final_capability": "NOT_RUN_DUE_TO_RATE_LIMIT",
+      "reason": "rate limit fail fast"
+    },
+    {
+      "symbol": "SOXLUSDT",
+      "exists": null,
+      "status": "NOT_RUN_DUE_TO_RATE_LIMIT",
+      "final_capability": "NOT_RUN_DUE_TO_RATE_LIMIT",
+      "reason": "rate limit fail fast"
+    },
+    {
+      "symbol": "SKHYNIXUSDT",
+      "exists": null,
+      "status": "NOT_RUN_DUE_TO_RATE_LIMIT",
+      "final_capability": "NOT_RUN_DUE_TO_RATE_LIMIT",
+      "reason": "rate limit fail fast"
+    }
+  ],
+  "rate_limited_stages": [
+    {
+      "status_code": 418,
+      "retry_after": "14732",
+      "retry_after_seconds": 14732,
+      "headers": {
+        "x-mbx-used-weight-1m": "0",
+        "retry-after": "14732"
+      },
+      "stage": "SNDKUSDT:ticker",
+      "completed_checks": [
+        "symbol_existence",
+        "filters",
+        "tick_size",
+        "step_size",
+        "min_qty",
+        "min_notional"
+      ],
+      "remaining_checks": [
+        "ticker",
+        "depth",
+        "kline",
+        "mark_price",
+        "funding"
+      ]
+    }
+  ],
+  "request_pacing": {
+    "pacing_seconds": 0.4,
+    "exchange_info_calls": 1
+  },
+  "production_private_api": "DISABLED",
+  "signed_requests": "DISABLED",
+  "safety": {
+    "lane": "PUBLIC_DATA_ONLY",
+    "data_environment": "PRODUCTION_PUBLIC",
+    "order_environment": "NONE",
+    "candidate": "31111-NEUTRAL",
+    "economic_leverage": 1,
+    "production_private_api": "DISABLED",
+    "capabilities": {
+      "production_public_rest": true,
+      "production_public_websocket": true,
+      "production_signed_rest": false,
+      "testnet_signed_rest": false,
+      "testnet_websocket": false,
+      "paper_order_mutation": false,
+      "real_order_mutation": false
+    }
+  },
+  "rate_limited": true,
+  "cooldown": {
+    "detected_at": "2026-08-28T09:42:25.334444+00:00",
+    "status_code": 418,
+    "retry_after_seconds": 14732,
+    "cooldown_until": "2026-08-28T13:47:57.334444+00:00",
+    "stage": "SNDKUSDT:ticker",
+    "headers": {
+      "x-mbx-used-weight-1m": "0",
+      "retry-after": "14732"
+    }
+  },
+  "server_time": {
+    "status": "SUPPORTED",
+    "serverTime": 1787910141249
+  },
+  "websocket": {
+    "status": "SKIPPED_DUE_TO_RATE_LIMIT",
+    "reason": "REST rate limit at SNDKUSDT:ticker",
+    "cooldown_until": "2026-08-28T13:47:57.334444+00:00"
+  },
+  "classification": "PRODUCTION_PUBLIC_PROBE_INCOMPLETE_RATE_LIMITED",
+  "conclusion": "RATE_LIMIT_FAIL_FAST",
+  "no_credentials_used": true
+}

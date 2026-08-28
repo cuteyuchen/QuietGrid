@@ -1,18 +1,11 @@
 {
-  "detected_at": "2026-08-28T05:45:22.202375+00:00",
+  "detected_at": "2026-08-28T09:42:25.334444+00:00",
   "status_code": 418,
-  "retry_after_seconds": 13881,
-  "cooldown_until": "2026-08-28T09:36:43.202375+00:00",
-  "stage": "SNDKUSDT:depth",
-  "observed_stages": [
-    {
-      "stage": "SNDKUSDT:depth",
-      "retry_after_seconds": 13881
-    },
-    {
-      "stage": "SOXLUSDT:kline",
-      "retry_after_seconds": 12643
-    }
-  ],
-  "headers": {}
+  "retry_after_seconds": 14732,
+  "cooldown_until": "2026-08-28T13:47:57.334444+00:00",
+  "stage": "SNDKUSDT:ticker",
+  "headers": {
+    "x-mbx-used-weight-1m": "0",
+    "retry-after": "14732"
+  }
 }

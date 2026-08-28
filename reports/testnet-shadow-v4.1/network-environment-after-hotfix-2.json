@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-28T13:47:20.239424+08:00",
+  "environment_classification": "PRODUCTION_PUBLIC_RATE_LIMIT_ACTIVE_DURING_PROBE",
+  "git_commit": "e95f18d2d8ba4ef8e324527234a6d03babac4349",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "health_check": {
+    "endpoint": "https://fapi.binance.com/fapi/v1/time",
+    "http_status": 200,
+    "retry_after": null,
+    "requests": 1
+  },
+  "probe": {
+    "classification": "PRODUCTION_PUBLIC_TRADFI_PARTIAL_RATE_LIMITED",
+    "http_status": 418,
+    "rate_limited_stages": [
+      {
+        "stage": "SNDKUSDT:depth",
+        "retry_after_seconds": 13881
+      },
+      {
+        "stage": "SOXLUSDT:kline",
+        "retry_after_seconds": 12643
+      }
+    ],
+    "request_pacing_seconds": 0.4,
+    "exchange_info_calls_planned": 1,
+    "probe_runs": 1,
+    "programmatic_retries": 0
+  },
+  "safety": {
+    "vpn_proxy_tunnel_used": false,
+    "host_or_dns_override_used": false,
+    "third_party_relay_used": false,
+    "node_rotation_by_program": false,
+    "credentials_used": false,
+    "production_private_api_called": false,
+    "signed_requests": "DISABLED",
+    "production_private_api": "DISABLED",
+    "real_order_mutation": false,
+    "paper_order_mutation": false
+  }
+}

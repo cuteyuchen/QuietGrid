@@ -1,0 +1,7 @@
+{
+  "generated_at": "2026-08-28T13:47:20.239424+08:00",
+  "status": "NOT_RUN",
+  "reason": "PROBE_GATE_NOT_PASS",
+  "probe_classification": "PRODUCTION_PUBLIC_TRADFI_PARTIAL_RATE_LIMITED",
+  "conclusion": "NOT_PASS"
+}

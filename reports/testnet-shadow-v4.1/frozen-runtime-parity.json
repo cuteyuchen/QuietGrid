@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "compiler_version": "frozen-31111-controller-compiler-v1",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "base_sha": "1e1d45f816beb92d51df6bbcbbdc753eb12105fc",
+  "final_code_sha": "8d4b7f3e0d50d5c4e9c705b211625514a57f7cda",
+  "candidate_id": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "freeze_tag": "semiconductor-grid-forward-oos-v2.9-freeze",
+  "freeze_artifact_blob_sha": "8d78533ef4601439cb9d14bb0b4628b596cf4fd0",
+  "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+  "effective_runtime_config_sha": "a4758ab22db600504a48c4e88ca8c2952db61573bebe7fc03cbd962d3a5dfaf6",
+  "real_controller_parity": "PASS",
+  "semantics": {
+    "direction": "NEUTRAL",
+    "economic_leverage": 1,
+    "range": {
+      "level": 3,
+      "multiplier": 2.0,
+      "effective_k_atr_range": "frozen base k_atr_range * 2.0",
+      "effective_k_sigma_range": "frozen base k_sigma_range * 2.0",
+      "effective_max_range_pct": "frozen base max_range_pct * 2.0"
+    },
+    "grid": {
+      "level": 1,
+      "min_grid_num": 5,
+      "max_grid_num": 10,
+      "step_multiplier": 1.5
+    },
+    "profit": {
+      "level": 1,
+      "mode": "NONE",
+      "take_profit_usdt": 0.0,
+      "profit_protection_enabled": false
+    },
+    "inventory": {
+      "level": 1,
+      "caution_utilization": 0.4,
+      "reduce_only_utilization": 0.8
+    },
+    "stop": {
+      "level": 1,
+      "mode": "BASELINE",
+      "additional_atr_buffer": 0.0
+    },
+    "capital_multiplier_soxl": 0.5,
+    "live_symbols": [
+      "SNDKUSDT",
+      "MUUSDT",
+      "SOXLUSDT"
+    ],
+    "research_only_symbols": [
+      "SKHYNIXUSDT"
+    ]
+  }
+}

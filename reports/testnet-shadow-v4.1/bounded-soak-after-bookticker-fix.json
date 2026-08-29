@@ -1,0 +1,60 @@
+{
+  "generated_at": "2026-08-29T08:41:28.988969+00:00",
+  "git_commit": "f4a36d04ad33384ef601ce13826277c881faceb7",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "candidate": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+  "forward_oos": "2 / 8",
+  "profile": "PAPER_BASELINE",
+  "runtime": {
+    "status": "COMPLETED",
+    "stop_reason": "BOUNDED_TIMEOUT",
+    "events_processed": 76331,
+    "fills_processed": 0,
+    "controller_ticks": 147,
+    "started_at": "2026-08-29T08:10:21.170922+00:00",
+    "ended_at": "2026-08-29T08:40:21.185697+00:00",
+    "duration_seconds": 1800.014775,
+    "candidate_id": "31111-NEUTRAL",
+    "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+    "economic_leverage": 1,
+    "execution_profile": "PAPER_BASELINE",
+    "production_private_api": "DISABLED",
+    "reconcile": {
+      "result": "RECONCILED",
+      "status": "RECONCILED",
+      "violations": [],
+      "orders": 0,
+      "fills": 0,
+      "positions": {}
+    }
+  },
+  "journal": {
+    "event_type_counts": {
+      "REST_RECOVERY": 32,
+      "BOOK_TICKER": 70004,
+      "TRADE": 6327
+    },
+    "symbol_event_counts": {
+      "SNDKUSDT:REST_RECOVERY": 8,
+      "MUUSDT:REST_RECOVERY": 8,
+      "SOXLUSDT:REST_RECOVERY": 8,
+      "SKHYNIXUSDT:REST_RECOVERY": 8,
+      "MUUSDT:BOOK_TICKER": 15439,
+      "SNDKUSDT:BOOK_TICKER": 36981,
+      "SOXLUSDT:BOOK_TICKER": 10869,
+      "SKHYNIXUSDT:BOOK_TICKER": 6715,
+      "SNDKUSDT:TRADE": 3862,
+      "MUUSDT:TRADE": 835,
+      "SOXLUSDT:TRADE": 586,
+      "SKHYNIXUSDT:TRADE": 1044
+    },
+    "duplicate_event_ids": 0,
+    "missing_exchange_timestamp": 0,
+    "trade_events_with_native_t_id": 6327,
+    "out_of_order_exchange_timestamp_count": 0
+  },
+  "estimated_reconnects": 7,
+  "result": "PASS_BOUNDED_SHADOW_SOAK"
+}

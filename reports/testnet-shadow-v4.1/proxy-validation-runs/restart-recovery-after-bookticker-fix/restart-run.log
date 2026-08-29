@@ -1,0 +1,25 @@
+{
+  "status": "COMPLETED",
+  "stop_reason": "BOUNDED_TIMEOUT",
+  "events_processed": 2998,
+  "fills_processed": 0,
+  "controller_ticks": 9,
+  "started_at": "2026-08-29T08:07:41.157079+00:00",
+  "ended_at": "2026-08-29T08:09:46.163752+00:00",
+  "duration_seconds": 125.006673,
+  "candidate_id": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "economic_leverage": 1,
+  "execution_profile": "PAPER_CONSERVATIVE",
+  "production_private_api": "DISABLED",
+  "reconcile": {
+    "result": "RECONCILED",
+    "status": "RECONCILED",
+    "violations": [],
+    "orders": 2,
+    "fills": 1,
+    "positions": {
+      "MUUSDT": 1.0
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-08-29T08:41:28.994054+00:00",
+  "git_commit": "f4a36d04ad33384ef601ce13826277c881faceb7",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "candidate": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+  "forward_oos": "2 / 8",
+  "result": "PASS_BOOKTICKER_STREAM_PARSER",
+  "parser_before": "str(data.get(\"e\", \"\")).lower() == \"bookTicker\"",
+  "parser_after": "event_type = str(data.get(\"e\", \"\")).strip().lower(); event_type == \"bookticker\"",
+  "tests": [
+    "test_v41_binance_stream_parses_real_bookticker_event",
+    "test_v41_binance_stream_yields_trade_and_bookticker",
+    "test_v41_binance_stream_ignores_unknown_event",
+    "test_v41_book_and_trade_freshness_update_independently"
+  ],
+  "pytest_total": 878,
+  "compileall": "PASS",
+  "git_diff_check": "PASS"
+}

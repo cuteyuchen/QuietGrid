@@ -1,0 +1,313 @@
+{
+  "generated_at": "2026-08-29T08:41:28.991810+00:00",
+  "git_commit": "f4a36d04ad33384ef601ce13826277c881faceb7",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "candidate": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+  "forward_oos": "2 / 8",
+  "result": "PASS_SHADOW_PROCESS_RESTART_RECOVERY",
+  "state_before": {
+    "market_order": {
+      "order_id": "paper-948c9d0998d64113",
+      "symbol": "MUUSDT",
+      "client_id": "restart-seed",
+      "side": "BUY",
+      "price": 100.0,
+      "qty": 1.0,
+      "status": "FILLED",
+      "created_at": "2026-08-29T08:07:28.538483+00:00",
+      "effective_at": "2026-08-29T08:07:28.538483+00:00",
+      "filled_qty": 1.0,
+      "avg_fill_price": 100.0,
+      "reject_reason": null,
+      "cancel_requested_at": null,
+      "cancel_effective_at": null,
+      "order_type": "MARKET",
+      "stop_price": null,
+      "reduce_only": 0,
+      "position_side": null,
+      "triggered_at": null,
+      "filled_at": "2026-08-29T08:07:28.538483+00:00",
+      "trigger_source": null,
+      "working_type": null,
+      "queue_ahead_initial": 0.0,
+      "queue_ahead_remaining": 0.0,
+      "requested_qty": 1.0,
+      "orderId": "paper-948c9d0998d64113",
+      "clientOrderId": "restart-seed",
+      "origQty": 1.0,
+      "requestedQty": 1.0,
+      "executedQty": 1.0,
+      "avgPrice": 100.0,
+      "rejectReason": null,
+      "orderType": "MARKET",
+      "stopPrice": null,
+      "reduceOnly": false,
+      "queueAheadInitial": 0.0,
+      "queueAheadRemaining": 0.0,
+      "triggeredAt": null,
+      "filledAt": "2026-08-29T08:07:28.538483+00:00",
+      "triggerSource": null,
+      "workingType": null
+    },
+    "limit_order": {
+      "symbol": "MUUSDT",
+      "order_id": "paper-49562e3b594d4897",
+      "client_id": "restart-open",
+      "side": "BUY",
+      "price": 1.0,
+      "qty": 1.0,
+      "status": "NEW",
+      "created_at": "2026-08-29T08:07:28.563296+00:00",
+      "effective_at": "2026-08-29T08:07:28.813296+00:00",
+      "filled_qty": 0.0,
+      "avg_fill_price": null,
+      "reject_reason": null,
+      "order_type": "LIMIT",
+      "stop_price": null,
+      "reduce_only": false,
+      "position_side": null,
+      "triggered_at": null,
+      "filled_at": null,
+      "trigger_source": null,
+      "working_type": null,
+      "queue_ahead_initial": 0.9,
+      "queue_ahead_remaining": 0.9,
+      "requested_qty": null,
+      "orderId": "paper-49562e3b594d4897",
+      "clientOrderId": "restart-open",
+      "origQty": 1.0,
+      "requestedQty": 1.0,
+      "executedQty": 0.0,
+      "avgPrice": 0.0,
+      "rejectReason": null,
+      "orderType": "LIMIT",
+      "stopPrice": null,
+      "reduceOnly": false,
+      "queueAheadInitial": 0.9,
+      "queueAheadRemaining": 0.9,
+      "triggeredAt": null,
+      "filledAt": null,
+      "triggerSource": null,
+      "workingType": null,
+      "timeInForce": "GTX"
+    },
+    "status_before": {
+      "profile": "PAPER_CONSERVATIVE",
+      "orders": [
+        {
+          "status": "FILLED",
+          "count": 1
+        },
+        {
+          "status": "NEW",
+          "count": 1
+        }
+      ],
+      "positions": [
+        {
+          "symbol": "MUUSDT",
+          "qty": 1.0,
+          "avg_price": 100.0,
+          "realized_pnl": 0.0
+        }
+      ],
+      "force_flat": [],
+      "market_cursors": [
+        {
+          "symbol": "SNDKUSDT",
+          "last_event_at": "2026-08-29T07:52:01.195000+00:00",
+          "sequence": 0
+        },
+        {
+          "symbol": "MUUSDT",
+          "last_event_at": "2026-08-29T07:52:01.130000+00:00",
+          "sequence": 0
+        },
+        {
+          "symbol": "SOXLUSDT",
+          "last_event_at": "2026-08-29T07:52:01.478000+00:00",
+          "sequence": 0
+        },
+        {
+          "symbol": "SKHYNIXUSDT",
+          "last_event_at": "2026-08-29T07:52:01.144000+00:00",
+          "sequence": 0
+        }
+      ],
+      "production_private_api": "DISABLED"
+    },
+    "position": {
+      "symbol": "MUUSDT",
+      "qty": 1.0,
+      "avg_price": 100.0,
+      "realized_pnl": 0.0
+    }
+  },
+  "state_after": {
+    "status_after": {
+      "profile": "PAPER_CONSERVATIVE",
+      "orders": [
+        {
+          "status": "FILLED",
+          "count": 1
+        },
+        {
+          "status": "NEW",
+          "count": 1
+        }
+      ],
+      "positions": [
+        {
+          "symbol": "MUUSDT",
+          "qty": 1.0,
+          "avg_price": 100.0,
+          "realized_pnl": 0.0
+        }
+      ],
+      "force_flat": [],
+      "market_cursors": [
+        {
+          "symbol": "SNDKUSDT",
+          "last_event_at": "2026-08-29T08:09:40.445000+00:00",
+          "sequence": 0
+        },
+        {
+          "symbol": "MUUSDT",
+          "last_event_at": "2026-08-29T08:09:36.492000+00:00",
+          "sequence": 0
+        },
+        {
+          "symbol": "SOXLUSDT",
+          "last_event_at": "2026-08-29T08:09:40.676000+00:00",
+          "sequence": 0
+        },
+        {
+          "symbol": "SKHYNIXUSDT",
+          "last_event_at": "2026-08-29T08:09:39.230000+00:00",
+          "sequence": 0
+        }
+      ],
+      "production_private_api": "DISABLED"
+    },
+    "reconcile": {
+      "result": "RECONCILED",
+      "status": "RECONCILED",
+      "violations": [],
+      "orders": 2,
+      "fills": 1,
+      "positions": {
+        "MUUSDT": 1.0
+      }
+    },
+    "core_tables_present": [
+      "control_state",
+      "orders",
+      "round_candidates",
+      "selection_candidates",
+      "sessions",
+      "state_logs",
+      "system_logs",
+      "trades",
+      "windows"
+    ],
+    "shadow_tables_present": [
+      "shadow_events",
+      "shadow_fills",
+      "shadow_market_events",
+      "shadow_market_state",
+      "shadow_orders",
+      "shadow_positions"
+    ],
+    "control_state_count": 0,
+    "shadow_force_flat_count": 0,
+    "shadow_funding_settlements_count": 0,
+    "freshness_rows": [
+      {
+        "symbol": "MUUSDT",
+        "stream_type": "BOOK_TICKER",
+        "event_key": "PUBLIC_WEBSOCKET:MUUSDT:BOOK_TICKER:11420189631900",
+        "exchange_at": "2026-08-29T08:09:36.492000+00:00",
+        "receive_at": "2026-08-29T08:09:36.980819+00:00"
+      },
+      {
+        "symbol": "MUUSDT",
+        "stream_type": "REST_RECOVERY",
+        "event_key": "PUBLIC_REST_RECOVERY:MUUSDT:REST_RECOVERY:rest-recovery:MUUSDT:1787990852939",
+        "exchange_at": "2026-08-29T08:07:32.939000+00:00",
+        "receive_at": "2026-08-29T08:07:58.129027+00:00"
+      },
+      {
+        "symbol": "MUUSDT",
+        "stream_type": "TRADE",
+        "event_key": "PUBLIC_WEBSOCKET:MUUSDT:TRADE:199197337",
+        "exchange_at": "2026-08-29T08:09:14.324000+00:00",
+        "receive_at": "2026-08-29T08:09:15.091815+00:00"
+      },
+      {
+        "symbol": "SKHYNIXUSDT",
+        "stream_type": "BOOK_TICKER",
+        "event_key": "PUBLIC_WEBSOCKET:SKHYNIXUSDT:BOOK_TICKER:11420189734796",
+        "exchange_at": "2026-08-29T08:09:39.230000+00:00",
+        "receive_at": "2026-08-29T08:09:39.655490+00:00"
+      },
+      {
+        "symbol": "SKHYNIXUSDT",
+        "stream_type": "REST_RECOVERY",
+        "event_key": "PUBLIC_REST_RECOVERY:SKHYNIXUSDT:REST_RECOVERY:rest-recovery:SKHYNIXUSDT:1787990880227",
+        "exchange_at": "2026-08-29T08:08:00.227000+00:00",
+        "receive_at": "2026-08-29T08:08:11.143536+00:00"
+      },
+      {
+        "symbol": "SKHYNIXUSDT",
+        "stream_type": "TRADE",
+        "event_key": "PUBLIC_WEBSOCKET:SKHYNIXUSDT:TRADE:246033974",
+        "exchange_at": "2026-08-29T08:09:31.820000+00:00",
+        "receive_at": "2026-08-29T08:09:32.388346+00:00"
+      },
+      {
+        "symbol": "SNDKUSDT",
+        "stream_type": "BOOK_TICKER",
+        "event_key": "PUBLIC_WEBSOCKET:SNDKUSDT:BOOK_TICKER:11420189782799",
+        "exchange_at": "2026-08-29T08:09:40.445000+00:00",
+        "receive_at": "2026-08-29T08:09:41.025955+00:00"
+      },
+      {
+        "symbol": "SNDKUSDT",
+        "stream_type": "REST_RECOVERY",
+        "event_key": "PUBLIC_REST_RECOVERY:SNDKUSDT:REST_RECOVERY:rest-recovery:SNDKUSDT:1787990853646",
+        "exchange_at": "2026-08-29T08:07:33.646000+00:00",
+        "receive_at": "2026-08-29T08:07:51.169461+00:00"
+      },
+      {
+        "symbol": "SNDKUSDT",
+        "stream_type": "TRADE",
+        "event_key": "PUBLIC_WEBSOCKET:SNDKUSDT:TRADE:338846608",
+        "exchange_at": "2026-08-29T08:09:35.295000+00:00",
+        "receive_at": "2026-08-29T08:09:36.067372+00:00"
+      },
+      {
+        "symbol": "SOXLUSDT",
+        "stream_type": "BOOK_TICKER",
+        "event_key": "PUBLIC_WEBSOCKET:SOXLUSDT:BOOK_TICKER:11420189791251",
+        "exchange_at": "2026-08-29T08:09:40.676000+00:00",
+        "receive_at": "2026-08-29T08:09:41.109952+00:00"
+      },
+      {
+        "symbol": "SOXLUSDT",
+        "stream_type": "REST_RECOVERY",
+        "event_key": "PUBLIC_REST_RECOVERY:SOXLUSDT:REST_RECOVERY:rest-recovery:SOXLUSDT:1787990867032",
+        "exchange_at": "2026-08-29T08:07:47.032000+00:00",
+        "receive_at": "2026-08-29T08:08:04.974246+00:00"
+      },
+      {
+        "symbol": "SOXLUSDT",
+        "stream_type": "TRADE",
+        "event_key": "PUBLIC_WEBSOCKET:SOXLUSDT:TRADE:223869185",
+        "exchange_at": "2026-08-29T08:09:28.415000+00:00",
+        "receive_at": "2026-08-29T08:09:28.826871+00:00"
+      }
+    ]
+  }
+}

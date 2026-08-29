@@ -1,0 +1,42 @@
+# QuietGrid v4.1 Network Validation Final Report
+
+Generated: 2026-08-29T08:45:00+08:00
+
+## Final Status
+
+`PASS_V41_NETWORK_VALIDATION`
+
+`READY_FOR_LONG_SHADOW_OBSERVATION`
+
+`NOT_EVALUATED_FOR_PROFITABILITY`
+
+## Gates
+
+- `PASS_BOOKTICKER_STREAM_PARSER`
+- `PASS_TRADE_BOOK_COMBINED_STREAM`
+- `PASS_FREEZE_INTEGRITY`
+- `PASS_FROZEN_31111_RUNTIME_PARITY`
+- `PASS_PROXY_EGRESS_QUALIFICATION`
+- `PASS_PRODUCTION_PUBLIC_PROBE`
+- `PASS_PUBLIC_BASELINE_SMOKE`
+- `PASS_PUBLIC_CONSERVATIVE_SMOKE`
+- `PASS_PUBLIC_STREAM_RECOVERY`
+- `PASS_SHADOW_PROCESS_RESTART_RECOVERY`
+- `PASS_BOUNDED_SHADOW_SOAK`
+- `PASS_NO_PRODUCTION_PRIVATE_API`
+- `PASS_NO_REAL_ORDER_MUTATION`
+
+## Evidence
+
+- BookTicker Hotfix SHA: `f4a36d04ad33384ef601ce13826277c881faceb7`
+- Candidate SHA: `c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774`
+- Effective Strategy SHA: `776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3`
+- Forward OOS: `2 / 8`
+- Production Private API calls: 0
+- Signed requests: 0
+- Real orders: 0
+
+## Boundaries
+
+This is a bounded 30-minute shadow observation. It does not establish
+profitability, expected return, or readiness for live trading.

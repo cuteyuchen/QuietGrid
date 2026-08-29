@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-08-29T08:41:28.987096+00:00",
+  "git_commit": "f4a36d04ad33384ef601ce13826277c881faceb7",
+  "branch": "codex/semiconductor-grid-continuous-shadow-runtime-v4.1",
+  "candidate": "31111-NEUTRAL",
+  "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+  "effective_strategy_sha": "776d027897d3c32fdcae3bf69641e0a8460ea006115134600a77e4982d92faa3",
+  "forward_oos": "2 / 8",
+  "profile": "PAPER_BASELINE",
+  "runtime": {
+    "status": "COMPLETED",
+    "stop_reason": "BOUNDED_TIMEOUT",
+    "events_processed": 30604,
+    "fills_processed": 0,
+    "controller_ticks": 50,
+    "started_at": "2026-08-29T07:31:28.196800+00:00",
+    "ended_at": "2026-08-29T07:41:28.203578+00:00",
+    "duration_seconds": 600.006778,
+    "candidate_id": "31111-NEUTRAL",
+    "candidate_sha": "c65c75506f4070608ddbfb9a9b3731dc8dab2fee0261c33bda36278a495a1774",
+    "economic_leverage": 1,
+    "execution_profile": "PAPER_BASELINE",
+    "production_private_api": "DISABLED",
+    "reconcile": {
+      "result": "RECONCILED",
+      "status": "RECONCILED",
+      "violations": [],
+      "orders": 0,
+      "fills": 0,
+      "positions": {}
+    }
+  },
+  "journal": {
+    "event_type_counts": {
+      "REST_RECOVERY": 12,
+      "TRADE": 2818,
+      "BOOK_TICKER": 27786
+    },
+    "symbol_event_counts": {
+      "SNDKUSDT:REST_RECOVERY": 3,
+      "MUUSDT:REST_RECOVERY": 3,
+      "SOXLUSDT:REST_RECOVERY": 3,
+      "SKHYNIXUSDT:REST_RECOVERY": 3,
+      "SOXLUSDT:TRADE": 983,
+      "SOXLUSDT:BOOK_TICKER": 4380,
+      "SNDKUSDT:BOOK_TICKER": 4613,
+      "MUUSDT:BOOK_TICKER": 16009,
+      "SNDKUSDT:TRADE": 886,
+      "SKHYNIXUSDT:BOOK_TICKER": 2784,
+      "MUUSDT:TRADE": 432,
+      "SKHYNIXUSDT:TRADE": 517
+    },
+    "duplicate_event_ids": 0,
+    "missing_exchange_timestamp": 0,
+    "trade_events_with_native_t_id": 2818,
+    "out_of_order_exchange_timestamp_count": 0
+  },
+  "result": "PASS_PUBLIC_BASELINE_SMOKE"
+}

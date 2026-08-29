@@ -107,7 +107,8 @@ class BinancePublicTradeStream:
                         payload = json.loads(raw)
                         data = payload.get("data", payload)
                         received = datetime.now(timezone.utc)
-                        if str(data.get("e", "")).lower() == "trade":
+                        event_type = str(data.get("e", "")).strip().lower()
+                        if event_type == "trade":
                             trade_id = data.get("t")
                             if trade_id in (None, ""):
                                 raise ValueError("Binance @trade event missing trade id t")
@@ -125,7 +126,7 @@ class BinancePublicTradeStream:
                                     "payload": data,
                                 }
                             )
-                        elif str(data.get("e", "")).lower() == "bookTicker":
+                        elif event_type == "bookticker":
                             book_id = data.get("u")
                             yield MarketEvent.from_mapping(
                                 {

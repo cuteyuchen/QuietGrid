@@ -287,6 +287,211 @@ def test_v41_stream_has_reconnect_and_rest_recovery_hooks() -> None:
     assert stream.rest_recovery is not None
 
 
+class _FakeWebSocket:
+    def __init__(self, frames: list[str]) -> None:
+        self._frames = list(frames)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> str:
+        if not self._frames:
+            raise StopAsyncIteration
+        return self._frames.pop(0)
+
+
+class _FakeWebSocketContext:
+    def __init__(self, frames: list[str]) -> None:
+        self._ws = _FakeWebSocket(frames)
+
+    async def __aenter__(self) -> _FakeWebSocket:
+        return self._ws
+
+    async def __aexit__(self, *args) -> bool:
+        return False
+
+
+def _patch_websocket_frames(monkeypatch: pytest.MonkeyPatch, frames: list[str]) -> None:
+    monkeypatch.setattr(
+        "websockets.connect",
+        lambda url, **kwargs: _FakeWebSocketContext(frames),
+    )
+
+
+def test_v41_binance_stream_parses_real_bookticker_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    frame = json.dumps(
+        {
+            "stream": "muusdt@bookTicker",
+            "data": {
+                "e": "bookTicker",
+                "u": 123456789,
+                "s": "MUUSDT",
+                "b": "99.10",
+                "B": "12.5",
+                "a": "99.20",
+                "A": "10.25",
+                "T": 1787940000000,
+            },
+        }
+    )
+    _patch_websocket_frames(monkeypatch, [frame])
+
+    async def scenario() -> None:
+        stream = BinancePublicTradeStream(("MUUSDT",))
+        events = []
+        async for event in stream:
+            events.append(event)
+            break
+        assert len(events) == 1
+        event = events[0]
+        assert event.event_type == "BOOK_TICKER"
+        assert event.symbol == "MUUSDT"
+        assert event.event_id == "123456789"
+        assert event.raw_event_id == "123456789"
+        assert event.bid == 99.10
+        assert event.bid_qty == 12.5
+        assert event.ask == 99.20
+        assert event.ask_qty == 10.25
+
+    asyncio.run(scenario())
+
+
+def test_v41_binance_stream_yields_trade_and_bookticker(monkeypatch: pytest.MonkeyPatch) -> None:
+    trade_frame = json.dumps(
+        {
+            "stream": "muusdt@trade",
+            "data": {
+                "e": "trade",
+                "t": 987654321,
+                "s": "MUUSDT",
+                "p": "100.00",
+                "q": "1.5",
+                "T": 1787940001000,
+            },
+        }
+    )
+    book_frame = json.dumps(
+        {
+            "stream": "muusdt@bookTicker",
+            "data": {
+                "e": "bookTicker",
+                "u": 123456789,
+                "s": "MUUSDT",
+                "b": "99.10",
+                "B": "12.5",
+                "a": "99.20",
+                "A": "10.25",
+                "T": 1787940002000,
+            },
+        }
+    )
+    _patch_websocket_frames(monkeypatch, [trade_frame, book_frame])
+
+    async def scenario() -> None:
+        stream = BinancePublicTradeStream(("MUUSDT",))
+        counts = {"TRADE": 0, "BOOK_TICKER": 0}
+        async for event in stream:
+            counts[event.event_type] += 1
+            if counts["TRADE"] >= 1 and counts["BOOK_TICKER"] >= 1:
+                break
+        assert counts == {"TRADE": 1, "BOOK_TICKER": 1}
+
+    asyncio.run(scenario())
+
+
+def test_v41_binance_stream_ignores_unknown_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    unknown_frame = json.dumps({"stream": "muusdt@somethingElse", "data": {"e": "somethingElse", "s": "MUUSDT"}})
+    book_frame = json.dumps(
+        {
+            "stream": "muusdt@bookTicker",
+            "data": {
+                "e": "bookTicker",
+                "u": 123456789,
+                "s": "MUUSDT",
+                "b": "99.10",
+                "B": "12.5",
+                "a": "99.20",
+                "A": "10.25",
+                "T": 1787940000000,
+            },
+        }
+    )
+    _patch_websocket_frames(monkeypatch, [unknown_frame, book_frame])
+
+    async def scenario() -> None:
+        stream = BinancePublicTradeStream(("MUUSDT",))
+        events = []
+        async for event in stream:
+            events.append(event)
+            break
+        assert len(events) == 1
+        assert events[0].event_type == "BOOK_TICKER"
+
+    asyncio.run(scenario())
+
+
+def test_v41_book_and_trade_freshness_update_independently(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        broker = ShadowBroker(tmp_path / "stream-freshness.db", PAPER_BASELINE)
+        at = _at()
+        await broker.process_market_event(
+            "MUUSDT",
+            {
+                "source": "PUBLIC_WEBSOCKET",
+                "symbol": "MUUSDT",
+                "event_type": "TRADE",
+                "exchange_timestamp": at,
+                "receive_timestamp": at,
+                "event_id": "trade-1",
+                "trade_price": 100.0,
+                "trade_qty": 1.0,
+            },
+        )
+        assert broker._book_is_fresh("MUUSDT") is False
+        assert broker._last_market["MUUSDT"]["last"] == 100.0
+        assert broker._last_market["MUUSDT"].get("_trade_received_at") is not None
+
+        await broker.process_market_event(
+            "MUUSDT",
+            {
+                "source": "PUBLIC_WEBSOCKET",
+                "symbol": "MUUSDT",
+                "event_type": "BOOK_TICKER",
+                "exchange_timestamp": at + timedelta(seconds=1),
+                "receive_timestamp": at + timedelta(seconds=1),
+                "event_id": "book-1",
+                "bid": 99.0,
+                "bid_qty": 50.0,
+                "ask": 101.0,
+                "ask_qty": 40.0,
+            },
+        )
+        assert broker._book_is_fresh("MUUSDT") is True
+        assert broker._last_market["MUUSDT"]["bid"] == 99.0
+        assert broker._last_market["MUUSDT"]["bid_qty"] == 50.0
+        assert broker._last_market["MUUSDT"]["ask"] == 101.0
+        assert broker._last_market["MUUSDT"]["ask_qty"] == 40.0
+
+        await broker.process_market_event(
+            "MUUSDT",
+            {
+                "source": "PUBLIC_WEBSOCKET",
+                "symbol": "MUUSDT",
+                "event_type": "TRADE",
+                "exchange_timestamp": at + timedelta(seconds=2),
+                "receive_timestamp": at + timedelta(seconds=2),
+                "event_id": "trade-2",
+                "trade_price": 100.5,
+                "trade_qty": 0.5,
+            },
+        )
+        assert broker._book_is_fresh("MUUSDT") is True
+        assert broker._last_market["MUUSDT"]["last"] == 100.5
+        assert broker._last_market["MUUSDT"]["_trade_received_at"] is not None
+
+    asyncio.run(scenario())
+
+
 def test_v41_funding_is_settled_once_across_restart(tmp_path: Path) -> None:
     async def scenario() -> None:
         db = tmp_path / "funding.db"
